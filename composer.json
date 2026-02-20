@@ -1,0 +1,22 @@
+{
+  "name": "voxelsite/voxelsite",
+  "description": "The AI CMS. Prompt your website. Own the files.",
+  "type": "project",
+  "license": "proprietary",
+  "require": {
+    "php": ">=8.1",
+    "vlucas/phpdotenv": "^5.6",
+    "ramsey/uuid": "^4.7",
+    "league/commonmark": "^2.6"
+  },
+  "autoload": {
+    "psr-4": {
+      "VoxelSite\\": "_studio/engine/",
+      "VoxelSite\\Providers\\": "_studio/engine/providers/"
+    }
+  },
+  "config": {
+    "optimize-autoloader": true,
+    "sort-packages": true
+  }
+}

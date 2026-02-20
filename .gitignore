@@ -1,0 +1,135 @@
+# ── Dependencies (npm only — vendor/ is committed per spec) ──
+node_modules/
+
+# ── Composer related ──
+/vendor/**/.DS_Store
+/vendor/**/.git
+/vendor/**/.idea
+/vendor/**/.vscode
+/vendor/**/.svn
+/vendor/**/.hg
+/vendor/**/CHANGELOG
+/vendor/**/CHANGELOG.md
+/vendor/**/README
+/vendor/**/README.txt
+/vendor/**/README.md
+/vendor/**/LICENSE
+/vendor/**/LICENSE.txt
+/vendor/**/LICENSE.md
+/vendor/**/phpunit.xml
+/vendor/**/phpunit.xml.dist
+/vendor/**/phpcs.xml
+/vendor/**/phpcs.xml.dist
+/vendor/**/.editorconfig
+/vendor/**/.gitattributes
+/vendor/**/.gitignore
+/vendor/**/.scrutinizer.yml
+/vendor/**/.travis.yml
+/vendor/**/.gitkeep
+/vendor/**/.coveralls.yml
+/vendor/**/.styleci.yml
+/vendor/**/.stickler.yml
+/vendor/**/.symfony
+/vendor/**/.phan
+/vendor/**/.nvmrc
+/vendor/**/.env.example
+
+# ── IDE / OS ──
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Tailwind source (dev only, not shipped) ──
+# _studio/ui/src/ is excluded from dist ZIP but tracked in git
+
+# ── Runtime data (created by the application) ──
+_studio/data/studio.db
+_studio/data/studio.db-wal
+_studio/data/studio.db-shm
+_studio/data/studio.db-journal
+_studio/data/config.json
+_studio/data/assets-meta.json
+_studio/data/published-manifest.json
+_studio/data/mail.log
+_studio/data/promptsite.db
+_studio/data/promptsite.db-wal
+_studio/data/promptsite.db-shm
+_studio/data/promptsite.db-journal
+
+# Collection data (items and schemas in subdirectories)
+_studio/data/collections/*
+!_studio/data/collections/_schema/
+
+# ── User content ──
+_studio/preview/*
+!_studio/preview/.gitkeep
+_studio/revisions/*
+!_studio/revisions/.gitkeep
+_studio/snapshots/*
+!_studio/snapshots/.gitkeep
+_studio/backups/*
+!_studio/backups/.gitkeep
+
+# ── Uploaded assets (user content) ──
+assets/images/*
+assets/files/*
+assets/fonts/*
+!assets/images/.gitkeep
+!assets/files/.gitkeep
+!assets/fonts/.gitkeep
+
+# ── Generated site files (AI output) ──
+# Root-level PHP pages created by the AI
+/*.php
+!LocalValetDriver.php
+!submit.php
+
+# AEO-generated root files
+/llms.txt
+/robots.txt
+
+# Published _partials/ (copied from preview during publish)
+/_partials/
+
+# Root _data/ contents (form submissions DB, auth tokens)
+/_data/studio.db
+/_data/studio.db-wal
+/_data/studio.db-shm
+/_data/studio.db-journal
+/_data/submissions.db
+/_data/submissions.db-wal
+/_data/submissions.db-shm
+/_data/submissions.db-journal
+/_data/.reset-token
+/_data/uploads/
+
+# Nested page directories created by the AI (services/, blog/, etc.)
+# Ignore ALL root-level directories, then whitelist known framework dirs
+/*/
+!/_studio/
+!/_data/
+!/assets/
+!/vendor/
+
+# Generated stylesheets, scripts, and data
+assets/css/*
+assets/js/*
+assets/data/*
+assets/forms/*
+!assets/css/.gitkeep
+!assets/js/.gitkeep
+!assets/data/.gitkeep
+!assets/forms/.gitkeep
+
+
+# ── Build artifacts ──
+*.zip
+.ai
+.docs
+/docs
+CLAUDE.md
+_studio/logs/

@@ -1,0 +1,18 @@
+{
+  "name": "voxelsite",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VoxelSite Studio — development tooling (not shipped to buyers)",
+  "scripts": {
+    "build": "npx @tailwindcss/cli -i ./_studio/ui/src/studio.src.css -o ./_studio/ui/dist/studio.css --minify",
+    "watch": "npx @tailwindcss/cli -i ./_studio/ui/src/studio.src.css -o ./_studio/ui/dist/studio.css --watch",
+    "icons": "mkdir -p ./assets/icons && cp ./node_modules/lucide-static/icons/*.svg ./assets/icons/",
+    "vendor:monaco": "mkdir -p ./_studio/ui/lib/monaco && rm -rf ./_studio/ui/lib/monaco/vs && cp -R ./node_modules/monaco-editor/min/vs ./_studio/ui/lib/monaco/vs",
+    "postinstall": "npm run icons && npm run vendor:monaco"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4",
+    "lucide-static": "^0.563.0",
+    "monaco-editor": "^0.52.2"
+  }
+}

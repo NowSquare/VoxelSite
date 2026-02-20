@@ -1,0 +1,45 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /_studio/
+
+    # ── Block direct access to protected directories ──
+    # These contain sensitive data and must never be web-accessible
+    RewriteRule ^engine/ - [F,L]
+    RewriteRule ^data/ - [F,L]
+    RewriteRule ^revisions/ - [F,L]
+    RewriteRule ^snapshots/ - [F,L]
+    RewriteRule ^backups/ - [F,L]
+    RewriteRule ^templates/ - [F,L]
+    RewriteRule ^prompts/ - [F,L]
+
+    # ── Allow static UI assets ──
+    RewriteRule ^ui/ - [L]
+
+    # ── Route API requests to the router ──
+    RewriteRule ^api/(.*)$ api/router.php [L,QSA]
+
+    # ── Allow install.php directly ──
+    RewriteRule ^install\.php$ - [L]
+
+    # ── Everything else goes to the SPA entry ──
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# ── Prevent directory listing ──
+Options -Indexes
+
+# ── Block access to sensitive file types ──
+<FilesMatch "\.(db|json|md|sh|sql)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# ── Allow specific JSON files needed by the UI ──
+# (none currently — all data served via API)

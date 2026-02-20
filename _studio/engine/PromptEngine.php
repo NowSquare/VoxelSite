@@ -662,17 +662,32 @@ class PromptEngine
     private function loadSystemPrompt(string $actionType): string
     {
         $promptsPath = dirname(__DIR__) . '/prompts';
+        $customPromptsPath = dirname(__DIR__) . '/custom_prompts';
 
-        // Master system prompt
-        $masterPath = $promptsPath . '/system.md';
+        $masterPath = file_exists($customPromptsPath . '/system.md') 
+            ? $customPromptsPath . '/system.md' 
+            : $promptsPath . '/system.md';
         $systemPrompt = file_exists($masterPath)
             ? file_get_contents($masterPath)
             : $this->getDefaultSystemPrompt();
 
         // Action-specific addition
-        $actionPath = $promptsPath . '/actions/' . $actionType . '.md';
+        $actionPath = file_exists($customPromptsPath . '/actions/' . $actionType . '.md')
+            ? $customPromptsPath . '/actions/' . $actionType . '.md'
+            : $promptsPath . '/actions/' . $actionType . '.md';
+            
         if (file_exists($actionPath)) {
-            $systemPrompt .= "\n\n" . file_get_contents($actionPath);
+            $actionPrompt = trim(file_get_contents($actionPath));
+            // Only swap if action actually has an instruction
+            if ($actionPrompt !== '') {
+                // If action uses the <request> placeholder, wait for the second pass
+                // If there's no <request> tag in the action file, just append it
+                if (str_contains($actionPrompt, '<request>')) {
+                    $systemPrompt = $actionPrompt;
+                } else {
+                    $systemPrompt .= "\n\n" . $actionPrompt;
+                }
+            }
         }
 
         // Provider-agnostic contract: require a deterministic JSON envelope.

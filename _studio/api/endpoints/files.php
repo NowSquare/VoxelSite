@@ -101,6 +101,14 @@ if ($method === 'PUT' && $path === '/files/content') {
         return;
     }
 
+    if ($editablePath === 'assets/css/tailwind.css') {
+        jsonResponse(['ok' => false, 'error' => [
+            'code' => 'forbidden',
+            'message' => 'Cannot edit the auto-generated tailwind CSS file.',
+        ]], 403);
+        return;
+    }
+
     $absolutePath = resolveEditableAbsolutePath($editablePath);
     if ($absolutePath === null) {
         jsonResponse(['ok' => false, 'error' => [
@@ -201,6 +209,14 @@ if ($method === 'POST' && $path === '/files/create') {
     $studioRoot = dirname(__DIR__, 2);
     $projectRoot = dirname(__DIR__, 3);
 
+    if (str_starts_with($editablePath, '_prompts/')) {
+        jsonResponse(['ok' => false, 'error' => [
+            'code' => 'forbidden',
+            'message' => 'Cannot create new system prompts.',
+        ]], 403);
+        return;
+    }
+
     if (str_starts_with($editablePath, 'assets/')) {
         $absolutePath = $projectRoot . '/' . $editablePath;
     } else {
@@ -270,8 +286,22 @@ if ($method === 'DELETE' && $path === '/files') {
         return;
     }
 
-    // Protect critical files
-    if (in_array($editablePath, PROTECTED_FILES, true)) {
+    $isPrompt = str_starts_with($editablePath, '_prompts/');
+    
+    // Allow deleting custom prompt overrides to reset them to original system prompts
+    $isCustomPrompt = false;
+    $customPath = null;
+    if ($isPrompt) {
+        $studioRoot = dirname(__DIR__, 2);
+        $customPromptsRoot = $studioRoot . '/custom_prompts';
+        $relativeTail = substr($editablePath, strlen('_prompts/'));
+        $customPath = $customPromptsRoot . '/' . $relativeTail;
+        if (is_file($customPath)) {
+            $isCustomPrompt = true;
+        }
+    }
+
+    if (!$isCustomPrompt && (in_array($editablePath, PROTECTED_FILES, true) || $isPrompt)) {
         jsonResponse(['ok' => false, 'error' => [
             'code' => 'forbidden',
             'message' => 'This is a core system file and cannot be deleted.',
@@ -279,7 +309,12 @@ if ($method === 'DELETE' && $path === '/files') {
         return;
     }
 
-    $absolutePath = resolveEditableAbsolutePath($editablePath);
+    if ($isCustomPrompt) {
+        $absolutePath = $customPath;
+    } else {
+        $absolutePath = resolveEditableAbsolutePath($editablePath);
+    }
+    
     if ($absolutePath === null) {
         jsonResponse(['ok' => false, 'error' => [
             'code' => 'not_found',
@@ -405,6 +440,35 @@ function listEditableFiles(): array
         }
     }
 
+    $promptsRoot = $studioRoot . '/prompts';
+    $customPromptsRoot = $studioRoot . '/custom_prompts';
+    if (is_dir($promptsRoot)) {
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($promptsRoot, FilesystemIterator::SKIP_DOTS)
+        );
+        foreach ($iterator as $item) {
+            if (!$item->isFile()) {
+                continue;
+            }
+            if (strtolower($item->getExtension()) !== 'md') {
+                continue;
+            }
+            $absolutePath = $item->getPathname();
+            $relativeTail = substr($absolutePath, strlen($promptsRoot) + 1);
+            $relativePath = '_prompts/' . str_replace('\\', '/', $relativeTail);
+            
+            $customPath = $customPromptsRoot . '/' . $relativeTail;
+            $isCustom = is_file($customPath);
+            if ($isCustom) {
+                $absolutePath = $customPath;
+            }
+            
+            $meta = buildEditableFileMeta($relativePath, $absolutePath, 'prompt');
+            $meta['custom'] = $isCustom;
+            $files[] = $meta;
+        }
+    }
+
     $groupOrder = [
         'page' => 0,
         'partial' => 1,
@@ -439,7 +503,8 @@ function buildEditableFileMeta(string $relativePath, string $absolutePath, ?stri
         'language' => $language,
         'size' => (int) filesize($absolutePath),
         'modified' => gmdate('Y-m-d\TH:i:s\Z', (int) filemtime($absolutePath)),
-        'protected' => in_array($relativePath, PROTECTED_FILES, true),
+        'protected' => in_array($relativePath, PROTECTED_FILES, true) || str_starts_with($relativePath, '_prompts/'),
+        'readonly' => $relativePath === 'assets/css/tailwind.css',
     ];
 }
 
@@ -455,6 +520,9 @@ function editableLanguage(string $path): string
     if (str_ends_with($lower, '.json')) {
         return 'json';
     }
+    if (str_ends_with($lower, '.md')) {
+        return 'markdown';
+    }
     return 'javascript';
 }
 
@@ -462,6 +530,9 @@ function editableGroup(string $path, string $language): string
 {
     if (str_starts_with($path, '_partials/')) {
         return 'partial';
+    }
+    if (str_starts_with($path, '_prompts/')) {
+        return 'prompt';
     }
     if ($language === 'php') {
         return 'page';
@@ -495,6 +566,9 @@ function normalizeEditablePath(string $rawPath): ?string
     if (preg_match('#^assets/[A-Za-z0-9._/-]+\.(css|js|json)$#', $path) === 1) {
         return $path;
     }
+    if (preg_match('#^_prompts/[A-Za-z0-9._/-]+\.md$#', $path) === 1) {
+        return $path;
+    }
 
     return null;
 }
@@ -509,6 +583,16 @@ function resolveEditableAbsolutePath(string $relativePath): ?string
     if (str_starts_with($relativePath, 'assets/')) {
         $absolute = $projectRoot . '/' . $relativePath;
         $allowedRoot = $assetsRoot;
+    } elseif (str_starts_with($relativePath, '_prompts/')) {
+        $relativeTail = substr($relativePath, 9);
+        $customPath = $studioRoot . '/custom_prompts/' . $relativeTail;
+        if (is_file($customPath)) {
+            $absolute = $customPath;
+            $allowedRoot = realpath($studioRoot . '/custom_prompts');
+        } else {
+            $absolute = $studioRoot . '/prompts/' . $relativeTail;
+            $allowedRoot = realpath($studioRoot . '/prompts');
+        }
     } else {
         $absolute = $studioRoot . '/preview/' . $relativePath;
         $allowedRoot = $previewRoot;

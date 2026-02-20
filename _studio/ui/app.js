@@ -2026,7 +2026,7 @@ function renderEditorLayout() {
   return `
     <div class="vs-editor-layout">
       <!-- File Tree Sidebar -->
-      <div id="editor-sidebar" class="vs-editor-sidebar" style="position: relative;">
+      <div id="editor-sidebar" class="vs-editor-sidebar" style="position: relative; display: flex; flex-direction: column;">
         <div class="vs-editor-sidebar-header">
           <span class="vs-editor-sidebar-title">Explorer</span>
           <div style="display:flex;gap:2px;">
@@ -2038,17 +2038,64 @@ function renderEditorLayout() {
             </button>
           </div>
         </div>
-        <div id="editor-tree" class="vs-editor-tree">
-          <div class="text-xs text-vs-text-ghost py-8 text-center">Loading files…</div>
+        <div style="flex: 1; overflow-y: auto;">
+          <!-- SITE FILES -->
+          <div class="vs-explorer-section">
+            <div class="vs-explorer-section-header" data-section="site">
+              <svg class="vs-explorer-caret" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+              <span>SITE FILES</span>
+            </div>
+            <div id="editor-tree" class="vs-editor-tree" style="padding-bottom: 8px;">
+              <div class="text-xs text-vs-text-ghost py-4 text-center">Loading files…</div>
+            </div>
+          </div>
+          <!-- SYSTEM PROMPTS -->
+          <div class="vs-explorer-section">
+            <div class="vs-explorer-section-header" data-section="prompts">
+              <svg class="vs-explorer-caret" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+              <span>SYSTEM PROMPTS</span>
+            </div>
+            <div id="editor-tree-prompts" class="vs-editor-tree" style="padding-bottom: 8px;">
+            </div>
+          </div>
         </div>
         <div id="editor-sidebar-resize" class="vs-editor-resize"></div>
       </div>
 
       <!-- Main Editor Area -->
       <div class="vs-editor-main">
-        <!-- Tab Bar -->
-        <div id="editor-tab-bar" class="vs-editor-tabs">
-          <div class="vs-editor-tab-empty"></div>
+        <!-- Editor Topbar -->
+        <div class="vs-editor-topbar" style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--vs-border-subtle); background: var(--vs-bg-surface); height: 38px;">
+          <!-- Tab Bar Wrapper -->
+          <div style="flex: 1; display: flex; align-items: stretch; min-width: 0; position: relative;">
+            <!-- Scroll Left Button -->
+            <button id="editor-tab-scroll-left" class="vs-tab-scroll-btn" style="display: none; position: absolute; left: 0; top: 0; bottom: 0; width: 24px; background: linear-gradient(to right, var(--vs-bg-surface) 60%, transparent); border: none; align-items: center; justify-content: flex-start; padding-left: 4px; z-index: 10; cursor: pointer; color: var(--vs-text-secondary);">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <!-- Tab Bar -->
+            <div id="editor-tab-bar" class="vs-editor-tabs" style="flex: 1; border-bottom: none; min-width: 0; scroll-behavior: auto;">
+              <div class="vs-editor-tab-empty"></div>
+            </div>
+            <!-- Scroll Right Button -->
+            <button id="editor-tab-scroll-right" class="vs-tab-scroll-btn" style="display: none; position: absolute; right: 0; top: 0; bottom: 0; width: 24px; background: linear-gradient(to left, var(--vs-bg-surface) 60%, transparent); border: none; align-items: center; justify-content: flex-end; padding-right: 4px; z-index: 10; cursor: pointer; color: var(--vs-text-secondary);">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+          </div>
+          <!-- Editor Controls -->
+          <div class="vs-editor-controls" style="display: flex; align-items: center; gap: 4px; padding: 0 12px;">
+            <button id="editor-word-wrap-btn" class="vs-btn vs-btn-ghost vs-btn-icon" title="Toggle Word Wrap" style="width: 24px; height: 24px;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M3 12h15a3 3 0 0 1 0 6h-4"/><path d="m11 15-3 3 3 3"/><path d="M3 18h4"/></svg>
+            </button>
+            <select id="editor-font-size-select" class="vs-input" title="Editor Text Size" style="height: 24px; font-size: 11px; padding: 0 24px 0 8px; width: auto; min-width: 60px; background-size: 12px; background-position: right 6px center;">
+              <option value="11">11px</option>
+              <option value="12">12px</option>
+              <option value="13">13px</option>
+              <option value="14">14px</option>
+              <option value="15">15px</option>
+              <option value="16">16px</option>
+              <option value="18">18px</option>
+            </select>
+          </div>
         </div>
 
         <!-- Editor Host -->
@@ -2089,13 +2136,19 @@ async function initEditorPage() {
 
   const editorState = {
     files: [],
-    treeData: [],
+    treeData: {
+      site: [],
+      prompts: []
+    },
     openTabs: [],        // [{path, baseline, dirty}]  — populated after load
     activeTab: null,
     monacoInstance: null,
     monaco: null,
     disposed: false,
-    expandedFolders: new Set(saved?.expandedFolders || ['_partials', 'assets', 'assets/css', 'assets/js', 'assets/data', 'assets/forms']),
+    fontSize: saved?.fontSize || 13,
+    wordWrap: saved?.wordWrap || false,
+    expandedFolders: new Set(saved?.expandedFolders || ['_partials', 'assets', 'assets/css', 'assets/js', 'assets/data', 'assets/forms', '_prompts/actions']),
+    expandedSections: new Set(saved?.expandedSections || ['site', 'prompts']),
     // Paths to restore after init
     _pendingRestore: saved ? { tabs: saved.openTabs || [], active: saved.activeTab } : null,
   };
@@ -2106,7 +2159,10 @@ async function initEditorPage() {
       sessionStorage.setItem('vs-editor-state', JSON.stringify({
         openTabs: editorState.openTabs.map(t => t.path),
         activeTab: editorState.activeTab,
+        fontSize: editorState.fontSize,
+        wordWrap: editorState.wordWrap,
         expandedFolders: [...editorState.expandedFolders],
+        expandedSections: [...editorState.expandedSections],
       }));
     } catch { /* ignore quota errors */ }
   };
@@ -2124,6 +2180,7 @@ async function initEditorPage() {
   };
 
   const treeEl = document.getElementById('editor-tree');
+  const treePromptsEl = document.getElementById('editor-tree-prompts');
   const tabBarEl = document.getElementById('editor-tab-bar');
   const hostEl = document.getElementById('editor-host');
   const emptyStateEl = document.getElementById('editor-empty-state');
@@ -2135,10 +2192,31 @@ async function initEditorPage() {
   const newFileBtn = document.getElementById('editor-new-file');
   const sidebarEl = document.getElementById('editor-sidebar');
   const resizeEl = document.getElementById('editor-sidebar-resize');
+  const fontSizeSelect = document.getElementById('editor-font-size-select');
+  const wordWrapBtn = document.getElementById('editor-word-wrap-btn');
+
+  // Initialize UI controls
+  if (fontSizeSelect) fontSizeSelect.value = editorState.fontSize;
+  const updateWordWrapUI = () => {
+    if (!wordWrapBtn) return;
+    if (editorState.wordWrap) {
+      wordWrapBtn.style.color = 'var(--vs-accent)';
+      wordWrapBtn.style.backgroundColor = 'var(--vs-accent-dim)';
+    } else {
+      wordWrapBtn.style.color = 'var(--vs-text-ghost)';
+      wordWrapBtn.style.backgroundColor = 'transparent';
+    }
+  };
+  updateWordWrapUI();
 
   // ── Helpers ──
   const setStatus = (msg, type = 'muted') => {
     if (statusEl) { statusEl.textContent = msg; statusEl.dataset.state = type; }
+  };
+
+  const isFileReadonly = (path) => {
+    const file = editorState.files.find(f => f.path === path);
+    return file?.readonly === true;
   };
 
   const getFileIcon = (path) => {
@@ -2153,7 +2231,7 @@ async function initEditorPage() {
   };
 
   // ── Build tree structure from flat file list ──
-  const buildTree = (files) => {
+  const buildTree = (files, stripPrefix = '') => {
     const root = [];
     const folderMap = {};
 
@@ -2162,8 +2240,11 @@ async function initEditorPage() {
       const parts = folderPath.split('/');
       const name = parts[parts.length - 1];
       const parentPath = parts.slice(0, -1).join('/');
-      const folder = { name, path: folderPath, type: 'folder', children: [] };
+      
+      const realPath = stripPrefix ? stripPrefix + folderPath : folderPath;
+      const folder = { name, path: realPath, type: 'folder', children: [] };
       folderMap[folderPath] = folder;
+      
       if (parentPath) {
         const parent = ensureFolder(parentPath);
         parent.children.push(folder);
@@ -2174,7 +2255,9 @@ async function initEditorPage() {
     };
 
     for (const f of files) {
-      const parts = f.path.split('/');
+      const p = stripPrefix && f.path.startsWith(stripPrefix) ? f.path.substring(stripPrefix.length) : f.path;
+      const parts = p.split('/');
+      
       if (parts.length === 1) {
         root.push({ name: parts[0], path: f.path, type: 'file', meta: f });
       } else {
@@ -2219,21 +2302,59 @@ async function initEditorPage() {
         const isActive = editorState.activeTab === item.path;
         const tab = editorState.openTabs.find(t => t.path === item.path);
         const dirtyDot = tab?.dirty ? ' •' : '';
+        const isReadonly = isFileReadonly(item.path);
+        const readonlyLabel = isReadonly ? ' <span style="opacity: 0.5; font-size: 0.9em; margin-left: 4px;">(read-only)</span>' : '';
+        const isCustom = item.meta?.custom === true;
         const isProtected = item.meta?.protected === true;
-        const deleteBtn = isProtected ? '' : `
+        
+        let actionBtn = '';
+        if (isProtected) {
+          if (isCustom) {
+            actionBtn = `
+            <button class="vs-tree-item-restore" data-restore-file="${escapeHtml(item.path)}" title="Reset to default system prompt">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            </button>`;
+          }
+        } else {
+          actionBtn = `
             <button class="vs-tree-item-delete" data-delete-file="${escapeHtml(item.path)}" title="Delete file">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>`;
+        }
+        
         return `
           <div class="vs-tree-item" data-file="${escapeHtml(item.path)}" data-active="${isActive}" style="--tree-indent: ${depth};">
+            <span style="width: 14px; flex-shrink: 0;"></span><!-- toggle spacer for perfect vertical alignment -->
             <span class="vs-tree-item-icon">${getFileIcon(item.path)}</span>
-            <span class="vs-tree-item-name">${escapeHtml(item.name)}${dirtyDot}</span>
-            ${deleteBtn}
+            <span class="vs-tree-item-name">${escapeHtml(item.name)}${readonlyLabel}${dirtyDot}</span>
+            ${actionBtn}
           </div>
         `;
       }).join('');
     };
-    treeEl.innerHTML = renderItems(editorState.treeData);
+
+    // Update section expanded state
+    const updateSectionState = (sectionId, treeElement, wrapperElement) => {
+      const caret = wrapperElement.querySelector('.vs-explorer-caret');
+      const expanded = editorState.expandedSections.has(sectionId);
+      if (expanded) {
+        treeElement.style.display = 'block';
+        wrapperElement.classList.add('is-expanded');
+      } else {
+        treeElement.style.display = 'none';
+        wrapperElement.classList.remove('is-expanded');
+      }
+    };
+
+    const siteHeader = document.querySelector('[data-section="site"]');
+    const promptsHeader = document.querySelector('[data-section="prompts"]');
+
+    if (siteHeader) updateSectionState('site', treeEl, siteHeader);
+    if (promptsHeader && treePromptsEl) updateSectionState('prompts', treePromptsEl, promptsHeader);
+
+    treeEl.innerHTML = renderItems(editorState.treeData.site);
+    if (treePromptsEl) treePromptsEl.innerHTML = renderItems(editorState.treeData.prompts);
+    
     bindTreeEvents();
   };
 
@@ -2247,16 +2368,70 @@ async function initEditorPage() {
     tabBarEl.innerHTML = editorState.openTabs.map(tab => {
       const isActive = tab.path === editorState.activeTab;
       const fileName = tab.path.split('/').pop();
+      const isReadonly = isFileReadonly(tab.path);
+      const readonlyLabel = isReadonly ? ' <span style="opacity:0.5; font-size:0.9em; margin-left:4px;">(read-only)</span>' : '';
       return `
         <div class="vs-editor-tab" data-tab="${escapeHtml(tab.path)}" data-active="${isActive}" data-dirty="${tab.dirty}">
           <span class="vs-editor-tab-dot"></span>
-          <span class="vs-editor-tab-label">${escapeHtml(fileName)}</span>
+          <span class="vs-editor-tab-label">${escapeHtml(fileName)}${readonlyLabel}</span>
           <button class="vs-editor-tab-close" data-close-tab="${escapeHtml(tab.path)}" title="Close">${icons.x}</button>
         </div>
       `;
     }).join('') + '<div class="vs-editor-tab-empty"></div>';
     bindTabEvents();
+    updateTabScrollState();
   };
+
+  // ── Tab Scrolling Logic ──
+  let scrollInterval = null;
+  const startTabScroll = (direction) => {
+    if (!tabBarEl) return;
+    const speed = 8;
+    const scrollStep = () => {
+      tabBarEl.scrollLeft += (direction === 'left' ? -speed : speed);
+      updateTabScrollState();
+    };
+    scrollStep(); // immediate step
+    scrollInterval = setInterval(scrollStep, 16);
+  };
+  const stopTabScroll = () => {
+    if (scrollInterval) {
+      clearInterval(scrollInterval);
+      scrollInterval = null;
+    }
+  };
+  const updateTabScrollState = () => {
+    const leftBtn = document.getElementById('editor-tab-scroll-left');
+    const rightBtn = document.getElementById('editor-tab-scroll-right');
+    if (!tabBarEl || !leftBtn || !rightBtn) return;
+    
+    // Check if scrollable
+    const canScrollLeft = tabBarEl.scrollLeft > 0;
+    const canScrollRight = tabBarEl.scrollLeft < (tabBarEl.scrollWidth - tabBarEl.clientWidth - 1); // -1 for rounding
+    
+    leftBtn.style.display = canScrollLeft ? 'flex' : 'none';
+    rightBtn.style.display = canScrollRight ? 'flex' : 'none';
+  };
+  
+  if (tabBarEl) {
+    tabBarEl.addEventListener('scroll', updateTabScrollState, { passive: true });
+    window.addEventListener('resize', updateTabScrollState, { passive: true });
+  }
+
+  const scrollLeftBtn = document.getElementById('editor-tab-scroll-left');
+  const scrollRightBtn = document.getElementById('editor-tab-scroll-right');
+  
+  if (scrollLeftBtn) {
+    scrollLeftBtn.addEventListener('mousedown', () => startTabScroll('left'));
+    scrollLeftBtn.addEventListener('mouseup', stopTabScroll);
+    scrollLeftBtn.addEventListener('mouseleave', stopTabScroll);
+  }
+  
+  if (scrollRightBtn) {
+    scrollRightBtn.addEventListener('mousedown', () => startTabScroll('right'));
+    scrollRightBtn.addEventListener('mouseup', stopTabScroll);
+    scrollRightBtn.addEventListener('mouseleave', stopTabScroll);
+  }
 
   // ── Hide empty state, show Monaco ──
   const hideEmptyState = () => {
@@ -2321,6 +2496,23 @@ async function initEditorPage() {
     updateFileInfo();
     updateSaveState();
     renderTabs();
+    
+    // Auto-scroll newly active tab into view
+    setTimeout(() => {
+      if (tabBarEl) {
+        const activeTabEl = tabBarEl.querySelector('.vs-editor-tab[data-active="true"]');
+        if (activeTabEl) {
+          const tabRect = activeTabEl.getBoundingClientRect();
+          const barRect = tabBarEl.getBoundingClientRect();
+          if (tabRect.left < barRect.left) {
+            tabBarEl.scrollBy({ left: tabRect.left - barRect.left, behavior: 'smooth' });
+          } else if (tabRect.right > barRect.right) {
+            tabBarEl.scrollBy({ left: tabRect.right - barRect.right, behavior: 'smooth' });
+          }
+        }
+      }
+    }, 10);
+
     renderTree();
     persistEditorState();
   };
@@ -2404,6 +2596,49 @@ async function initEditorPage() {
     setStatus('Ready');
   };
 
+  // ── Restore a system file to its default ──
+  const restoreFile = async (path) => {
+    const filename = path.split('/').pop();
+    const confirmed = await showConfirmModal({
+      title: 'Reset system prompt?',
+      description: `Are you sure you want to reset "${filename}" to its original state? All your customizations will be lost.`,
+      confirmLabel: 'Reset to default',
+      cancelLabel: 'Cancel',
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    setStatus('Resetting…');
+    const { ok, error } = await api.delete(`/files?path=${encodeURIComponent(path)}`);
+    if (!ok) {
+      showToast(error?.message || 'Could not reset file.', 'error');
+      setStatus('Reset failed', 'error');
+      return;
+    }
+
+    // Force reload the file content if it is open
+    const tabIdx = editorState.openTabs.findIndex(t => t.path === path);
+    if (tabIdx !== -1) {
+      // Trigger a silent reload for the newly restored baseline
+      const { ok: okLoad, data } = await api.get(`/files/content?path=${encodeURIComponent(path)}`);
+      if (okLoad && typeof data?.content === 'string') {
+        const tab = editorState.openTabs[tabIdx];
+        tab.baseline = data.content;
+        tab.dirty = false;
+        tab._buffer = data.content;
+        if (editorState.activeTab === path) {
+          setEditorContent(data.content, path);
+        }
+      }
+    }
+
+    updateSaveState();
+    await loadFileTree();
+    persistEditorState();
+    showToast(`Reset ${filename} to default`, 'success');
+    setStatus('Ready');
+  };
+
   // ── Set Monaco content ──
   const setEditorContent = (content, path) => {
     if (!editorState.monacoInstance || !editorState.monaco) return;
@@ -2411,6 +2646,7 @@ async function initEditorPage() {
     if (model) {
       editorState.monacoInstance.setValue(content);
       editorState.monaco.editor.setModelLanguage(model, getCodeLanguage(path));
+      editorState.monacoInstance.updateOptions({ readOnly: isFileReadonly(path) });
     }
   };
 
@@ -2438,6 +2674,16 @@ async function initEditorPage() {
   const updateSaveState = () => {
     if (!saveBtn) return;
     const tab = editorState.openTabs.find(t => t.path === editorState.activeTab);
+    const isReadonly = editorState.activeTab ? isFileReadonly(editorState.activeTab) : false;
+
+    if (isReadonly) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Read-Only';
+      saveBtn.classList.remove('vs-btn-primary');
+      saveBtn.classList.add('vs-btn-ghost');
+      return;
+    }
+
     if (!tab || !tab.dirty) {
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saved';
@@ -2445,6 +2691,7 @@ async function initEditorPage() {
       saveBtn.classList.add('vs-btn-ghost');
       return;
     }
+    
     saveBtn.disabled = false;
     saveBtn.textContent = 'Save';
     saveBtn.classList.remove('vs-btn-ghost');
@@ -2509,33 +2756,83 @@ async function initEditorPage() {
     }
     setTimeout(() => refreshPreview(), 400);
     refreshPublishState({ silent: true });
+
+    // If tailwind.css is open in a tab, reload it secretly since backend might have rebuilt it 
+    const tailwindTab = editorState.openTabs.find(t => t.path === 'assets/css/tailwind.css');
+    if (tailwindTab && tab.path !== 'assets/css/tailwind.css') {
+      api.get(`/files/content?path=assets/css/tailwind.css`).then(({ ok, data }) => {
+        if (ok && typeof data?.content === 'string') {
+          tailwindTab.baseline = data.content;
+          tailwindTab._buffer = data.content;
+          if (editorState.activeTab === 'assets/css/tailwind.css' && editorState.monacoInstance) {
+            editorState.monacoInstance.setValue(data.content);
+          }
+        }
+      });
+    }
   };
 
   // ── Bind tree click events ──
   const bindTreeEvents = () => {
-    if (!treeEl) return;
-    treeEl.querySelectorAll('[data-file]').forEach(el => {
-      el.addEventListener('click', (e) => {
-        if (e.target.closest('[data-delete-file]')) return;
-        openFile(el.dataset.file);
+    // File clicks
+    const bindClicks = (el) => {
+      if (!el) return;
+      el.querySelectorAll('[data-file]').forEach(item => {
+        item.addEventListener('click', (e) => {
+          if (e.target.closest('[data-delete-file]')) return;
+          openFile(item.dataset.file);
+        });
       });
-    });
-    treeEl.querySelectorAll('[data-delete-file]').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        deleteFile(el.dataset.deleteFile);
+      // Bind Delete 
+      el.querySelectorAll('[data-delete-file]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteFile(btn.dataset.deleteFile);
+        });
       });
-    });
-    treeEl.querySelectorAll('[data-folder]').forEach(el => {
-      el.addEventListener('click', () => {
-        const folderPath = el.dataset.folder;
-        if (editorState.expandedFolders.has(folderPath)) {
-          editorState.expandedFolders.delete(folderPath);
+      
+      // Bind Restore 
+      el.querySelectorAll('[data-restore-file]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          restoreFile(btn.dataset.restoreFile);
+        });
+      });
+      el.querySelectorAll('.vs-tree-folder-toggle, .vs-tree-item[data-folder]').forEach(btn => {
+        // Prevent double binding by removing old listeners if needed (handled by innerHTML rewrite)
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const item = btn.closest('.vs-tree-item');
+          const path = item.dataset.folder;
+          if (editorState.expandedFolders.has(path)) {
+            editorState.expandedFolders.delete(path);
+          } else {
+            editorState.expandedFolders.add(path);
+          }
+          persistEditorState();
+          renderTree();
+        });
+      });
+    };
+
+    bindClicks(treeEl);
+    bindClicks(treePromptsEl);
+
+    // Section headers
+    document.querySelectorAll('.vs-explorer-section-header').forEach(header => {
+      // Clean up old ones just to be safe by replacing element, but innerHTML is not used for container
+      // Just check if we bound it already using a flag
+      if (header.dataset.bound) return;
+      header.dataset.bound = "true";
+      header.addEventListener('click', () => {
+        const sectionId = header.dataset.section;
+        if (editorState.expandedSections.has(sectionId)) {
+          editorState.expandedSections.delete(sectionId);
         } else {
-          editorState.expandedFolders.add(folderPath);
+          editorState.expandedSections.add(sectionId);
         }
-        renderTree();
         persistEditorState();
+        renderTree();
       });
     });
   };
@@ -2582,6 +2879,25 @@ async function initEditorPage() {
 
   // ── Save button ──
   saveBtn?.addEventListener('click', saveCurrentFile);
+
+  // ── Editor Controls ──
+  fontSizeSelect?.addEventListener('change', (e) => {
+    const size = parseInt(e.target.value, 10);
+    editorState.fontSize = size;
+    if (editorState.monacoInstance) {
+      editorState.monacoInstance.updateOptions({ fontSize: size });
+    }
+    persistEditorState();
+  });
+
+  wordWrapBtn?.addEventListener('click', () => {
+    editorState.wordWrap = !editorState.wordWrap;
+    updateWordWrapUI();
+    if (editorState.monacoInstance) {
+      editorState.monacoInstance.updateOptions({ wordWrap: editorState.wordWrap ? 'on' : 'off' });
+    }
+    persistEditorState();
+  });
 
   // ── Refresh tree ──
   refreshBtn?.addEventListener('click', () => loadFileTree());
@@ -2638,10 +2954,17 @@ async function initEditorPage() {
     const { ok, data, error } = await api.get('/files');
     if (!ok || !data?.files?.length) {
       if (treeEl) treeEl.innerHTML = '<div class="text-xs text-vs-text-ghost py-8 text-center">No files found. Generate a site first.</div>';
+      if (treePromptsEl) treePromptsEl.innerHTML = '';
       return;
     }
     editorState.files = data.files;
-    editorState.treeData = buildTree(data.files);
+    
+    // Split logically rather than storing one combined state
+    editorState.treeData = {
+      site: buildTree(data.files.filter(f => !f.path.startsWith('_prompts/'))),
+      prompts: buildTree(data.files.filter(f => f.path.startsWith('_prompts/')), '_prompts/')
+    };
+    
     renderTree();
   };
 
@@ -2668,12 +2991,12 @@ async function initEditorPage() {
       theme: editorTheme,
       automaticLayout: true,
       minimap: { enabled: true, maxColumn: 80 },
-      fontSize: 13,
+      fontSize: editorState.fontSize,
       lineHeight: 21,
       tabSize: 2,
       insertSpaces: true,
+      wordWrap: editorState.wordWrap ? 'on' : 'off',
       scrollBeyondLastLine: false,
-      wordWrap: 'on',
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
       renderLineHighlight: 'line',
       bracketPairColorization: { enabled: true },
@@ -2741,6 +3064,17 @@ async function ensureMonacoReady() {
         reject(new Error('Monaco loader is unavailable.'));
         return;
       }
+
+      window.MonacoEnvironment = {
+        getWorkerUrl: function (workerId, label) {
+          return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
+            self.MonacoEnvironment = {
+              baseUrl: '${window.location.origin}/_studio/ui/lib/monaco/'
+            };
+            importScripts('${window.location.origin}/_studio/ui/lib/monaco/vs/base/worker/workerMain.js');
+          `)}`;
+        }
+      };
 
       window.require.config({
         paths: { vs: '/_studio/ui/lib/monaco/vs' },

@@ -3271,7 +3271,7 @@ select.vs-input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 8px 0 16px;
+  padding: 0 8px 0 20px;
   height: 38px;
   min-height: 38px;
   border-bottom: 1px solid var(--vs-border-subtle);
@@ -3285,6 +3285,47 @@ select.vs-input {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--vs-text-secondary);
+}
+
+.vs-explorer-section-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px 6px 4px; /* Chevron at 4px. Text at 4 + 14 + 4 = 22px (aligns close to 20px EXPLORER text) */
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--vs-text-muted);
+  cursor: pointer;
+  user-select: none;
+  letter-spacing: 0.05em;
+  transition: color 150ms var(--ease-out);
+  border-top: 1px solid var(--vs-border-subtle);
+  background: var(--vs-bg-base);
+}
+
+.vs-explorer-section:first-child .vs-explorer-section-header {
+  border-top: none;
+}
+
+.vs-explorer-section-header:hover {
+  color: var(--vs-text-base);
+  background: var(--vs-bg-raised);
+}
+
+.vs-explorer-section-header.is-expanded {
+  color: var(--vs-text-base);
+}
+
+.vs-explorer-caret {
+  width: 14px;
+  height: 14px;
+  margin-right: 4px;
+  transition: transform 150ms var(--ease-out);
+  transform: rotate(0deg);
+}
+
+.vs-explorer-section-header.is-expanded .vs-explorer-caret {
+  transform: rotate(90deg);
 }
 
 .vs-editor-tree {
@@ -3308,7 +3349,7 @@ select.vs-input {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 12px 3px calc(8px + var(--tree-indent, 0) * 20px);
+  padding: 3px 12px 3px calc(14px + var(--tree-indent, 0) * 16px);
   font-size: 0.8rem;
   color: var(--vs-text-secondary);
   cursor: pointer;
@@ -3351,7 +3392,8 @@ select.vs-input {
   text-overflow: ellipsis;
 }
 
-.vs-tree-item-delete {
+.vs-tree-item-delete,
+.vs-tree-item-restore {
   flex-shrink: 0;
   display: none;
   align-items: center;
@@ -3369,7 +3411,8 @@ select.vs-input {
   transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
 }
 
-.vs-tree-item:hover .vs-tree-item-delete {
+.vs-tree-item:hover .vs-tree-item-delete,
+.vs-tree-item:hover .vs-tree-item-restore {
   display: flex;
   opacity: 0.6;
 }
@@ -3378,6 +3421,12 @@ select.vs-input {
   opacity: 1;
   color: var(--vs-danger, #ef4444);
   background: color-mix(in srgb, var(--vs-danger, #ef4444) 10%, transparent);
+}
+
+.vs-tree-item-restore:hover {
+  opacity: 1;
+  color: var(--vs-accent);
+  background: color-mix(in srgb, var(--vs-accent) 15%, transparent);
 }
 
 .vs-tree-folder-toggle {
@@ -4364,6 +4413,7 @@ select.vs-input {
   margin-bottom: 4px;
   display: -webkit-box;
   -webkit-line-clamp: 1;
+  line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

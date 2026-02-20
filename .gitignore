@@ -133,3 +133,5 @@ assets/forms/*
 /docs
 CLAUDE.md
 _studio/logs/
+_studio/custom_prompts/*
+!_studio/custom_prompts/.gitkeep

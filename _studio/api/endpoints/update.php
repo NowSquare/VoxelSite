@@ -328,6 +328,7 @@ function applyUpdate(
         '_studio/backups/',
         '_studio/logs/',
         '_studio/data/',
+        '_studio/custom_prompts/',
         '_data/',
 
         // User assets (AI-generated and uploaded)

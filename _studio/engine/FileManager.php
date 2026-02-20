@@ -21,6 +21,8 @@ class FileManager
 {
     private string $previewPath;
     private string $assetsPath;
+    private string $promptsPath;
+    private string $customPromptsPath;
     private Database $db;
 
     public function __construct(?Database $db = null)
@@ -28,6 +30,8 @@ class FileManager
         $this->db = $db ?? Database::getInstance();
         $this->previewPath = dirname(__DIR__) . '/preview';
         $this->assetsPath = dirname(__DIR__, 2) . '/assets';
+        $this->promptsPath = dirname(__DIR__) . '/prompts';
+        $this->customPromptsPath = dirname(__DIR__) . '/custom_prompts';
     }
 
     /**
@@ -258,9 +262,7 @@ CSS;
         // Auto-fix common AI model mistakes before writing
         $content = $this->fixCommonModelMistakes($relativePath, $content);
 
-        $absolutePath = $this->resolveWritePath($relativePath);
-
-        // Ensure parent directory exists
+        $absolutePath = $this->resolvePath($relativePath, true);
         $dir = dirname($absolutePath);
         if (!is_dir($dir)) {
             if (!mkdir($dir, 0755, true)) {
@@ -447,7 +449,7 @@ CSS;
      */
     private function injectFormHandlerIntoFooter(): void
     {
-        $footerPath = $this->resolveWritePath('_partials/footer.php');
+        $footerPath = $this->resolvePath('_partials/footer.php', true);
         if (!file_exists($footerPath)) {
             return;
         }
@@ -681,7 +683,7 @@ CSS;
         //   about.php → assets/js/about.js
         $basename = pathinfo(basename($phpPath), PATHINFO_FILENAME);
         $jsRelPath = "assets/js/{$basename}.js";
-        $jsAbsPath = $this->resolveWritePath($jsRelPath);
+        $jsAbsPath = $this->resolvePath($jsRelPath, true);
 
         // Ensure directory exists
         $jsDir = dirname($jsAbsPath);
@@ -767,7 +769,7 @@ CSS;
      */
     public function deleteFile(string $relativePath): void
     {
-        $absolutePath = $this->resolveWritePath($relativePath);
+        $absolutePath = $this->resolvePath($relativePath, true);
 
         if (file_exists($absolutePath)) {
             unlink($absolutePath);
@@ -781,7 +783,7 @@ CSS;
      */
     public function readFile(string $relativePath): ?string
     {
-        $absolutePath = $this->resolveWritePath($relativePath);
+        $absolutePath = $this->resolvePath($relativePath, false);
         if (!is_file($absolutePath)) {
             return null;
         }
@@ -1340,7 +1342,7 @@ CSS;
             );
         }
 
-        $absolutePath = $this->resolveWritePath($relativePath);
+        $absolutePath = $this->resolvePath($relativePath, true);
 
         // Read existing file, or start from empty object
         $existing = [];
@@ -1414,18 +1416,20 @@ CSS;
     }
 
     /**
-     * Resolve a relative file path to an absolute write path.
+     * Resolve a relative file path to an absolute path.
      *
      * PHP page files go to preview/. _partials/ go to preview/_partials/.
      * Asset files go to /assets/.
      * All paths are validated with realpath() on the parent
      * directory to prevent directory traversal.
      */
-    private function resolveWritePath(string $relativePath): string
+    private function resolvePath(string $relativePath, bool $forWrite = false): string
     {
         $normalizedPath = $this->normalizeRelativePath($relativePath);
         $previewBase = realpath($this->previewPath) ?: $this->previewPath;
         $assetsBase = realpath($this->assetsPath) ?: $this->assetsPath;
+        $promptsBase = realpath($this->promptsPath) ?: $this->promptsPath;
+        $customPromptsBase = realpath($this->customPromptsPath) ?: $this->customPromptsPath;
 
         if (str_starts_with($normalizedPath, 'assets/')) {
             $assetRelativePath = substr($normalizedPath, strlen('assets/'));
@@ -1434,6 +1438,32 @@ CSS;
             }
             $baseDir = $assetsBase;
             $absolutePath = rtrim($assetsBase, '/\\') . '/' . $assetRelativePath;
+        } elseif (str_starts_with($normalizedPath, '_prompts/')) {
+            $promptRelativePath = substr($normalizedPath, strlen('_prompts/'));
+            if ($promptRelativePath === '') {
+                throw new RuntimeException("Invalid file path: {$relativePath}");
+            }
+            
+            // Core fallback logic for updater overwrite protection
+            if ($forWrite) {
+                // Always write to custom_prompts directory so updater doesn't kill modifications
+                $baseDir = $customPromptsBase;
+                $absolutePath = rtrim($customPromptsBase, '/\\') . '/' . $promptRelativePath;
+                $dir = dirname($absolutePath);
+                if (!is_dir($dir)) {
+                    mkdir($dir, 0755, true);
+                }
+            } else {
+                // Read from custom_prompts if exists, otherwise fallback to vanilla prompts
+                $customPath = rtrim($customPromptsBase, '/\\') . '/' . $promptRelativePath;
+                if (is_file($customPath)) {
+                    $baseDir = $customPromptsBase;
+                    $absolutePath = $customPath;
+                } else {
+                    $baseDir = $promptsBase;
+                    $absolutePath = rtrim($promptsBase, '/\\') . '/' . $promptRelativePath;
+                }
+            }
         } else {
             $baseDir = $previewBase;
             $absolutePath = rtrim($previewBase, '/\\') . '/' . $normalizedPath;

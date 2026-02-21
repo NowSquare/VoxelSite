@@ -94,6 +94,11 @@ CSS;
     private function registerThemeColors(): void
     {
         $basePath = dirname(__DIR__, 2) . '/assets/css/';
+        // Resolve symlinks (Forge/Envoyer shared directories)
+        $resolvedBase = realpath($basePath);
+        if ($resolvedBase !== false) {
+            $basePath = rtrim($resolvedBase, '/') . '/';
+        }
         $css = '';
 
         // Primary source: style.css (new architecture)
@@ -125,25 +130,38 @@ CSS;
      * Scans _studio/preview/ for PHP files, extracts Tailwind classes,
      * resolves them to CSS, and writes assets/css/tailwind.css.
      *
-     * @return bool True if compilation succeeded
+     * @return array{ok: bool, class_count: int} Compilation result
      */
-    public function compile(?string $scanDir = null, ?string $outputPath = null): bool
+    public function compile(?string $scanDir = null, ?string $outputPath = null): array
     {
         $scanDir    = $scanDir ?? dirname(__DIR__) . '/preview';
         $outputPath = $outputPath ?? dirname(__DIR__, 2) . '/assets/css/tailwind.css';
+
+        // Resolve symlinks so Forge/Envoyer shared directories work
+        $resolvedScan = realpath($scanDir);
+        if ($resolvedScan !== false) {
+            $scanDir = $resolvedScan;
+        }
+
+        // Resolve the output directory (the file may not exist yet, resolve parent)
+        $outputDir = dirname($outputPath);
+        $resolvedOutputDir = realpath($outputDir);
+        if ($resolvedOutputDir !== false) {
+            $outputPath = $resolvedOutputDir . '/' . basename($outputPath);
+        }
 
         if (!is_dir($scanDir)) {
             Logger::warning('tailwind', 'Scan directory does not exist', [
                 'scanDir'  => $scanDir,
                 'realpath' => realpath($scanDir),
             ]);
-            return false;
+            return ['ok' => false, 'class_count' => 0];
         }
 
         // Log what files exist in the scan directory
         $fileList = [];
         $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($scanDir, \FilesystemIterator::SKIP_DOTS)
+            new \RecursiveDirectoryIterator($scanDir, \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS)
         );
         foreach ($iterator as $file) {
             if ($file->isFile()) {
@@ -166,12 +184,12 @@ CSS;
         if (empty($classes)) {
             // Write resets even with no utility classes
             $this->writeOutput($outputPath, self::PREFLIGHT_RESETS);
-            return true;
+            return ['ok' => true, 'class_count' => 0];
         }
 
         $css = $this->compileClasses($classes);
         $this->writeOutput($outputPath, self::PREFLIGHT_RESETS . "\n" . $css);
-        return true;
+        return ['ok' => true, 'class_count' => count($classes)];
     }
 
     /**
@@ -209,7 +227,7 @@ CSS;
     {
         $classes = [];
         $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS)
         );
         foreach ($iterator as $file) {
             if (!$file->isFile()) continue;

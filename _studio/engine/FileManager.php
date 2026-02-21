@@ -92,8 +92,10 @@ class FileManager
 
     /**
      * Compile the generated Tailwind bundle from current preview files.
+     *
+     * @return array{ok: bool, class_count: int}
      */
-    public function compileTailwind(): bool
+    public function compileTailwind(): array
     {
         $compiler = new TailwindCompiler();
         return $compiler->compile();

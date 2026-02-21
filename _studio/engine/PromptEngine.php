@@ -330,11 +330,12 @@ class PromptEngine
                                     // in a usable state so the site has CSS even if the
                                     // stream is interrupted. The compiler is fast (<500ms).
                                     if (str_ends_with($file['path'], '.php') || str_ends_with($file['path'], '.css')) {
-                                        $compileOk = $this->fileManager->compileTailwind();
+                                        $compileResult = $this->fileManager->compileTailwind();
                                         $twPath = dirname(__DIR__, 2) . '/assets/css/tailwind.css';
                                         Logger::info('files', 'Mid-stream Tailwind compile', [
-                                            'trigger'    => $file['path'],
-                                            'success'    => $compileOk,
+                                            'trigger'     => $file['path'],
+                                            'success'     => $compileResult['ok'] ?? false,
+                                            'class_count' => $compileResult['class_count'] ?? 0,
                                             'output_size' => file_exists($twPath) ? filesize($twPath) : 0,
                                         ]);
                                     }

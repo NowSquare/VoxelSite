@@ -838,7 +838,8 @@ async function initEditorPage() {
             }
           }
 
-          showToast('Tailwind CSS recompiled.', 'success');
+          const classCount = data.class_count ?? 0;
+          showToast(`Tailwind CSS recompiled — ${classCount} utilities.`, 'success');
           setStatus('Compiled');
         });
       });

@@ -277,8 +277,8 @@ if ($method === 'POST' && $path === '/files/create') {
 // ── Recompile Tailwind CSS from current preview files ──
 if ($method === 'POST' && $path === '/files/compile-tailwind') {
     try {
-        $ok = $fileManager->compileTailwind();
-        if (!$ok) {
+        $result = $fileManager->compileTailwind();
+        if (!($result['ok'] ?? false)) {
             jsonResponse(['ok' => false, 'error' => [
                 'code'    => 'compile_failed',
                 'message' => 'Tailwind compilation failed.',
@@ -289,11 +289,19 @@ if ($method === 'POST' && $path === '/files/compile-tailwind') {
         // Read the freshly compiled file to return its content
         $twPath = 'assets/css/tailwind.css';
         $absoluteTw = dirname(__DIR__, 3) . '/' . $twPath;
+        // Also try the realpath-resolved location (Forge symlinks)
+        if (!is_file($absoluteTw)) {
+            $resolvedDir = realpath(dirname($absoluteTw));
+            if ($resolvedDir !== false) {
+                $absoluteTw = $resolvedDir . '/tailwind.css';
+            }
+        }
         $content = is_file($absoluteTw) ? file_get_contents($absoluteTw) : '';
 
         jsonResponse(['ok' => true, 'data' => [
-            'path'    => $twPath,
-            'content' => $content,
+            'path'        => $twPath,
+            'content'     => $content,
+            'class_count' => $result['class_count'] ?? 0,
         ]]);
         return;
     } catch (\Throwable $e) {

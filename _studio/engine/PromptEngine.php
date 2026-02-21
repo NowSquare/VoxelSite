@@ -1341,19 +1341,19 @@ The AI creates `_partials/nav.php` and `_partials/footer.php` from scratch using
 ### CSS strategy
 
 1. **`assets/css/tailwind.css`** — Auto-compiled by TailwindCompiler. Includes Preflight resets. Never write this file manually.
-2. **`assets/css/style.css`** — Design tokens in `:root` at the top, followed by custom styles that Tailwind can't express: complex animations, scroll-driven effects, gradients.
+2. **`assets/css/style.css`** — ONLY for design tokens (`:root` custom properties) and effects Tailwind cannot express (`@keyframes`, `[data-reveal]` transitions). NEVER add component classes.
 
-`style.css` contains design tokens and body styles, then any custom component CSS:
+`style.css` structure — tokens and animations only:
 ```css
 :root {
   --color-primary: hsl(220, 60%, 50%);
   --color-primary-light: hsl(220, 40%, 95%);
-  /* ... design tokens for the site's palette, fonts, spacing ... */
+  /* Design tokens: palette, fonts, spacing */
 }
 html { scroll-behavior: smooth; }
 body { font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); line-height:1.7; }
 
-/* Custom component styles below ... */
+/* ONLY @keyframes and [data-reveal] below — NEVER component classes like .hero, .card, .btn */
 ```
 
 Preflight resets (box-sizing, link underlines, list bullets, img block display, heading/form normalization) are automatically prepended to `tailwind.css` by the TailwindCompiler.
@@ -1361,7 +1361,7 @@ Preflight resets (box-sizing, link underlines, list bullets, img block display, 
 ## Rules
 
 1. Use PHP includes for header/nav/footer. Never duplicate nav across pages.
-2. Style with Tailwind utility classes in HTML. Use `style.css` for `:root` design tokens + custom effects.
+2. **ALL HTML styling uses Tailwind utility classes** (`flex`, `bg-gray-900`, `px-6`, `py-24`, `text-white`, `hover:bg-primary-600`, `md:grid-cols-3`). Use `style.css` ONLY for `:root` design tokens + `@keyframes` + `[data-reveal]`.
 3. Semantic HTML5 with proper heading hierarchy.
 4. Never output `assets/css/tailwind.css` — it is compiled automatically from your HTML.
 5. Custom CSS in `assets/css/style.css` only for design tokens and effects Tailwind can't express (complex animations, scroll-driven effects).
@@ -1374,7 +1374,7 @@ Preflight resets (box-sizing, link underlines, list bullets, img block display, 
 12. CRITICAL: Never put raw HTML directly after `<?php` without closing the PHP block first with `?>`. Partials that start with HTML should NOT open with `<?php`.
 13. Home page links MUST use `href="/"` — never `/home`, `/index`, or `/index.php`. The home page is `index.php` served at `/`.
 14. All color custom properties in `style.css` MUST use the `--color-` prefix (e.g. `--color-primary`, `--color-bg`, `--color-dark-800`). This enables the Tailwind compiler to resolve classes like `bg-primary`, `text-accent`, `bg-dark-800` automatically.
-15. NEVER use a CSS class that doesn't exist in `style.css`. If you write `class="hero-bg"` or `class="card-glow"`, that class MUST be defined in `style.css`. Phantom classes = broken styling. For one-off effects, use inline `style="..."` or Tailwind classes instead.
+15. **NEVER create custom component classes** like `.hero-section`, `.btn-primary`, `.card`, `.section-header`, `.fragrance-card`, `.collection-grid`. These bypass the TailwindCompiler. Use Tailwind utilities in HTML instead. For one-off effects, use inline `style="..."` attributes.
 16. When REMOVING a page, you MUST emit a `<file path="page.php" action="delete" />` tag for each file AND update `_partials/nav.php`. Both are required — without the delete tag, the file stays on disk.
 PROMPT;
     }

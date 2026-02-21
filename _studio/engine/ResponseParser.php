@@ -446,7 +446,9 @@ class ResponseParser
 
         // CSS file validation
         if (str_ends_with($path, '.css')) {
-            if (!str_contains($content, '{')) {
+            $hasRules = str_contains($content, '{');
+            $hasAtRules = (bool) preg_match('/@(tailwind|import|layer|apply|theme|config|charset|font-face|media|keyframes|supports|use)\b/', $content);
+            if (!$hasRules && !$hasAtRules) {
                 return 'CSS file has no rules — likely truncated or empty.';
             }
         }

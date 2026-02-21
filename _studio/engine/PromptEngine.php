@@ -665,24 +665,43 @@ class PromptEngine
         $promptsPath = dirname(__DIR__) . '/prompts';
         $customPromptsPath = dirname(__DIR__) . '/custom_prompts';
 
-        $masterPath = file_exists($customPromptsPath . '/system.md') 
-            ? $customPromptsPath . '/system.md' 
-            : $promptsPath . '/system.md';
-        $systemPrompt = file_exists($masterPath)
-            ? file_get_contents($masterPath)
-            : $this->getDefaultSystemPrompt();
+        // Determine system prompt source — with diagnostic logging for Forge debugging
+        $promptSource = 'default_fallback';
+        $masterPath = null;
+
+        if (file_exists($customPromptsPath . '/system.md')) {
+            $masterPath = $customPromptsPath . '/system.md';
+            $promptSource = 'custom_prompts';
+        } elseif (file_exists($promptsPath . '/system.md')) {
+            $masterPath = $promptsPath . '/system.md';
+            $promptSource = 'prompts';
+        }
+
+        if ($masterPath !== null) {
+            $systemPrompt = file_get_contents($masterPath);
+            if ($systemPrompt === false || $systemPrompt === '') {
+                $promptSource = 'default_fallback (read failed)';
+                $systemPrompt = $this->getDefaultSystemPrompt();
+            }
+        } else {
+            $systemPrompt = $this->getDefaultSystemPrompt();
+        }
 
         // Action-specific addition
-        $actionPath = file_exists($customPromptsPath . '/actions/' . $actionType . '.md')
-            ? $customPromptsPath . '/actions/' . $actionType . '.md'
-            : $promptsPath . '/actions/' . $actionType . '.md';
-            
-        if (file_exists($actionPath)) {
+        $actionSource = 'none';
+        $actionPath = null;
+
+        if (file_exists($customPromptsPath . '/actions/' . $actionType . '.md')) {
+            $actionPath = $customPromptsPath . '/actions/' . $actionType . '.md';
+            $actionSource = 'custom_prompts';
+        } elseif (file_exists($promptsPath . '/actions/' . $actionType . '.md')) {
+            $actionPath = $promptsPath . '/actions/' . $actionType . '.md';
+            $actionSource = 'prompts';
+        }
+
+        if ($actionPath !== null) {
             $actionPrompt = trim(file_get_contents($actionPath));
-            // Only swap if action actually has an instruction
             if ($actionPrompt !== '') {
-                // If action uses the <request> placeholder, wait for the second pass
-                // If there's no <request> tag in the action file, just append it
                 if (str_contains($actionPrompt, '<request>')) {
                     $systemPrompt = $actionPrompt;
                 } else {
@@ -690,6 +709,16 @@ class PromptEngine
                 }
             }
         }
+
+        Logger::debug('ai', 'System prompt loaded', [
+            'prompt_source' => $promptSource,
+            'action_type'   => $actionType,
+            'action_source' => $actionSource,
+            'prompts_path'  => $promptsPath,
+            'prompts_exist' => is_dir($promptsPath),
+            'master_path'   => $masterPath,
+            'prompt_length' => strlen($systemPrompt),
+        ]);
 
         // Provider-agnostic contract: require a deterministic JSON envelope.
         // ResponseParser still accepts legacy <file>/<message> output as fallback.

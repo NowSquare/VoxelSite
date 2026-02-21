@@ -321,6 +321,14 @@ CSS;
         // CSS: Fix .root { → :root { (variables on class instead of pseudo-class)
         if (str_ends_with($path, '.css')) {
             $content = preg_replace('/^\.root\s*\{/m', ':root {', $content);
+
+            // Sanitize non-ASCII characters that break CSS parsing on some servers.
+            // AI models use Unicode box-drawing (═══, ───), em dashes (—), curly
+            // quotes (' ' " "), and other decorative chars in CSS comments.
+            // If the web server doesn't send charset=utf-8 for CSS files, browsers
+            // may misinterpret these multi-byte sequences and fail to parse the
+            // entire stylesheet — breaking all styling.
+            $content = $this->sanitizeCssEncoding($content);
         }
 
         // CSS: Inject standard design tokens into style.css
@@ -1590,5 +1598,55 @@ CSS;
         }
 
         return null;
+    }
+
+    /**
+     * Replace non-ASCII decorative characters in CSS with safe ASCII equivalents.
+     *
+     * AI models often use Unicode box-drawing characters (═══, ───), em dashes (—),
+     * smart quotes (' ' " "), and other decorative chars in CSS comments. These are
+     * valid UTF-8, but if the web server doesn't include charset=utf-8 in the
+     * Content-Type header for CSS files, browsers may interpret them incorrectly,
+     * producing garbled multi-byte sequences that can confuse the CSS parser.
+     *
+     * This method replaces common decorative Unicode characters with ASCII equivalents
+     * to make CSS files encoding-safe. Only affects known decorative patterns —
+     * CSS property values (font names, content strings) are untouched because they
+     * rarely use these specific characters.
+     */
+    private function sanitizeCssEncoding(string $css): string
+    {
+        $replacements = [
+            // Box-drawing characters → ASCII equivalents
+            "\xE2\x95\x90" => '=',  // ═ (double horizontal)
+            "\xE2\x95\x91" => '|',  // ║ (double vertical)
+            "\xE2\x95\x94" => '+',  // ╔
+            "\xE2\x95\x97" => '+',  // ╗
+            "\xE2\x95\x9A" => '+',  // ╚
+            "\xE2\x95\x9D" => '+',  // ╝
+            "\xE2\x94\x80" => '-',  // ─ (single horizontal)
+            "\xE2\x94\x82" => '|',  // │ (single vertical)
+            "\xE2\x94\x8C" => '+',  // ┌
+            "\xE2\x94\x90" => '+',  // ┐
+            "\xE2\x94\x94" => '+',  // └
+            "\xE2\x94\x98" => '+',  // ┘
+            "\xE2\x94\x9C" => '+',  // ├
+            "\xE2\x94\xA4" => '+',  // ┤
+            "\xE2\x94\xAC" => '+',  // ┬
+            "\xE2\x94\xB4" => '+',  // ┴
+            "\xE2\x94\xBC" => '+',  // ┼
+
+            // Typography → ASCII
+            "\xE2\x80\x94" => '--', // — (em dash)
+            "\xE2\x80\x93" => '-',  // – (en dash)
+            "\xE2\x80\x98" => "'",  // ' (left single quote)
+            "\xE2\x80\x99" => "'",  // ' (right single quote)
+            "\xE2\x80\x9C" => '"',  // " (left double quote)
+            "\xE2\x80\x9D" => '"',  // " (right double quote)
+            "\xE2\x80\xA6" => '...', // … (ellipsis)
+            "\xC2\xA0"     => ' ',  // non-breaking space
+        ];
+
+        return strtr($css, $replacements);
     }
 }

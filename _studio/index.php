@@ -58,26 +58,8 @@ $basePath = '/_studio';
   <script src="<?= $basePath ?>/ui/lib/marked.min.js" defer></script>
   <script src="<?= $basePath ?>/ui/lib/prism.min.js" defer></script>
 
-  <!-- Import map: version all ES module files to prevent stale caches.
-       Relative specifiers (./api.js) are resolved by the browser BEFORE
-       the import map, so the keys must be the fully-resolved URLs. -->
-  <?php
-    $moduleFiles = ['api.js', 'state.js', 'router.js', 'theme.js', 'icons.js', 'shortcuts.js', 'visual-editor.js'];
-    $imports = [];
-    foreach ($moduleFiles as $mod) {
-        $filePath = __DIR__ . '/ui/' . $mod;
-        $ver = file_exists($filePath) ? filemtime($filePath) : time();
-        // Key = the resolved URL the browser will look up
-        $imports["{$basePath}/ui/{$mod}"] = "{$basePath}/ui/{$mod}?v={$ver}";
-    }
-  ?>
-  <script type="importmap">
-  <?= json_encode(['imports' => $imports], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?>
-
-  </script>
-
-  <!-- Studio application -->
-  <script type="module" src="<?= $basePath ?>/ui/app.js?v=<?= filemtime(__DIR__ . '/ui/app.js') ?>"></script>
+  <!-- Studio application — single bundle built by esbuild -->
+  <script src="<?= $basePath ?>/ui/dist/studio.js?v=<?= filemtime(__DIR__ . '/ui/dist/studio.js') ?>" defer></script>
 
 </body>
 </html>

@@ -43,8 +43,9 @@ Desktop.ini
 *.swp
 *.swo
 
-# ── Tailwind source (dev only, not shipped) ──
-# _studio/ui/src/ is excluded from dist ZIP but tracked in git
+# ── Studio source and build output (both tracked in git, both shipped) ──
+# _studio/ui/src/ contains Tailwind CSS source and JS modules (icons, helpers, views)
+# _studio/ui/dist/ contains compiled studio.css + studio.js
 
 # ── Runtime data (created by the application) ──
 _studio/data/studio.db

@@ -1,17 +1,23 @@
 {
   "name": "voxelsite",
   "version": "1.0.0",
+  "type": "module",
   "private": true,
   "description": "VoxelSite Studio — development tooling (not shipped to buyers)",
   "scripts": {
-    "build": "npx @tailwindcss/cli -i ./_studio/ui/src/studio.src.css -o ./_studio/ui/dist/studio.css --minify",
-    "watch": "npx @tailwindcss/cli -i ./_studio/ui/src/studio.src.css -o ./_studio/ui/dist/studio.css --watch",
+    "build:css": "npx @tailwindcss/cli -i ./_studio/ui/src/studio.src.css -o ./_studio/ui/dist/studio.css --minify",
+    "build:js": "node esbuild.config.js",
+    "build": "npm run build:css && npm run build:js",
+    "watch:css": "npx @tailwindcss/cli -i ./_studio/ui/src/studio.src.css -o ./_studio/ui/dist/studio.css --watch",
+    "watch:js": "node esbuild.config.js --watch",
+    "watch": "npm run watch:css & npm run watch:js",
     "icons": "mkdir -p ./assets/icons && cp ./node_modules/lucide-static/icons/*.svg ./assets/icons/",
     "vendor:monaco": "mkdir -p ./_studio/ui/lib/monaco && rm -rf ./_studio/ui/lib/monaco/vs && cp -R ./node_modules/monaco-editor/min/vs ./_studio/ui/lib/monaco/vs",
     "postinstall": "npm run icons && npm run vendor:monaco"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4",
+    "esbuild": "^0.25.0",
     "lucide-static": "^0.563.0",
     "monaco-editor": "^0.52.2"
   }

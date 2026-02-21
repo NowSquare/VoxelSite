@@ -149,6 +149,37 @@ if ($method === 'POST' && $path === '/publish') {
     $settings->set('last_published_at', now());
     $settings->set('publish_count', (string) ((int) $settings->get('publish_count', '0') + 1));
 
+    // ── Step 3b: Recompile Tailwind + ensure assets reach docroot ──
+    // On Forge atomic deployments, the compiler may write to a shared/symlinked
+    // assets directory while the web server reads from the release's own assets/.
+    // We compile to BOTH the default path and the explicit docroot path.
+    $docRootAssets = $docRoot . '/assets';
+    try {
+        $fileManager = new \VoxelSite\FileManager($db);
+        $compileResult = $fileManager->compileTailwind();
+
+        // Also compile directly to the docroot assets path (may be different due to symlinks)
+        $compiler = new \VoxelSite\TailwindCompiler();
+        $docRootTw = $docRootAssets . '/css/tailwind.css';
+        $compileResult2 = $compiler->compile(null, $docRootTw);
+
+        Logger::info('system', 'Publish: Tailwind compiled', [
+            'default_ok'    => $compileResult['ok'] ?? false,
+            'default_size'  => $compileResult['css_size'] ?? 0,
+            'docroot_ok'    => $compileResult2['ok'] ?? false,
+            'docroot_size'  => $compileResult2['css_size'] ?? 0,
+            'docroot_path'  => $docRootTw,
+            'class_count'   => $compileResult2['class_count'] ?? 0,
+        ]);
+    } catch (\Throwable $e) {
+        $errors[] = 'Tailwind compile: ' . $e->getMessage();
+    }
+
+    // Copy style.css, JS, data, and forms from the internal assets path to docroot
+    // This ensures AI-written assets survive atomic deploys even without shared dirs
+    $internalAssetsDir = dirname(__DIR__, 3) . '/assets';
+    syncAssetDirectory($internalAssetsDir, $docRootAssets);
+
     // ── Step 4: Auto-generate AEO files (llms.txt, robots.txt, Schema.org, MCP) ──
     $aeoFiles = [];
     try {
@@ -481,6 +512,71 @@ function copyFileAtomic(string $sourcePath, string $targetPath): bool
     }
 
     return true;
+}
+
+/**
+ * Sync asset files from one directory to another.
+ *
+ * Used during publish to copy compiled CSS/JS from the internal assets
+ * path (which may be a shared/symlinked directory on Forge) to the
+ * document root's assets directory (which may be a different directory
+ * in each atomic release).
+ *
+ * Only copies files that are missing or differ (size/hash check).
+ * Skips .gitkeep and hidden files.
+ *
+ * @return array<int, string> Relative paths of files that were synced
+ */
+function syncAssetDirectory(string $sourceDir, string $targetDir): array
+{
+    $synced = [];
+    $subdirs = ['css', 'js', 'data', 'forms'];
+
+    foreach ($subdirs as $subdir) {
+        $srcSub = $sourceDir . '/' . $subdir;
+        if (!is_dir($srcSub)) {
+            continue;
+        }
+
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($srcSub, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($iterator as $file) {
+            if (!$file->isFile()) {
+                continue;
+            }
+
+            $relativePath = $subdir . '/' . $iterator->getSubPathname();
+
+            // Skip gitkeep and hidden files
+            $basename = $file->getBasename();
+            if ($basename === '.gitkeep' || str_starts_with($basename, '.')) {
+                continue;
+            }
+
+            $target = $targetDir . '/' . $relativePath;
+
+            // Skip if target is identical (fast size check, then hash)
+            if (file_exists($target)
+                && filesize($target) === $file->getSize()
+                && md5_file($target) === md5_file($file->getPathname())) {
+                continue;
+            }
+
+            $dir = dirname($target);
+            if (!is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+
+            if (copy($file->getPathname(), $target)) {
+                $synced[] = $relativePath;
+            }
+        }
+    }
+
+    return $synced;
 }
 
 /**

@@ -134,6 +134,7 @@ CSS;
      */
     public function compile(?string $scanDir = null, ?string $outputPath = null): array
     {
+        $explicitOutput = $outputPath !== null;
         $scanDir    = $scanDir ?? dirname(__DIR__) . '/preview';
         $outputPath = $outputPath ?? dirname(__DIR__, 2) . '/assets/css/tailwind.css';
 
@@ -143,11 +144,16 @@ CSS;
             $scanDir = $resolvedScan;
         }
 
-        // Resolve the output directory (the file may not exist yet, resolve parent)
-        $outputDir = dirname($outputPath);
-        $resolvedOutputDir = realpath($outputDir);
-        if ($resolvedOutputDir !== false) {
-            $outputPath = $resolvedOutputDir . '/' . basename($outputPath);
+        // Resolve the output directory only when using the DEFAULT path.
+        // When the caller explicitly passes an output path (e.g. during
+        // publish to the docroot), respect it literally — the whole point
+        // is to write to that specific location, not follow symlinks away.
+        if (!$explicitOutput) {
+            $outputDir = dirname($outputPath);
+            $resolvedOutputDir = realpath($outputDir);
+            if ($resolvedOutputDir !== false) {
+                $outputPath = $resolvedOutputDir . '/' . basename($outputPath);
+            }
         }
 
         if (!is_dir($scanDir)) {

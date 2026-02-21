@@ -160,6 +160,7 @@ class ActionRegistry
             'add_page'      => $this->buildAddPagePrompt($userPrompt, $actionData),
             'optimize_aeo'  => $this->buildOptimizeAeoPrompt($userPrompt),
             'inline_edit'   => $this->buildInlineEditPrompt($userPrompt, $actionData),
+            'section_edit'  => $this->buildSectionEditPrompt($userPrompt, $actionData),
             default         => $userPrompt, // free_prompt passes through unchanged
         };
     }
@@ -314,6 +315,16 @@ class ActionRegistry
                 'category'    => 'general',
                 'promptFile'  => 'optimize_aeo.md',
                 'steps'       => [], // One-click action — no wizard needed
+            ],
+
+            'section_edit' => [
+                'id'          => 'section_edit',
+                'label'       => 'Edit Section',
+                'description' => 'Modify a specific section using natural language',
+                'icon'        => 'sparkles',
+                'category'    => 'general',
+                'promptFile'  => 'section_edit.md',
+                'steps'       => [],
             ],
 
             'inline_edit' => [
@@ -485,6 +496,29 @@ class ActionRegistry
         }
 
         $parts[] = "\n## Instruction\n{$userPrompt}";
+
+        return implode("\n", $parts);
+    }
+
+    /**
+     * Build the prompt for section-level AI edits from the visual editor.
+     * Sends the section's outerHTML so the AI knows exactly what to modify.
+     */
+    private function buildSectionEditPrompt(string $userPrompt, array $data): string
+    {
+        $parts = ["Modify the specific section described below. Apply the user's instruction to this section only, preserving the page's overall design language. Return THE ENTIRE REWRITTEN FILE using the standard <file> tags."];
+
+        if (!empty($data['path'])) {
+            $parts[] = "\n## Target File\n{$data['path']}";
+        }
+
+        if (!empty($data['sectionHtml'])) {
+            $parts[] = "\n## Section HTML (the exact section the user clicked)\n```html\n{$data['sectionHtml']}\n```";
+        }
+
+        $parts[] = "\n## User's Instruction\n{$userPrompt}";
+
+        $parts[] = "\n## IMPORTANT\nModify ONLY this section. Do NOT change other parts of the page. Preserve existing Tailwind classes and design tokens unless explicitly asked to change them. Generate the complete rewritten file.";
 
         return implode("\n", $parts);
     }

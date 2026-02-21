@@ -184,12 +184,21 @@ CSS;
         if (empty($classes)) {
             // Write resets even with no utility classes
             $this->writeOutput($outputPath, self::PREFLIGHT_RESETS);
-            return ['ok' => true, 'class_count' => 0];
+            return ['ok' => true, 'class_count' => 0, 'css_size' => strlen(self::PREFLIGHT_RESETS)];
         }
 
         $css = $this->compileClasses($classes);
-        $this->writeOutput($outputPath, self::PREFLIGHT_RESETS . "\n" . $css);
-        return ['ok' => true, 'class_count' => count($classes)];
+        $fullCss = self::PREFLIGHT_RESETS . "\n" . $css;
+        $this->writeOutput($outputPath, $fullCss);
+
+        Logger::debug('tailwind', 'Compile output', [
+            'class_count'    => count($classes),
+            'css_length'     => strlen($css),
+            'total_length'   => strlen($fullCss),
+            'outputPath'     => $outputPath,
+        ]);
+
+        return ['ok' => true, 'class_count' => count($classes), 'css_size' => strlen($fullCss)];
     }
 
     /**
@@ -1303,9 +1312,36 @@ CSS;
             mkdir($dir, 0755, true);
         }
 
-        // Atomic write
+        // Try atomic write first (rename within same filesystem)
         $tmpPath = $path . '.tmp.' . getmypid();
-        file_put_contents($tmpPath, $css);
-        rename($tmpPath, $path);
+        $written = file_put_contents($tmpPath, $css);
+
+        if ($written === false) {
+            // tmp write failed — try direct write as fallback
+            Logger::warning('tailwind', 'Atomic tmp write failed, falling back to direct write', [
+                'path' => $path,
+                'tmp'  => $tmpPath,
+            ]);
+            file_put_contents($path, $css);
+            return;
+        }
+
+        $renamed = @rename($tmpPath, $path);
+        if (!$renamed) {
+            // rename() failed — likely cross-device (shared symlink) or permissions.
+            // Fall back to direct overwrite and clean up the tmp file.
+            Logger::warning('tailwind', 'Atomic rename failed, falling back to direct write', [
+                'path' => $path,
+                'tmp'  => $tmpPath,
+            ]);
+            file_put_contents($path, $css);
+            @unlink($tmpPath);
+            return;
+        }
+
+        Logger::debug('tailwind', 'CSS written', [
+            'path' => $path,
+            'size' => strlen($css),
+        ]);
     }
 }

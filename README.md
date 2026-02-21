@@ -14,7 +14,7 @@ Full documentation: **[voxelsite.com/docs](https://voxelsite.com/docs)**
 ## Requirements
 
 - **PHP 8.2+** with extensions: `pdo_sqlite`, `openssl`, `json`, `curl`, `mbstring`, `gd`, `ZipArchive`
-- **Any web server** — Apache, Nginx, LiteSpeed, etc. (`.htaccess` ships included for Apache; Nginx/Forge work out of the box)
+- **Any web server** — Apache, Nginx, LiteSpeed, etc. (`.htaccess` ships included for Apache; Nginx requires a one-time config for clean URLs — see [docs](https://voxelsite.com/docs/getting-started/installation))
 - Writable directories: `_studio/data`, `_studio/preview`, `assets`
 
 > **No command line needed.** No `composer install`, no `npm`, no SSH. Upload via FTP or your hosting file manager, open the URL, done.
@@ -65,7 +65,8 @@ Your content, settings, and data are preserved automatically.
 | Installer says "Cannot reach server" | **Apache?** Enable `mod_rewrite` + `AllowOverride All`. **Any server?** Verify PHP 8.2+ is running and `.php` files are processed |
 | Blank page / 500 error | Verify PHP 8.2+ is active and required extensions are installed |
 | Permission errors | Make `_studio/data`, `_studio/preview`, `assets` writable (755 or 775) |
-| Routes return 404 | Enable Apache `mod_rewrite` and `AllowOverride All` |
+| Routes return 404 (Apache) | Enable `mod_rewrite` and `AllowOverride All` |
+| Pages show homepage (Nginx) | Add clean URL rewriting to Nginx config. See [Installation → Nginx](https://voxelsite.com/docs/getting-started/installation) |
 | AI not responding | Check your API key in Settings. Verify cURL and outbound HTTPS work |
 | Upload fails (file size) | Increase `upload_max_filesize` and `post_max_size` in PHP settings |
 | Generation produces only a few files, missing CSS/JS | PHP execution timeout is too low. Set `max_execution_time`, `request_terminate_timeout`, and `fastcgi_read_timeout` to at least 600. See [Server timeout configuration](https://voxelsite.com/docs/getting-started/requirements) |

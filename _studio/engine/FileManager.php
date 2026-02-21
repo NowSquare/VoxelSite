@@ -1420,16 +1420,22 @@ CSS;
      *
      * PHP page files go to preview/. _partials/ go to preview/_partials/.
      * Asset files go to /assets/.
-     * All paths are validated with realpath() on the parent
-     * directory to prevent directory traversal.
+     * All paths are validated against the allowed base directory to
+     * prevent directory traversal.  Logical (unresolved) path containment
+     * is checked first so symlinked deployments (Forge, Envoyer) work,
+     * then a realpath() fallback for extra safety.
      */
     private function resolvePath(string $relativePath, bool $forWrite = false): string
     {
         $normalizedPath = $this->normalizeRelativePath($relativePath);
-        $previewBase = realpath($this->previewPath) ?: $this->previewPath;
-        $assetsBase = realpath($this->assetsPath) ?: $this->assetsPath;
-        $promptsBase = realpath($this->promptsPath) ?: $this->promptsPath;
-        $customPromptsBase = realpath($this->customPromptsPath) ?: $this->customPromptsPath;
+
+        // Keep both the raw (logical) and realpath-resolved bases.
+        // Logical paths work across symlink boundaries; resolved paths
+        // serve as a secondary safety net.
+        $previewBase  = $this->previewPath;
+        $assetsBase   = $this->assetsPath;
+        $promptsBase  = $this->promptsPath;
+        $customBase   = $this->customPromptsPath;
 
         if (str_starts_with($normalizedPath, 'assets/')) {
             $assetRelativePath = substr($normalizedPath, strlen('assets/'));
@@ -1447,17 +1453,17 @@ CSS;
             // Core fallback logic for updater overwrite protection
             if ($forWrite) {
                 // Always write to custom_prompts directory so updater doesn't kill modifications
-                $baseDir = $customPromptsBase;
-                $absolutePath = rtrim($customPromptsBase, '/\\') . '/' . $promptRelativePath;
+                $baseDir = $customBase;
+                $absolutePath = rtrim($customBase, '/\\') . '/' . $promptRelativePath;
                 $dir = dirname($absolutePath);
                 if (!is_dir($dir)) {
                     mkdir($dir, 0755, true);
                 }
             } else {
                 // Read from custom_prompts if exists, otherwise fallback to vanilla prompts
-                $customPath = rtrim($customPromptsBase, '/\\') . '/' . $promptRelativePath;
+                $customPath = rtrim($customBase, '/\\') . '/' . $promptRelativePath;
                 if (is_file($customPath)) {
-                    $baseDir = $customPromptsBase;
+                    $baseDir = $customBase;
                     $absolutePath = $customPath;
                 } else {
                     $baseDir = $promptsBase;
@@ -1475,14 +1481,23 @@ CSS;
             throw new RuntimeException("Cannot resolve directory for: {$relativePath}");
         }
 
-        $realExistingParent = realpath($existingParent);
-        if ($realExistingParent === false || !$this->pathWithinBase($realExistingParent, $baseDir)) {
-            throw new RuntimeException(
-                "Security: file path resolves outside allowed directories: {$relativePath}"
-            );
+        // 1) Logical (symlink-safe) containment check — works even when
+        //    symlinks make realpath() resolve to a different mount.
+        if ($this->pathWithinBase($existingParent, $baseDir)) {
+            return $absolutePath;
         }
 
-        return $absolutePath;
+        // 2) Fallback: realpath()-based containment for non-symlink setups
+        $realParent = realpath($existingParent);
+        $realBase   = realpath($baseDir);
+        if ($realParent !== false && $realBase !== false
+            && $this->pathWithinBase($realParent, $realBase)) {
+            return $absolutePath;
+        }
+
+        throw new RuntimeException(
+            "Security: file path resolves outside allowed directories: {$relativePath}"
+        );
     }
 
     private function normalizeRelativePath(string $relativePath): string

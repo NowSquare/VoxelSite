@@ -2135,6 +2135,168 @@ select.vs-input {
   font-weight: 700;
 }
 
+/* Theme toggle on the login page — floating, subtle, creamy */
+.vs-login-theme-toggle {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vs-bg-surface);
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: 50%;
+  color: var(--vs-text-ghost);
+  cursor: pointer;
+  box-shadow:
+    var(--vs-cream-inset),
+    0 2px 8px rgba(0, 0, 0, 0.12);
+  transition:
+    color 200ms var(--ease-out),
+    box-shadow 200ms var(--ease-out),
+    border-color 200ms var(--ease-out),
+    transform 300ms var(--ease-out),
+    opacity 150ms ease;
+  z-index: 100;
+}
+.vs-login-theme-toggle:hover {
+  color: var(--vs-accent);
+  border-color: color-mix(in srgb, var(--vs-accent) 30%, transparent);
+  box-shadow:
+    var(--vs-cream-inset),
+    0 0 16px rgba(244, 160, 36, 0.1),
+    0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.vs-login-theme-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ═══════════════════════════════════════════ */
+/*  DEMO MODE — Cream Design Treatment       */
+/* ═══════════════════════════════════════════ */
+
+/* Persistent badge in the top bar */
+.vs-demo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  padding: 4px 12px 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--vs-accent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--vs-accent) 14%, var(--vs-bg-surface)) 0%,
+      color-mix(in srgb, var(--vs-accent) 8%, var(--vs-bg-surface)) 100%
+    );
+  border: 1px solid color-mix(in srgb, var(--vs-accent) 25%, transparent);
+  border-radius: var(--radius-full);
+  box-shadow:
+    var(--vs-cream-inset),
+    0 0 12px rgba(244, 160, 36, 0.08),
+    0 1px 3px rgba(0, 0, 0, 0.15);
+  white-space: nowrap;
+  user-select: none;
+  cursor: default;
+  transition: box-shadow 200ms var(--ease-out);
+}
+.vs-demo-badge:hover {
+  box-shadow:
+    var(--vs-cream-inset),
+    0 0 20px rgba(244, 160, 36, 0.14),
+    0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.vs-demo-badge svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 3px rgba(244, 160, 36, 0.4));
+}
+
+/* Banner on the login page — cream poured into a warm mold */
+.vs-demo-login-banner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 24px;
+  padding: 16px 20px;
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--vs-accent) 12%, var(--vs-bg-surface)) 0%,
+      color-mix(in srgb, var(--vs-accent) 5%, var(--vs-bg-surface)) 100%
+    );
+  border: 1px solid color-mix(in srgb, var(--vs-accent) 20%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.06),
+    0 2px 8px rgba(0, 0, 0, 0.15),
+    0 0 20px rgba(244, 160, 36, 0.06);
+  text-align: center;
+  overflow: hidden;
+  animation: cream-rise 400ms var(--ease-out) both;
+}
+/* Subtle ambient amber glow behind the banner */
+.vs-demo-login-banner::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: radial-gradient(
+    ellipse 80% 60% at 50% 0%,
+    rgba(244, 160, 36, 0.08) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+}
+/* Animated shimmer across the top edge */
+.vs-demo-login-banner::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(244, 160, 36, 0.3) 50%,
+    transparent 100%
+  );
+  animation: demo-shimmer 4s ease-in-out infinite 1s;
+}
+@keyframes demo-shimmer {
+  0%   { left: -100%; opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { left: 200%; opacity: 0; }
+}
+.vs-demo-login-banner strong {
+  position: relative;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--vs-accent);
+  text-shadow: 0 0 16px rgba(244, 160, 36, 0.2);
+}
+.vs-demo-login-banner span {
+  position: relative;
+  font-size: 12px;
+  color: var(--vs-text-tertiary);
+  line-height: 1.4;
+}
+
+
 /* ═══════════════════════════════════════════ */
 /*  KEYBOARD SHORTCUT HINTS                   */
 /* ═══════════════════════════════════════════ */

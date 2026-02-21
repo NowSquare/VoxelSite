@@ -22,6 +22,7 @@
   let hoveredEl = null;
   let selectedEl = null;
   let isEditing = false;
+  let isAIGenerating = false;
   let originalContent = null;
   let overlayLayer = null;
 
@@ -393,7 +394,7 @@
   // ═══════════════════════════════════════════
 
   function onMouseMove(e) {
-    if (!active || isEditing) return;
+    if (!active || isEditing || isAIGenerating) return;
     const el = document.elementFromPoint(e.clientX, e.clientY);
     if (!el || isEditorElement(el) || el.id === 'vx-overlay') {
       hoveredEl = null;
@@ -435,7 +436,7 @@
   // ═══════════════════════════════════════════
 
   function onClick(e) {
-    if (!active || isEditing) return;
+    if (!active || isEditing || isAIGenerating) return;
     if (isEditorElement(e.target)) return;
     e.preventDefault(); e.stopPropagation();
     const el = findEditableAncestor(e.target);
@@ -684,8 +685,73 @@
       case 'vx-editor:update-classes': applyClasses(e.data.classes || [], !!e.data.silent); break;
       case 'vx-editor:update-link': updateLink(e.data); break;
       case 'vx-editor:delete-element': deleteElement(); break;
+      case 'vx-editor:show-ai-overlay': showAIOverlay(e.data.status); break;
+      case 'vx-editor:hide-ai-overlay': hideAIOverlay(); break;
+      case 'vx-editor:update-ai-status': updateAIOverlayStatus(e.data.status); break;
     }
   });
+
+  // ═══════════════════════════════════════════
+  //  AI Overlay (covers selected element during generation)
+  // ═══════════════════════════════════════════
+
+  function showAIOverlay(status) {
+    hideAIOverlay();
+    isAIGenerating = true;
+    const el = selectedEl;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const ov = document.createElement('div');
+    ov.id = 'vx-ai-overlay';
+    ov.style.cssText = `
+      position: fixed; z-index: 99999;
+      left: ${r.left}px; top: ${r.top}px;
+      width: ${r.width}px; height: ${r.height}px;
+      background: rgba(0,0,0,0.45);
+      backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 8px;
+      animation: vxAiFadeIn 200ms ease-out;
+      pointer-events: none;
+    `;
+    ov.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 18px;border-radius:10px;
+        background:rgba(26,24,22,0.85);border:1px solid rgba(255,255,255,0.08);
+        box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <div style="display:flex;gap:4px;" id="vx-ai-dots">
+          <i style="width:5px;height:5px;border-radius:50%;background:#F4A024;display:block;animation:vxAiDot 1.2s infinite ease-in-out;"></i>
+          <i style="width:5px;height:5px;border-radius:50%;background:#F4A024;display:block;animation:vxAiDot 1.2s infinite ease-in-out 0.15s;"></i>
+          <i style="width:5px;height:5px;border-radius:50%;background:#F4A024;display:block;animation:vxAiDot 1.2s infinite ease-in-out 0.3s;"></i>
+        </div>
+        <span style="font:500 12px/1 -apple-system,BlinkMacSystemFont,sans-serif;color:#ede9e2;white-space:nowrap;"
+          id="vx-ai-overlay-status">${status || 'AI is editing…'}</span>
+      </div>
+    `;
+
+    // Inject keyframes if not present
+    if (!document.getElementById('vx-ai-keyframes')) {
+      const s = document.createElement('style');
+      s.id = 'vx-ai-keyframes';
+      s.textContent = `
+        @keyframes vxAiFadeIn { from { opacity:0; } to { opacity:1; } }
+        @keyframes vxAiDot { 0%,80%,100% { transform:scale(0.5);opacity:0.3; } 40% { transform:scale(1);opacity:1; } }
+      `;
+      document.head.appendChild(s);
+    }
+
+    document.body.appendChild(ov);
+  }
+
+  function updateAIOverlayStatus(status) {
+    const el = document.getElementById('vx-ai-overlay-status');
+    if (el) el.textContent = status || 'AI is editing…';
+  }
+
+  function hideAIOverlay() {
+    isAIGenerating = false;
+    const ov = document.getElementById('vx-ai-overlay');
+    if (ov) { ov.style.opacity = '0'; ov.style.transition = 'opacity 200ms'; setTimeout(() => ov.remove(), 200); }
+  }
 
   document.addEventListener('mousemove', onMouseMove, { passive: true });
   document.addEventListener('mouseleave', onMouseLeave);

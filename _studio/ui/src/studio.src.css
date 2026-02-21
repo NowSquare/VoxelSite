@@ -4741,6 +4741,14 @@ select.vs-input {
 .vx-tb-btn:active { transform: scale(0.96); }
 .vx-tb-btn-danger { color: var(--vs-text-ghost); padding: 6px 8px; }
 .vx-tb-btn-danger:hover { background: rgba(239,68,68,0.1); color: #ef4444; }
+.vx-tb-btn-ai {
+  color: var(--vs-accent);
+  font-weight: 600;
+}
+.vx-tb-btn-ai:hover {
+  background: color-mix(in srgb, var(--vs-accent) 14%, transparent);
+  color: var(--vs-accent);
+}
 .vx-tb-divider { width: 1px; height: 20px; background: var(--vs-border-subtle); margin: 0 2px; }
 
 /* ── Style Editor Panel ── */
@@ -4777,6 +4785,169 @@ select.vs-input {
 }
 .vx-sp-close svg { width: 14px; height: 14px; }
 .vx-sp-close:hover { background: var(--vs-bg-hover); color: var(--vs-text-primary); }
+
+/* ── AI Section Edit Panel ── */
+.vx-ai-panel {
+  position: fixed; z-index: 99998;
+  width: 380px; max-width: calc(100vw - 32px);
+  background: var(--vs-bg-surface);
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--vs-shadow-xl), 0 0 0 1px rgba(0,0,0,0.04);
+  display: flex; flex-direction: column;
+  opacity: 0; transform: translateY(10px) scale(0.97);
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+  overflow: hidden;
+}
+.vx-ai-visible { opacity: 1; transform: translateY(0) scale(1); }
+
+.vx-ai-header {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--vs-border-subtle);
+  cursor: grab; user-select: none;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--vs-accent) 6%, var(--vs-bg-surface)), var(--vs-bg-surface));
+}
+.vx-ai-header:active { cursor: grabbing; }
+.vx-ai-header-left {
+  display: flex; align-items: center; gap: 8px;
+}
+.vx-ai-header-right {
+  display: flex; align-items: center; gap: 8px;
+}
+.vx-ai-icon {
+  color: var(--vs-accent);
+  flex-shrink: 0;
+}
+.vx-ai-title {
+  font: 600 13px/1.2 var(--font-sans);
+  color: var(--vs-text-primary);
+}
+.vx-ai-preview {
+  padding: 6px 14px 8px;
+  font: 400 11px/1.4 var(--font-sans);
+  color: var(--vs-text-ghost);
+  border-bottom: 1px solid var(--vs-border-subtle);
+  background: var(--vs-bg-base);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vx-ai-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.vx-ai-input-wrap {
+  position: relative;
+  background: var(--vs-bg-input, var(--vs-bg-well));
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: var(--radius-2xl);
+  transition: all 200ms var(--ease-out);
+}
+.vx-ai-input-wrap:focus-within {
+  border-color: var(--vs-accent);
+  box-shadow: 0 0 0 3px var(--vs-accent-dim), var(--vs-shadow-sm);
+}
+.vx-ai-input {
+  width: 100%;
+  min-height: 56px;
+  max-height: 120px;
+  padding: 14px 52px 14px 16px;
+  font: 400 13px/1.5 var(--font-sans);
+  color: var(--vs-text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+}
+.vx-ai-input::placeholder {
+  color: var(--vs-text-ghost);
+}
+.vx-ai-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.vx-ai-send {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  background: var(--vs-accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: all 150ms var(--ease-out);
+}
+.vx-ai-send:hover {
+  background: var(--vs-accent-hover);
+  box-shadow: var(--vs-shadow-glow);
+  transform: scale(1.05);
+}
+.vx-ai-send:active { transform: scale(0.95); }
+.vx-ai-send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+.vx-ai-cancel {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  background: var(--vs-bg-raised);
+  color: var(--vs-text-secondary);
+  border: 1px solid var(--vs-border-subtle);
+  cursor: pointer;
+  transition: all 150ms var(--ease-out);
+}
+.vx-ai-cancel:hover {
+  background: var(--vs-bg-hover);
+  color: var(--vs-text-primary);
+  border-color: var(--vs-border-medium);
+}
+.vx-ai-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--vs-accent) 8%, var(--vs-bg-surface));
+  border: 1px solid color-mix(in srgb, var(--vs-accent) 20%, transparent);
+  border-radius: var(--radius-lg);
+  font: 500 12px/1 var(--font-sans);
+  color: var(--vs-accent);
+}
+.vx-ai-spinner {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.vx-ai-spinner i {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--vs-accent);
+  animation: vx-ai-bounce 1.2s infinite ease-in-out;
+}
+.vx-ai-spinner i:nth-child(2) { animation-delay: 0.15s; }
+.vx-ai-spinner i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes vx-ai-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
 
 /* Segmented Nav (icon-based) */
 .vx-sp-nav {
@@ -5356,11 +5527,14 @@ select.vs-input {
 /* Body class when editing */
 .vx-editing #conversation-panel { opacity: 0.6; pointer-events: none; transition: opacity 200ms var(--ease-out); }
 
-/* Mobile polish for style panel footprint */
+/* Mobile polish for style panel and AI panel */
 @media (max-width: 900px) {
   .vx-style-panel {
     width: min(350px, calc(100vw - 28px));
     max-height: calc(100vh - 24px);
+  }
+  .vx-ai-panel {
+    width: min(360px, calc(100vw - 24px));
   }
   .vx-sp-body {
     padding: 10px 14px 14px 12px;
@@ -5372,3 +5546,4 @@ select.vs-input {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+

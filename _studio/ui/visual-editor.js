@@ -17,7 +17,7 @@
  * - Preview-only class changes should not emit new persistence events until the user applies.
  */
 
-import { api } from './api.js';
+import { api, apiStream } from './api.js';
 
 // ═══════════════════════════════════════════
 //  State
@@ -92,6 +92,7 @@ export function toggleVisualEditor() {
   if (!editorActive) {
     dismissToolbar();
     closeStylePanel();
+    closeAIEditPanel();
     selectedElement = null;
   }
 }
@@ -105,6 +106,7 @@ export function deactivateVisualEditor() {
   sendToPreview({ type: 'vx-editor:toggle', active: false });
   dismissToolbar();
   closeStylePanel();
+  closeAIEditPanel();
   selectedElement = null;
 }
 
@@ -185,7 +187,7 @@ function showContextToolbar(data) {
   }
 
   buttons += `<button class="vx-tb-btn" data-action="edit-style" title="Edit styles">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg>
     <span>Style</span></button>`;
 
   if (tagName === 'A') {
@@ -198,6 +200,12 @@ function showContextToolbar(data) {
   buttons += `<div class="vx-tb-divider"></div>
     <button class="vx-tb-btn vx-tb-btn-danger" data-action="delete" title="Delete element">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>`;
+
+  // AI button — always present, placed after divider with its own accent
+  buttons += `<div class="vx-tb-divider"></div>
+    <button class="vx-tb-btn vx-tb-btn-ai" data-action="ask-ai" title="Edit with AI">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span>AI</span></button>`;
 
   const label = getElementLabel(tagName, data.classList);
   toolbar.innerHTML = `<div class="vx-tb-label">${label}</div><div class="vx-tb-actions">${buttons}</div>`;
@@ -248,6 +256,9 @@ function handleToolbarAction(action, elementData) {
       break;
     case 'delete':
       confirmDelete(elementData);
+      break;
+    case 'ask-ai':
+      openAIEditPanel(elementData);
       break;
   }
 }
@@ -1240,6 +1251,202 @@ function makeDraggable(panel, handle) {
       document.removeEventListener('touchend', onUp);
     }
   };
+}
+
+// ═══════════════════════════════════════════
+//  AI Section Edit Panel
+// ═══════════════════════════════════════════
+
+let aiEditAbortController = null;
+
+function closeAIEditPanel() {
+  const panel = document.getElementById('vx-ai-panel');
+  if (!panel) return;
+  if (aiEditAbortController) {
+    aiEditAbortController.abort();
+    aiEditAbortController = null;
+  }
+  if (typeof panel.__vxDestroyDrag === 'function') panel.__vxDestroyDrag();
+  if (typeof panel.__vxOnResize === 'function') window.removeEventListener('resize', panel.__vxOnResize);
+  panel.classList.remove('vx-ai-visible');
+  setTimeout(() => panel.remove(), 180);
+}
+
+function openAIEditPanel(elementData) {
+  dismissToolbar();
+  closeStylePanel();
+  closeAIEditPanel();
+
+  const label = getElementLabel(elementData.tagName, elementData.classList);
+  const preview = (elementData.text || '').substring(0, 80).replace(/\s+/g, ' ').trim();
+
+  const panel = document.createElement('div');
+  panel.id = 'vx-ai-panel';
+  panel.className = 'vx-ai-panel';
+  panel.tabIndex = -1;
+  panel.innerHTML = `
+    <div class="vx-ai-header" id="vx-ai-drag-handle">
+      <div class="vx-ai-header-left">
+        <svg class="vx-ai-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span class="vx-ai-title">Edit ${escapeHtml(label)}</span>
+      </div>
+      <div class="vx-ai-header-right">
+        <span class="vx-sp-drag-hint">⋮⋮</span>
+        <button class="vx-sp-close" id="vx-ai-close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+    ${preview ? `<div class="vx-ai-preview">${escapeHtml(preview.length >= 78 ? preview + '…' : preview)}</div>` : ''}
+    <div class="vx-ai-body">
+      <div class="vx-ai-input-wrap">
+        <textarea class="vx-ai-input" id="vx-ai-input" rows="2" placeholder="Describe your changes…" spellcheck="false"></textarea>
+        <button class="vx-ai-send" id="vx-ai-send" title="Generate (Enter)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+        </button>
+        <button class="vx-ai-cancel" id="vx-ai-cancel-btn" hidden title="Cancel generation">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+        </button>
+      </div>
+      <div class="vx-ai-status" id="vx-ai-status" hidden>
+        <div class="vx-ai-spinner"><i></i><i></i><i></i></div>
+        <span id="vx-ai-status-text">Thinking…</span>
+      </div>
+    </div>`;
+
+  document.body.appendChild(panel);
+
+  // Position near the iframe, right side
+  positionStylePanel(panel);
+  panel.__vxOnResize = () => positionStylePanel(panel);
+  window.addEventListener('resize', panel.__vxOnResize);
+
+  requestAnimationFrame(() => panel.classList.add('vx-ai-visible'));
+  panel.__vxDestroyDrag = makeDraggable(panel, panel.querySelector('#vx-ai-drag-handle'));
+
+  const input = panel.querySelector('#vx-ai-input');
+  const sendBtn = panel.querySelector('#vx-ai-send');
+  const cancelBtn = panel.querySelector('#vx-ai-cancel-btn');
+  const statusEl = panel.querySelector('#vx-ai-status');
+  const statusText = panel.querySelector('#vx-ai-status-text');
+  const closeBtn = panel.querySelector('#vx-ai-close');
+
+  // Focus the input after panel animates in
+  setTimeout(() => input?.focus(), 200);
+
+  // Close
+  closeBtn.addEventListener('click', () => closeAIEditPanel());
+  panel.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeAIEditPanel();
+    }
+  });
+
+  // Send on Enter (Shift+Enter for newline)
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      doSend();
+    }
+  });
+  sendBtn.addEventListener('click', doSend);
+
+  // Cancel
+  cancelBtn.addEventListener('click', () => {
+    if (aiEditAbortController) {
+      aiEditAbortController.abort();
+      aiEditAbortController = null;
+    }
+    setIdle();
+  });
+
+  function setGenerating() {
+    input.disabled = true;
+    sendBtn.hidden = true;
+    cancelBtn.hidden = false;
+    statusEl.hidden = false;
+    statusText.textContent = 'Reading your site…';
+  }
+
+  function setIdle() {
+    input.disabled = false;
+    sendBtn.hidden = false;
+    cancelBtn.hidden = true;
+    statusEl.hidden = true;
+    input.focus();
+  }
+
+  async function doSend() {
+    const instruction = input.value.trim();
+    if (!instruction) return;
+
+    // Close the panel immediately — the overlay on the element shows progress
+    closeAIEditPanel();
+
+    // Show the AI overlay on the selected element in the preview iframe
+    sendToPreview({ type: 'vx-editor:show-ai-overlay', status: 'AI is editing…' });
+
+    aiEditAbortController = new AbortController();
+    const sectionHtml = elementData.outerHTML || '';
+    const filePath = elementData.filePath || getCurrentPreviewPath();
+
+    try {
+      await apiStream('/ai/prompt', {
+        user_prompt: instruction,
+        action_type: 'section_edit',
+        page_scope: filePath,
+        action_data: {
+          path: filePath,
+          sectionHtml: sectionHtml.substring(0, 15000),
+        },
+      }, {
+        signal: aiEditAbortController.signal,
+        onStatus(message) {
+          sendToPreview({ type: 'vx-editor:update-ai-status', status: message || 'Working…' });
+        },
+        onFile() {
+          sendToPreview({ type: 'vx-editor:update-ai-status', status: 'Applying changes…' });
+        },
+        onToken() {
+          sendToPreview({ type: 'vx-editor:update-ai-status', status: 'Generating…' });
+        },
+        onError(err) {
+          sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+          showSaveIndicator(err.message || 'AI edit failed', true);
+        },
+        onDone(res) {
+          aiEditAbortController = null;
+          sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+
+          if (res.cancelled) {
+            showSaveIndicator('Generation cancelled', false);
+            return;
+          }
+          const filesModified = res.files_modified || [];
+          if (filesModified.length > 0) {
+            showSaveIndicator('Section updated ✓');
+            setTimeout(() => {
+              const iframe = document.getElementById('preview-iframe');
+              if (iframe?.contentWindow) {
+                iframe.contentWindow.postMessage('voxelsite:reload', '*');
+              }
+            }, 400);
+          } else if (!res.partial) {
+            showSaveIndicator('No changes made', false);
+          }
+        },
+        onWarning(message) {
+          if (typeof window.showToast === 'function') window.showToast(message, 'warning');
+        },
+      });
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        showSaveIndicator('AI edit failed', true);
+      }
+      sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+    }
+  }
 }
 
 // ═══════════════════════════════════════════

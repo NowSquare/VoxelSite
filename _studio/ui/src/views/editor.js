@@ -306,7 +306,13 @@ async function initEditorPage() {
         const isProtected = item.meta?.protected === true;
         
         let actionBtn = '';
-        if (isProtected) {
+        const isTailwind = item.path === 'assets/css/tailwind.css';
+        if (isTailwind) {
+          actionBtn = `
+            <button class="vs-tree-item-restore" data-compile-tailwind="true" title="Recompile Tailwind CSS">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            </button>`;
+        } else if (isProtected) {
           if (isCustom) {
             actionBtn = `
             <button class="vs-tree-item-restore" data-restore-file="${escapeHtml(item.path)}" title="Reset to default system prompt">
@@ -797,6 +803,43 @@ async function initEditorPage() {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           restoreFile(btn.dataset.restoreFile);
+        });
+      });
+
+      // Bind Tailwind recompile
+      el.querySelectorAll('[data-compile-tailwind]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (window.demoGuard?.()) return;
+
+          btn.style.opacity = '0.4';
+          btn.style.pointerEvents = 'none';
+          setStatus('Compiling Tailwind…');
+
+          const { ok, data, error } = await api.post('/files/compile-tailwind');
+
+          btn.style.opacity = '';
+          btn.style.pointerEvents = '';
+
+          if (!ok) {
+            showToast(error?.message || 'Tailwind compilation failed.', 'error');
+            setStatus('Compile failed', 'error');
+            return;
+          }
+
+          // Update the open tab if tailwind.css is currently open
+          const twPath = 'assets/css/tailwind.css';
+          const tab = editorState.openTabs.find(t => t.path === twPath);
+          if (tab) {
+            tab.baseline = data.content;
+            tab.dirty = false;
+            if (editorState.activeTab === twPath && editorState.monacoInstance) {
+              editorState.monacoInstance.setValue(data.content);
+            }
+          }
+
+          showToast('Tailwind CSS recompiled.', 'success');
+          setStatus('Compiled');
         });
       });
       el.querySelectorAll('.vs-tree-folder-toggle, .vs-tree-item[data-folder]').forEach(btn => {

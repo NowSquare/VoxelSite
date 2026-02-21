@@ -97,6 +97,7 @@ $routes = [
     ['GET',    '/files/content',          'files.php',          true],
     ['PUT',    '/files/content',          'files.php',          true],
     ['POST',   '/files/create',           'files.php',          true],
+    ['POST',   '/files/compile-tailwind', 'files.php',          true],
     ['DELETE', '/files',                   'files.php',          true],
 
     // Assets

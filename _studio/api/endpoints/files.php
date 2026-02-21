@@ -274,6 +274,37 @@ if ($method === 'POST' && $path === '/files/create') {
     return;
 }
 
+// ── Recompile Tailwind CSS from current preview files ──
+if ($method === 'POST' && $path === '/files/compile-tailwind') {
+    try {
+        $ok = $fileManager->compileTailwind();
+        if (!$ok) {
+            jsonResponse(['ok' => false, 'error' => [
+                'code'    => 'compile_failed',
+                'message' => 'Tailwind compilation failed.',
+            ]], 500);
+            return;
+        }
+
+        // Read the freshly compiled file to return its content
+        $twPath = 'assets/css/tailwind.css';
+        $absoluteTw = dirname(__DIR__, 3) . '/' . $twPath;
+        $content = is_file($absoluteTw) ? file_get_contents($absoluteTw) : '';
+
+        jsonResponse(['ok' => true, 'data' => [
+            'path'    => $twPath,
+            'content' => $content,
+        ]]);
+        return;
+    } catch (\Throwable $e) {
+        jsonResponse(['ok' => false, 'error' => [
+            'code'    => 'compile_failed',
+            'message' => 'Tailwind compilation error: ' . $e->getMessage(),
+        ]], 500);
+        return;
+    }
+}
+
 if ($method === 'DELETE' && $path === '/files') {
     $rawPath = (string) ($_GET['path'] ?? '');
     $editablePath = normalizeEditablePath($rawPath);

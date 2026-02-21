@@ -39,6 +39,7 @@ class ResponseParser
     /** Files the AI sometimes generates but should be silently ignored (shipped infrastructure) */
     private const SILENTLY_IGNORED = [
         '.htaccess',
+        'assets/css/tailwind.css', // Compiled by TailwindCompiler — AI must never write this
     ];
 
     /**

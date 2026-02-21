@@ -577,35 +577,42 @@ function resolveEditableAbsolutePath(string $relativePath): ?string
 {
     $studioRoot = dirname(__DIR__, 2);
     $projectRoot = dirname(__DIR__, 3);
-    $previewRoot = realpath($studioRoot . '/preview');
-    $assetsRoot = realpath($projectRoot . '/assets');
 
     if (str_starts_with($relativePath, 'assets/')) {
         $absolute = $projectRoot . '/' . $relativePath;
-        $allowedRoot = $assetsRoot;
+        $allowedRoot = $projectRoot . '/assets';
     } elseif (str_starts_with($relativePath, '_prompts/')) {
         $relativeTail = substr($relativePath, 9);
         $customPath = $studioRoot . '/custom_prompts/' . $relativeTail;
         if (is_file($customPath)) {
             $absolute = $customPath;
-            $allowedRoot = realpath($studioRoot . '/custom_prompts');
+            $allowedRoot = $studioRoot . '/custom_prompts';
         } else {
             $absolute = $studioRoot . '/prompts/' . $relativeTail;
-            $allowedRoot = realpath($studioRoot . '/prompts');
+            $allowedRoot = $studioRoot . '/prompts';
         }
     } else {
         $absolute = $studioRoot . '/preview/' . $relativePath;
-        $allowedRoot = $previewRoot;
+        $allowedRoot = $studioRoot . '/preview';
     }
 
+    if (!is_file($absolute)) {
+        return null;
+    }
+
+    // Security: check containment using both logical and resolved paths
+    $normAbsolute = rtrim(str_replace('//', '/', $absolute), '/');
+    $normRoot = rtrim(str_replace('//', '/', $allowedRoot), '/');
+    if (str_starts_with($normAbsolute, $normRoot . '/')) {
+        return $absolute;
+    }
+
+    // Fallback: check via realpath
     $resolved = realpath($absolute);
-    if ($resolved === false || $allowedRoot === false || !is_file($resolved)) {
-        return null;
+    $resolvedRoot = realpath($allowedRoot);
+    if ($resolved !== false && $resolvedRoot !== false && str_starts_with($resolved, $resolvedRoot . '/')) {
+        return $resolved;
     }
 
-    if (!str_starts_with($resolved, $allowedRoot)) {
-        return null;
-    }
-
-    return $resolved;
+    return null;
 }

@@ -865,9 +865,9 @@ CSS;
             return ['directories' => [], 'files' => []];
         }
 
-        $realTarget = realpath($targetDir);
-        $realPreview = realpath($this->previewPath);
-        if ($realTarget === false || $realPreview === false || !str_starts_with($realTarget, $realPreview)) {
+        $realTarget = realpath($targetDir) ?: $targetDir;
+        $realPreview = realpath($this->previewPath) ?: $this->previewPath;
+        if (!$this->pathWithinBase($realTarget, $realPreview)) {
             return ['directories' => [], 'files' => []];
         }
 

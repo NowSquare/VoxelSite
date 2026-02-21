@@ -87,18 +87,14 @@ if ($method === 'GET' && $path === '/preview') {
     $realPath = realpath($absolutePath);
     $realBase = realpath($securityBase);
 
-    if ($realPath === false || $realBase === false) {
-        header('Content-Type: application/json');
-        http_response_code(403);
-        echo json_encode(['ok' => false, 'error' => [
-            'code'    => 'access_denied',
-            'message' => 'Cannot resolve file path.',
-        ]]);
-        exit;
-    }
+    // Check containment: try logical path first (handles symlinks),
+    // then fall back to realpath-based check
+    $normAbsolute = rtrim(str_replace('//', '/', $absolutePath), '/');
+    $normBase = rtrim(str_replace('//', '/', $securityBase), '/');
+    $logicalOk = str_starts_with($normAbsolute . '/', $normBase . '/');
+    $realpathOk = ($realPath !== false && $realBase !== false && str_starts_with($realPath . '/', $realBase . '/'));
 
-    // The resolved path MUST start with the allowed directory
-    if (!str_starts_with($realPath, $realBase)) {
+    if (!$logicalOk && !$realpathOk) {
         header('Content-Type: application/json');
         http_response_code(403);
         echo json_encode(['ok' => false, 'error' => [
@@ -106,6 +102,13 @@ if ($method === 'GET' && $path === '/preview') {
             'message' => 'Access denied: path outside allowed directory.',
         ]]);
         exit;
+    }
+
+    // Use realPath if available (for opcache_invalidate, readfile, etc.)
+    if ($realPath !== false) {
+        // Keep using $realPath for file operations below
+    } else {
+        $realPath = $absolutePath;
     }
 
     // ── Determine MIME type ──
@@ -332,7 +335,7 @@ function collectManagedPreviewFiles(string $previewDir): array
     }
 
     $files = [];
-    $basePath = realpath($previewDir);
+    $basePath = rtrim(str_replace('//', '/', $previewDir), '/');
 
     $iterator = new \RecursiveIteratorIterator(
         new \RecursiveDirectoryIterator(
@@ -348,11 +351,11 @@ function collectManagedPreviewFiles(string $previewDir): array
             if (str_starts_with($name, '.')) {
                 continue;
             }
-            $realFile = realpath($file->getPathname());
-            if ($realFile && str_starts_with($realFile, $basePath)) {
-                $relativePath = substr($realFile, strlen($basePath) + 1);
-                // Normalize to forward slashes
-                $relativePath = str_replace('\\', '/', $relativePath);
+            // Use pathname (logical) instead of realPath to handle symlinks
+            $filePath = str_replace('\\', '/', $file->getPathname());
+            $normBase = $basePath . '/';
+            if (str_starts_with($filePath, $normBase)) {
+                $relativePath = substr($filePath, strlen($normBase));
                 $files[] = $relativePath;
             }
         }

@@ -24,6 +24,32 @@ $docRoot   = dirname(__DIR__, 3);
 $assetsDir = $docRoot . '/assets';
 $metaFile  = dirname(__DIR__, 2) . '/data/assets-meta.json';
 
+/**
+ * Check if a resolved path is inside the assets directory.
+ * Works with both real directories and symlinked shared paths
+ * (e.g. Forge atomic deployments where assets/ -> shared/assets/).
+ */
+function isInsideAssetsDir(string $targetPath, string $assetsDir): bool
+{
+    // Normalise the logical path (without resolving symlinks)
+    $normTarget = rtrim(str_replace('//', '/', $targetPath), '/');
+    $normAssets = rtrim(str_replace('//', '/', $assetsDir), '/');
+
+    // Check 1: logical path containment (covers symlinked dirs)
+    if (str_starts_with($normTarget . '/', $normAssets . '/') || $normTarget === $normAssets) {
+        return true;
+    }
+
+    // Check 2: realpath containment (covers non-symlinked dirs)
+    $realTarget = realpath($targetPath);
+    $realAssets = realpath($assetsDir);
+    if ($realTarget && $realAssets && str_starts_with($realTarget . '/', $realAssets . '/')) {
+        return true;
+    }
+
+    return false;
+}
+
 // Ensure base asset directories exist
 foreach (['images', 'css', 'js', 'fonts', 'files'] as $subdir) {
     $dir = $assetsDir . '/' . $subdir;
@@ -251,9 +277,7 @@ if ($method === 'POST' && $path === '/assets/upload') {
         $category = $targetCategory ?? $typeConfig['category'];
         $targetDir = $assetsDir . '/' . $category;
         if (!is_dir($targetDir)) mkdir($targetDir, 0755, true);
-        $targetDirReal = realpath($targetDir);
-        $assetsDirReal = realpath($assetsDir);
-        if (!$targetDirReal || !$assetsDirReal || !str_starts_with($targetDirReal, $assetsDirReal)) {
+        if (!is_dir($targetDir) || !isInsideAssetsDir($targetDir, $assetsDir)) {
             $errors[] = "{$name}: Invalid target path.";
             continue;
         }
@@ -336,10 +360,8 @@ if ($method === 'PUT' && $path === '/assets/meta') {
 
     // Verify asset exists on disk and resolves inside assets root.
     $fullPath = $docRoot . $assetPath;
-    $realPath = realpath($fullPath);
-    $assetsRoot = realpath($assetsDir);
 
-    if (!$realPath || !$assetsRoot || !str_starts_with($realPath, $assetsRoot) || !is_file($realPath)) {
+    if (!is_file($fullPath) || !isInsideAssetsDir($fullPath, $assetsDir)) {
         jsonResponse(['ok' => false, 'error' => [
             'code'    => 'not_found',
             'message' => 'Asset file not found.',
@@ -383,9 +405,8 @@ if ($method === 'DELETE' && $path === '/assets') {
 
     // Security: validate path stays within /assets/
     $fullPath = $docRoot . $assetPath;
-    $realPath = realpath($fullPath);
 
-    if (!$realPath || !str_starts_with($realPath, realpath($assetsDir))) {
+    if (!file_exists($fullPath) || !isInsideAssetsDir($fullPath, $assetsDir)) {
         jsonResponse(['ok' => false, 'error' => [
             'code'    => 'invalid_path',
             'message' => 'Path is outside the assets directory.',
@@ -402,7 +423,7 @@ if ($method === 'DELETE' && $path === '/assets') {
         return;
     }
 
-    if (!file_exists($realPath)) {
+    if (!file_exists($fullPath)) {
         jsonResponse(['ok' => false, 'error' => [
             'code'    => 'not_found',
             'message' => 'Asset file not found.',
@@ -411,7 +432,8 @@ if ($method === 'DELETE' && $path === '/assets') {
     }
 
     // Delete the file
-    if (!unlink($realPath)) {
+    $realPath = realpath($fullPath);
+    if (!$realPath || !unlink($realPath)) {
         jsonResponse(['ok' => false, 'error' => [
             'code'    => 'delete_failed',
             'message' => 'Could not delete asset file.',
@@ -466,8 +488,8 @@ if ($method === 'POST' && $path === '/assets/folder') {
     $targetDir = $assetsDir . '/' . $parentCategory . '/' . $safeName;
 
     // Security: ensure path stays within assets
-    $parentReal = realpath($assetsDir . '/' . $parentCategory);
-    if (!$parentReal || !str_starts_with($parentReal, realpath($assetsDir))) {
+    $parentDir = $assetsDir . '/' . $parentCategory;
+    if (!is_dir($parentDir) || !isInsideAssetsDir($parentDir, $assetsDir)) {
         jsonResponse(['ok' => false, 'error' => [
             'code'    => 'invalid_category',
             'message' => 'Invalid asset category.',

@@ -368,29 +368,27 @@ function isSafeSnapshotRelativePath(string $path): bool
  */
 function writeSnapshotEntry(string $baseDir, string $relativePath, string $content): bool
 {
-    $baseReal = realpath($baseDir);
-    if ($baseReal === false) {
-        return false;
-    }
-
-    $targetPath = rtrim($baseReal, '/\\') . '/' . ltrim(str_replace('\\', '/', $relativePath), '/');
+    $targetPath = rtrim($baseDir, '/\\') . '/' . ltrim(str_replace('\\', '/', $relativePath), '/');
     $parentDir = dirname($targetPath);
     if (!is_dir($parentDir) && !mkdir($parentDir, 0755, true) && !is_dir($parentDir)) {
         return false;
     }
 
+    // Check logical path containment (handles symlinks)
+    $normParent = rtrim(str_replace('//', '/', $parentDir), '/');
+    $normBase = rtrim(str_replace('//', '/', $baseDir), '/');
+    if (str_starts_with($normParent . '/', $normBase . '/') || $normParent === $normBase) {
+        return file_put_contents($targetPath, $content) !== false;
+    }
+
+    // Fallback: check resolved paths
+    $realBase = realpath($baseDir);
     $realParent = realpath($parentDir);
-    if ($realParent === false) {
-        return false;
+    if ($realBase !== false && $realParent !== false && str_starts_with($realParent . '/', $realBase . '/')) {
+        return file_put_contents($targetPath, $content) !== false;
     }
 
-    $basePrefix = rtrim(str_replace('\\', '/', $baseReal), '/') . '/';
-    $parentNormalized = rtrim(str_replace('\\', '/', $realParent), '/') . '/';
-    if (!str_starts_with($parentNormalized, $basePrefix)) {
-        return false;
-    }
-
-    return file_put_contents($targetPath, $content) !== false;
+    return false;
 }
 
 /**

@@ -545,10 +545,20 @@ function writeSnapshotFile(string $baseDir, string $relativePath, string $conten
         return false;
     }
 
-    $realBase = realpath($baseDir);
-    $realParent = realpath($parentDir);
-    if ($realBase === false || $realParent === false || !str_starts_with($realParent, $realBase)) {
-        return false;
+    $realBase = realpath($baseDir) ?: $baseDir;
+    $realParent = realpath($parentDir) ?: $parentDir;
+
+    // Check containment via logical path first (handles symlinks),
+    // then via resolved path as fallback
+    $normParent = rtrim(str_replace('//', '/', $realParent), '/');
+    $normBase = rtrim(str_replace('//', '/', $realBase), '/');
+    if (!str_starts_with($normParent . '/', $normBase . '/') && $normParent !== $normBase) {
+        // Try with the unresolved paths
+        $logicalParent = rtrim(str_replace('//', '/', $parentDir), '/');
+        $logicalBase = rtrim(str_replace('//', '/', $baseDir), '/');
+        if (!str_starts_with($logicalParent . '/', $logicalBase . '/') && $logicalParent !== $logicalBase) {
+            return false;
+        }
     }
 
     return file_put_contents($targetPath, $content) !== false;

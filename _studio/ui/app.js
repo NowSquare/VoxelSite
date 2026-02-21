@@ -60,6 +60,23 @@ const COMMAND_PINS_KEY = 'vs-prompt-pins-v1';
 const CODE_COLLAPSE_MIN_LINES = 8;
 const CODE_COLLAPSE_PREVIEW_LINES = 5;
 
+/** Demo mode flag — read once from the server-rendered data attribute */
+const IS_DEMO = document.documentElement.dataset.demo === 'true';
+
+/**
+ * Block a write action in demo mode.
+ * Shows a warning toast and returns true (blocked), or false (allowed).
+ */
+function demoGuard() {
+  if (!IS_DEMO) return false;
+  showToast('Demo mode \u2014 this action is disabled.', 'warning');
+  return true;
+}
+
+// Expose for sub-views (editor, settings, etc.)
+window.IS_DEMO = IS_DEMO;
+window.demoGuard = demoGuard;
+
 // ═══════════════════════════════════════════
 //  Mount
 // ═══════════════════════════════════════════
@@ -251,6 +268,11 @@ function renderTopBar() {
           <nav class="flex items-center gap-0.5" aria-label="Studio navigation">
             ${navHtml}
           </nav>
+          ${IS_DEMO ? `
+            <span class="vs-demo-badge" title="Read-only preview — install your own copy to get started.">
+              ${icons.eye} Demo
+            </span>
+          ` : ''}
         </div>
 
         <!-- Right: Search hint + Theme + User -->
@@ -1134,6 +1156,8 @@ function openAssetLightbox(imageAssets, startIndex, currentFilter) {
 }
 
 async function uploadAssets(fileList) {
+  if (demoGuard()) return;
+
   const statusEl = document.getElementById('status-text');
   if (statusEl) statusEl.textContent = `Uploading ${fileList.length} file(s)...`;
 
@@ -3738,12 +3762,12 @@ function bindAppEvents() {
   // ── Status Bar: Preview ──
   const undoStatusBtn = document.getElementById('btn-undo-status');
   if (undoStatusBtn) {
-    undoStatusBtn.addEventListener('click', () => performUndo());
+    undoStatusBtn.addEventListener('click', () => { if (!demoGuard()) performUndo(); });
   }
 
   const redoStatusBtn = document.getElementById('btn-redo-status');
   if (redoStatusBtn) {
-    redoStatusBtn.addEventListener('click', () => performRedo());
+    redoStatusBtn.addEventListener('click', () => { if (!demoGuard()) performRedo(); });
   }
 
   // ── Status Bar: Preview ──
@@ -3758,6 +3782,7 @@ function bindAppEvents() {
   const snapshotBtn = document.getElementById('btn-snapshot');
   if (snapshotBtn) {
     snapshotBtn.addEventListener('click', async () => {
+      if (demoGuard()) return;
       snapshotBtn.disabled = true;
       setStatusText('Creating snapshot...');
 
@@ -3783,6 +3808,7 @@ function bindAppEvents() {
     applyPublishStateUi();
 
     publishBtn.addEventListener('click', async () => {
+      if (demoGuard()) return;
       const publishState = ensurePublishState();
       if (publishState.publishing) return;
 
@@ -4388,6 +4414,8 @@ function schedulePublishStatePolling() {
 // ═══════════════════════════════════════════
 
 async function handleSend() {
+  if (demoGuard()) return;
+
   const input = document.getElementById('prompt-input');
   if (!input) return;
 
@@ -4860,9 +4888,16 @@ function renderLoginRedirect() {
               <path d="m3.3 7 8.7 5 8.7-5"/>
               <path d="M12 22V12"/>
             </svg>
-            <h1 class="vs-login-title">Enter the Studio</h1>
-            <p class="vs-login-subtitle">Resume construction.</p>
+            <h1 class="vs-login-title">${IS_DEMO ? 'Welcome to the Demo' : 'Enter the Studio'}</h1>
+            <p class="vs-login-subtitle">${IS_DEMO ? 'Explore freely — this is a live preview.' : 'Resume construction.'}</p>
           </div>
+
+          ${IS_DEMO ? `
+            <div class="vs-demo-login-banner">
+              <strong>Demo Mode</strong>
+              <span>Browse everything. Changes won\u2019t be saved.</span>
+            </div>
+          ` : ''}
 
           <div id="login-error" class="hidden mb-5 px-4 py-3 bg-vs-error-dim text-vs-error text-sm rounded-xl border border-vs-error/10"></div>
 
@@ -4871,18 +4906,20 @@ function renderLoginRedirect() {
               <label class="vs-input-label">Email</label>
               <input id="login-email" type="email" required
                 class="vs-input"
-                placeholder="you@example.com">
+                placeholder="you@example.com"
+                ${IS_DEMO ? 'value="demo@example.com"' : ''}>
             </div>
 
             <div>
               <div class="vs-login-field-header">
                 <label class="vs-input-label">Password</label>
-                <button type="button" id="btn-forgot" class="vs-login-forgot">Forgot?</button>
+                ${IS_DEMO ? '' : '<button type="button" id="btn-forgot" class="vs-login-forgot">Forgot?</button>'}
               </div>
               <div class="vs-login-password-wrap">
                 <input id="login-password" type="password" required
                   class="vs-input"
-                  placeholder="Your password">
+                  placeholder="Your password"
+                  ${IS_DEMO ? 'value="welcome3210"' : ''}>
                 <button type="button" id="btn-toggle-pw" class="vs-login-eye" title="Show password">
                   ${icons.eye}
                 </button>
@@ -4890,12 +4927,12 @@ function renderLoginRedirect() {
             </div>
 
             <button type="submit" class="vs-btn vs-btn-primary vs-login-submit">
-              Open Studio
+              ${IS_DEMO ? 'Enter Demo' : 'Open Studio'}
             </button>
           </form>
 
           <div class="vs-login-footer">
-            <p>Your files. Your server. Your website.</p>
+            <p>${IS_DEMO ? 'Read-only preview \u2014 install your own copy to get started.' : 'Your files. Your server. Your website.'}</p>
           </div>
         </div>
 
@@ -4914,6 +4951,12 @@ function renderLoginRedirect() {
         </div>
 
       </div>
+
+      <!-- Theme toggle — subtle floating button in the corner -->
+      <button id="btn-login-theme" class="vs-login-theme-toggle"
+        title="Toggle light/dark mode">
+        ${(store.get('theme') || 'forge') === 'forge' ? icons.sun : icons.moon}
+      </button>
     </div>
   `;
 
@@ -4926,6 +4969,22 @@ function renderLoginRedirect() {
       pwInput.type = isPassword ? 'text' : 'password';
       toggleBtn.innerHTML = isPassword ? icons.eyeOff : icons.eye;
       toggleBtn.title = isPassword ? 'Hide password' : 'Show password';
+    });
+  }
+
+  // ─── Theme toggle on the login page ───
+  const loginThemeBtn = document.getElementById('btn-login-theme');
+  if (loginThemeBtn) {
+    loginThemeBtn.addEventListener('click', () => {
+      const newTheme = toggleTheme();
+      // Animate the icon swap
+      loginThemeBtn.style.transform = 'rotate(180deg) scale(0.8)';
+      loginThemeBtn.style.opacity = '0';
+      setTimeout(() => {
+        loginThemeBtn.innerHTML = newTheme === 'forge' ? icons.sun : icons.moon;
+        loginThemeBtn.style.transform = 'rotate(0deg) scale(1)';
+        loginThemeBtn.style.opacity = '1';
+      }, 150);
     });
   }
 

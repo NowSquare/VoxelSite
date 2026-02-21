@@ -100,6 +100,12 @@ async function request(method, endpoint, body = null, options = {}) {
     }
 
     if (!json.ok && json.error) {
+      // Demo mode — show toast for blocked actions automatically
+      if (json.error.code === 'demo_mode') {
+        if (window.showToast) {
+          window.showToast(json.error.message || 'Demo mode — this action is disabled.', 'warning');
+        }
+      }
       return { ok: false, error: json.error };
     }
 

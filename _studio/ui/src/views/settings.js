@@ -500,6 +500,7 @@ async function loadSettings() {
   // Bind log deletion buttons (two-step confirm)
   document.querySelectorAll('.btn-delete-log').forEach(btn => {
     btn.addEventListener('click', async () => {
+      if (window.demoGuard?.()) return;
       if (btn.dataset.confirm !== 'true') {
         btn.dataset.confirm = 'true';
         btn.innerHTML = '<span style="font-size: 11px;">Sure?</span>';
@@ -523,6 +524,7 @@ async function loadSettings() {
   const deleteAllBtn = document.getElementById('btn-delete-all-logs');
   if (deleteAllBtn) {
     deleteAllBtn.addEventListener('click', async () => {
+      if (window.demoGuard?.()) return;
       if (deleteAllBtn.dataset.confirm !== 'true') {
         deleteAllBtn.dataset.confirm = 'true';
         deleteAllBtn.textContent = 'Sure?';
@@ -656,6 +658,7 @@ function bindUpdateUpload() {
   }
 
   async function applyDistPackage(filename, version) {
+    if (window.demoGuard?.()) return;
     const confirmOk = confirm(
       `Apply update from "${filename}" (v${version})?\n\n` +
       `This will overwrite system files. Your pages, database, settings, and uploaded files are preserved.\n\n` +
@@ -702,6 +705,7 @@ function bindUpdateUpload() {
 
   // Click zone → open file picker
   zone.addEventListener('click', (e) => {
+    if (window.demoGuard?.()) return;
     if (e.target.closest('#vs-update-result')) return;
     fileInput.click();
   });
@@ -715,6 +719,7 @@ function bindUpdateUpload() {
   zone.addEventListener('drop', (e) => {
     e.preventDefault();
     zone.classList.remove('is-dragover');
+    if (window.demoGuard?.()) return;
     const file = e.dataTransfer?.files?.[0];
     if (file && file.name.endsWith('.zip')) {
       handleUpdateFile(file);
@@ -952,6 +957,7 @@ function bindResetSiteEvent() {
   if (!resetBtn) return;
 
   resetBtn.addEventListener('click', () => {
+    if (window.demoGuard?.()) return;
     showResetModal();
   });
 }
@@ -964,6 +970,7 @@ function bindResetInstallEvent() {
   if (!btn) return;
 
   btn.addEventListener('click', () => {
+    if (window.demoGuard?.()) return;
     showResetInstallModal();
   });
 }
@@ -1467,6 +1474,7 @@ function bindSettingsEvents(currentSettings, providers) {
   const providerSelect = document.getElementById('set-ai-provider');
   if (providerSelect) {
     providerSelect.addEventListener('change', async (e) => {
+      if (window.demoGuard?.()) { e.target.value = selectedProvider; return; }
       selectedProvider = e.target.value;
       // Save the provider change immediately, then reload settings
       await api.put('/settings', { ai_provider: selectedProvider });
@@ -1480,6 +1488,7 @@ function bindSettingsEvents(currentSettings, providers) {
 
   if (testBtn) {
     testBtn.addEventListener('click', async () => {
+      if (window.demoGuard?.()) return;
       const key = apiKeyInput?.value?.trim() || '';
       const baseUrl = document.getElementById('set-base-url')?.value?.trim() || '';
 
@@ -1525,6 +1534,7 @@ function bindSettingsEvents(currentSettings, providers) {
 
   if (identityBtn) {
     identityBtn.addEventListener('click', async () => {
+      if (window.demoGuard?.()) return;
       identityBtn.textContent = 'Saving...';
       identityBtn.disabled = true;
 
@@ -1558,6 +1568,7 @@ function bindSettingsEvents(currentSettings, providers) {
 
   if (saveBtn) {
     saveBtn.addEventListener('click', async () => {
+      if (window.demoGuard?.()) return;
       saveBtn.textContent = 'Saving...';
       saveBtn.disabled = true;
 
@@ -1671,6 +1682,7 @@ function bindEmailSettingsEvents(mailConfig, presets) {
   const testBtn = document.getElementById('btn-mail-test');
   if (testBtn) {
     testBtn.addEventListener('click', async () => {
+      if (window.demoGuard?.()) return;
       const recipient = document.getElementById('set-mail-test-recipient')?.value?.trim();
       if (!recipient) {
         showMailTestStatus('Enter an email address to send the test to.', 'warning');
@@ -1702,6 +1714,7 @@ function bindEmailSettingsEvents(mailConfig, presets) {
 
   if (saveMailBtn) {
     saveMailBtn.addEventListener('click', async () => {
+      if (window.demoGuard?.()) return;
       saveMailBtn.textContent = 'Saving...';
       saveMailBtn.disabled = true;
 

@@ -158,7 +158,22 @@ async function init() {
   });
 
   // Register routes
+  window.addEventListener('beforeunload', (e) => {
+    if (window.__hasUnsavedEditorChanges?.()) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+
   router
+    .beforeEach(async (to, from) => {
+      if (from.startsWith('editor') && !to.startsWith('editor')) {
+        if (window.__hasUnsavedEditorChanges?.()) {
+          return await confirmUnsavedChanges();
+        }
+      }
+      return true;
+    })
     .on('chat',              () => renderApp())
     .on('editor',            () => renderApp())
     .on('pages',             () => renderApp())
@@ -1680,6 +1695,64 @@ async function executeResetInstall(overlay) {
 }
 
 /**
+ * Show a warning modal that there are unsaved changes.
+ * Returns a Promise that resolves to true if changes should be discarded (proceed), false if user cancelled.
+ */
+function confirmUnsavedChanges() {
+  return new Promise((resolve) => {
+    const existing = document.getElementById('unsaved-modal-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'unsaved-modal-overlay';
+    overlay.className = 'vs-modal-overlay';
+    overlay.innerHTML = `
+      <div class="vs-modal" id="unsaved-modal">
+        <div class="vs-modal-header">
+          <div class="vs-modal-icon vs-modal-icon-warning">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          </div>
+          <h2 class="vs-modal-title">Unsaved Changes</h2>
+          <p class="vs-modal-desc">You have unsaved changes in the Code Editor. If you leave now, these changes will be permanently lost.</p>
+        </div>
+        <div class="vs-modal-body" style="padding-top: 12px; padding-bottom: 24px;"></div>
+        <div class="vs-modal-footer">
+          <button id="unsaved-cancel-btn" class="vs-btn vs-btn-secondary vs-btn-sm">Stay to Save</button>
+          <button id="unsaved-discard-btn" class="vs-btn vs-btn-primary vs-btn-sm" style="background: var(--vs-error); border-color: var(--vs-error);">Discard Changes</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+    overlay.offsetHeight; // reflow
+    overlay.classList.add('is-visible');
+
+    const close = (result) => {
+      document.removeEventListener('keydown', handleEscape, { capture: true });
+      overlay.classList.remove('is-visible');
+      setTimeout(() => {
+        overlay.remove();
+        resolve(result);
+      }, 300);
+    };
+
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        close(false);
+      }
+    };
+
+    // Use capture phase so we intercept it before Command Palette or Visual Editor
+    document.addEventListener('keydown', handleEscape, { capture: true });
+
+    document.getElementById('unsaved-cancel-btn').addEventListener('click', () => close(false));
+    document.getElementById('unsaved-discard-btn').addEventListener('click', () => close(true));
+  });
+}
+
+/**
  * Show the reset confirmation modal with type-to-confirm UX.
  */
 function showResetModal() {
@@ -1901,6 +1974,23 @@ function navigateToChatWithPrompt(prompt) {
   }, 150);
 }
 
+/**
+ * Navigate to the Chat tab and immediately send a prompt, optionally attaching action payloads.
+ */
+function navigateToChatAndSendPrompt(prompt, options = {}) {
+  router.navigate('chat');
+  setTimeout(() => {
+    const input = document.getElementById('prompt-input');
+    const sendBtn = document.getElementById('btn-send');
+    if (input && sendBtn) {
+      if (options.actionType) input.dataset.actionType = options.actionType;
+      if (options.actionData) input.dataset.actionData = options.actionData;
+      input.value = prompt;
+      sendBtn.click();
+    }
+  }, 150);
+}
+
 function showConfirmModal({
   title = 'Confirm Action',
   description = 'Are you sure?',
@@ -1951,6 +2041,7 @@ function showPromptModal({
   placeholder = '',
   initialValue = '',
   confirmLabel = 'Continue',
+  inputType = 'text',
 }) {
   return new Promise((resolve) => {
     const existing = document.getElementById('vs-prompt-overlay');
@@ -1959,6 +2050,11 @@ function showPromptModal({
     const overlay = document.createElement('div');
     overlay.id = 'vs-prompt-overlay';
     overlay.className = 'vs-modal-overlay';
+    
+    const inputHtml = inputType === 'textarea'
+      ? `<textarea id="vs-prompt-input" class="vs-input w-full" rows="4" placeholder="${escapeHtml(placeholder)}" style="resize: vertical;">${escapeHtml(initialValue)}</textarea>`
+      : `<input id="vs-prompt-input" type="text" class="vs-input w-full" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(initialValue)}">`;
+
     overlay.innerHTML = `
       <div class="vs-modal" style="max-width: 560px;">
         <div class="vs-modal-header">
@@ -1966,8 +2062,8 @@ function showPromptModal({
           ${description ? `<p class="vs-modal-desc">${escapeHtml(description)}</p>` : ''}
         </div>
         <div class="vs-modal-body">
-          <label class="block text-sm text-vs-text-secondary mb-1">${escapeHtml(label)}</label>
-          <input id="vs-prompt-input" type="text" class="vs-input w-full" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(initialValue)}">
+          ${label ? `<label class="block text-sm text-vs-text-secondary mb-1">${escapeHtml(label)}</label>` : ''}
+          ${inputHtml}
         </div>
         <div class="vs-modal-footer">
           <button id="vs-prompt-cancel" class="vs-btn vs-btn-secondary vs-btn-sm" type="button">Cancel</button>
@@ -1995,9 +2091,17 @@ function showPromptModal({
       close((input?.value || '').trim());
     });
     input?.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        close((input?.value || '').trim());
+      // If textarea, require Cmd+Enter to submit, let normal Enter add a newline
+      if (inputType === 'textarea') {
+        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          close((input?.value || '').trim());
+        }
+      } else {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          close((input?.value || '').trim());
+        }
       }
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -2151,6 +2255,11 @@ async function initEditorPage() {
     expandedSections: new Set(saved?.expandedSections || ['site', 'prompts']),
     // Paths to restore after init
     _pendingRestore: saved ? { tabs: saved.openTabs || [], active: saved.activeTab } : null,
+  };
+
+  window.__hasUnsavedEditorChanges = () => {
+    if (!editorState || !editorState.openTabs) return false;
+    return editorState.openTabs.some(t => t.dirty);
   };
 
   // Save editor state to sessionStorage for restore on route return
@@ -3010,6 +3119,120 @@ async function initEditorPage() {
 
     // Track dirty state on content change
     monacoEditor.onDidChangeModelContent(() => markDirty());
+
+    // ── AI Inline Code Editor (Cmd+K) ──
+    monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, async () => {
+      // 1. Guard against read-only or empty state
+      if (editorState.monacoInstance.getOption(monaco.editor.EditorOption.readOnly)) {
+        showToast('Cannot use inline AI on a read-only file.', 'warning');
+        return;
+      }
+      const activePath = editorState.activeTab;
+      if (!activePath) return;
+
+      // 2. Extract selected code
+      const model = editorState.monacoInstance.getModel();
+      let selection = editorState.monacoInstance.getSelection();
+      let selectedText = model.getValueInRange(selection);
+
+      // If nothing is highlighted, grab the current line contextually
+      if (!selectedText || selectedText.trim() === '') {
+        const pos = editorState.monacoInstance.getPosition();
+        const lineContent = model.getLineContent(pos.lineNumber);
+        if (lineContent.trim() === '') {
+          showToast('Highlight a block of code to edit.', 'warning');
+          return;
+        }
+        selectedText = lineContent;
+        // Visually expand selection to the line so the user knows what was targeted
+        editorState.monacoInstance.setSelection(new monaco.Range(pos.lineNumber, 1, pos.lineNumber, model.getLineMaxColumn(pos.lineNumber)));
+      }
+
+      // 3. Prompt user for changes
+      const instruction = await showPromptModal({
+        title: 'Inline AI Edit',
+        label: 'Instruction',
+        placeholder: 'e.g. Turn this list into a responsive 3-column grid...',
+        confirmLabel: 'Generate',
+        inputType: 'textarea',
+      });
+
+      if (!instruction) return; // User cancelled modal
+
+      // 4. Run the AI code modification inline with a modal loader
+      const originalContent = editorState.monacoInstance.getValue();
+      editorState.monacoInstance.updateOptions({ readOnly: true });
+      
+      const overlay = document.createElement('div');
+      overlay.className = 'absolute inset-0 z-[100] flex items-center justify-center bg-[var(--vs-bg)]/50 backdrop-blur-sm';
+      overlay.innerHTML = `
+        <div class="flex items-center gap-4 px-6 py-4 rounded-xl" style="background: var(--vs-bg-surface); border: 1px solid var(--vs-border-medium); box-shadow: var(--vs-shadow-lg), var(--vs-cream-inset);">
+          <div style="color: var(--vs-accent);">${icons.box}</div>
+          <div class="vs-loading gap-1.5 opacity-70"><i></i><i></i><i></i></div>
+          <span class="text-sm font-medium" style="color: var(--vs-text-primary);" id="ai-inline-status">AI is writing code...</span>
+        </div>
+      `;
+      if (monacoContainerEl) {
+        monacoContainerEl.style.position = 'relative';
+        monacoContainerEl.appendChild(overlay);
+      }
+
+      setStatus('AI is editing...', 'muted');
+
+      try {
+        await apiStream('/ai/prompt', {
+          user_prompt: instruction,
+          action_type: 'inline_edit',
+          action_data: { path: activePath, selection: selectedText },
+        }, {
+          onStatus: (msg) => { 
+            const el = document.getElementById('ai-inline-status'); 
+            if (el) el.textContent = 'Generating...'; 
+          },
+          onFile: () => { 
+            const el = document.getElementById('ai-inline-status'); 
+            if (el) el.textContent = 'Applying changes...'; 
+          },
+          onError: (err) => {
+            showToast(err.message || 'Generation failed', 'error');
+          },
+          onDone: async (res) => {
+            const hasModified = res.files_modified?.some(f => {
+              const fPath = typeof f === 'string' ? f : (f?.path || '');
+              return fPath.replace(/^\//, '') === activePath.replace(/^\//, '');
+            });
+            if (hasModified) {
+              // Re-fetch the file content with cache buster
+              const { ok, data } = await api.get(`/files/content?path=${encodeURIComponent(activePath)}&_t=${Date.now()}`);
+              if (ok && data?.content) {
+                const newContent = data.content;
+                
+                // Revert the backend file so this is strictly an unsaved edit
+                await api.put('/files/content', { path: activePath, content: originalContent });
+
+                const model = editorState.monacoInstance.getModel();
+                model.setValue(newContent);
+                // Also update the buffer
+                const tab = editorState.openTabs.find(t => t.path === activePath);
+                if (tab) {
+                  tab._buffer = newContent;
+                  tab.baseline = originalContent; // Keep baseline synced with backend
+                }
+                
+                markDirty();
+                showToast('Review changes and save.', 'success');
+              }
+            } else if (!res.partial) {
+              showToast('Complete (No changes made to this file)', 'info');
+            }
+          }
+        });
+      } finally {
+        editorState.monacoInstance.updateOptions({ readOnly: false });
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        setStatus('Ready', 'muted');
+      }
+    });
   };
 
   // ── Boot sequence ──
@@ -7895,12 +8118,20 @@ async function handleSend() {
   const actionType = input.dataset.actionType || 'free_prompt';
   delete input.dataset.actionType; // Clear for next use
 
+  const rawActionData = input.dataset.actionData;
+  let actionData = null;
+  if (rawActionData) {
+    try { actionData = JSON.parse(rawActionData); } catch (e) {}
+    delete input.dataset.actionData;
+  }
+
   // ── Stream the AI response ──
   await apiStream('/ai/prompt', {
     user_prompt: prompt,
     action_type: actionType,
     page_scope: store.get('activePageScope'),
     conversation_id: store.get('activeConversationId'),
+    action_data: actionData,
   }, {
     signal: abortController.signal,
 

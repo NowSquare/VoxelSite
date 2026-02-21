@@ -37,6 +37,15 @@ class Router {
   /** @type {boolean} */
   #started = false;
 
+  /** @type {Function|null} */
+  #beforeEach = null;
+
+  /** @type {string|null} */
+  #lastPath = null;
+
+  /** @type {boolean} */
+  #resolving = false;
+
   /**
    * Register a route handler.
    *
@@ -74,6 +83,17 @@ class Router {
   }
 
   /**
+   * Register a hook that runs before every navigation.
+   * If the handler returns false or a Promise resolving to false, navigation is cancelled.
+   * @param {Function} handler - async (toPath, fromPath) => boolean
+   * @returns {Router}
+   */
+  beforeEach(handler) {
+    this.#beforeEach = handler;
+    return this;
+  }
+
+  /**
    * Start listening for hash changes.
    * Also triggers the initial route match.
    */
@@ -104,8 +124,29 @@ class Router {
   /**
    * Resolve the current hash against registered routes.
    */
-  #resolve() {
+  async #resolve() {
+    if (this.#resolving) return;
+    
     const path = this.#parsePath();
+    const oldPath = this.#lastPath;
+
+    if (path === oldPath && this.#started) return;
+
+    if (this.#beforeEach && oldPath !== null) {
+      this.#resolving = true;
+      try {
+        const proceed = await this.#beforeEach(path, oldPath);
+        if (proceed === false) {
+          // Revert hash silently to old path without triggering another resolve
+          window.history.replaceState(null, '', `#/${oldPath}`);
+          return;
+        }
+      } finally {
+        this.#resolving = false;
+      }
+    }
+
+    this.#lastPath = path;
 
     for (const route of this.#routes) {
       const match = path.match(route.regex);

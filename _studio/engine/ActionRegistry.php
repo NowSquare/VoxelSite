@@ -159,6 +159,7 @@ class ActionRegistry
             'change_design' => $this->buildChangeDesignPrompt($userPrompt, $actionData),
             'add_page'      => $this->buildAddPagePrompt($userPrompt, $actionData),
             'optimize_aeo'  => $this->buildOptimizeAeoPrompt($userPrompt),
+            'inline_edit'   => $this->buildInlineEditPrompt($userPrompt, $actionData),
             default         => $userPrompt, // free_prompt passes through unchanged
         };
     }
@@ -315,6 +316,16 @@ class ActionRegistry
                 'steps'       => [], // One-click action — no wizard needed
             ],
 
+            'inline_edit' => [
+                'id'          => 'inline_edit',
+                'label'       => 'Inline Edit',
+                'description' => 'Edit a specific block of code inside the editor',
+                'icon'        => 'code',
+                'category'    => 'general',
+                'promptFile'  => 'inline_edit.md',
+                'steps'       => [],
+            ],
+
             'free_prompt' => [
                 'id'          => 'free_prompt',
                 'label'       => 'Free Prompt',
@@ -455,6 +466,27 @@ class ActionRegistry
         $prompt .= "\n\n## IMPORTANT\nReview the current data layer context. Create or update data files as needed. Do NOT ask questions — analyze and optimize immediately. Preserve all existing design and layout.";
 
         return $prompt;
+    }
+
+    /**
+     * Build the prompt for inline code edits via Cmd+K.
+     * Instructs the AI to focus precisely on replacing a highlighted block.
+     */
+    private function buildInlineEditPrompt(string $userPrompt, array $data): string
+    {
+        $parts = ["Modify the specific file and code block requested. Integrate your changes into the exact location of the selected code, and return THE ENTIRE REWRITTEN FILE using the standard <file> tags. DO NOT return partial files."];
+
+        if (!empty($data['path'])) {
+            $parts[] = "\n## Target File\n{$data['path']}";
+        }
+
+        if (!empty($data['selection'])) {
+            $parts[] = "\n## Selected Code to Replace\n```php\n{$data['selection']}\n```";
+        }
+
+        $parts[] = "\n## Instruction\n{$userPrompt}";
+
+        return implode("\n", $parts);
     }
 
     // ═══════════════════════════════════════════

@@ -4134,6 +4134,12 @@ select.vs-input {
   border: 1px solid color-mix(in srgb, var(--vs-error) 20%, transparent);
 }
 
+.vs-modal-icon-warning {
+  background: color-mix(in srgb, #eab308 12%, transparent);
+  color: #eab308;
+  border: 1px solid color-mix(in srgb, #eab308 20%, transparent);
+}
+
 .vs-modal-title {
   font-size: var(--text-lg);
   font-weight: 600;

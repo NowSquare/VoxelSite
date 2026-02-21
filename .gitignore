@@ -86,6 +86,7 @@ assets/fonts/*
 # ── Generated site files (AI output) ──
 # Root-level PHP pages created by the AI
 /*.php
+!index.php
 !LocalValetDriver.php
 !submit.php
 

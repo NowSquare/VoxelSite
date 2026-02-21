@@ -21,9 +21,10 @@ if (!isInstalled()) {
 
 // ── Resolve asset paths relative to _studio ──
 $basePath = '/_studio';
+$isDemo = \VoxelSite\DemoMode::isActive();
 ?>
 <!DOCTYPE html>
-<html lang="en" data-theme="forge">
+<html lang="en" data-theme="forge"<?= $isDemo ? ' data-demo="true"' : '' ?>>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">

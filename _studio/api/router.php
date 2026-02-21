@@ -21,6 +21,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/engine/bootstrap.php';
 
 use VoxelSite\Database;
+use VoxelSite\DemoMode;
 use VoxelSite\Logger;
 
 // ── CORS headers for same-origin API calls ──
@@ -211,6 +212,11 @@ foreach ($routes as [$routeMethod, $routePattern, $endpointFile, $requiresAuth])
             ]], 403);
             exit;
         }
+    }
+
+    // ── Demo mode: block all write operations ──
+    if (DemoMode::shouldBlock($method, $path)) {
+        DemoMode::blockIfActive();
     }
 
     // ── Dispatch to endpoint ──

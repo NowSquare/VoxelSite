@@ -108,6 +108,7 @@ assets/fonts/*
 /_data/submissions.db-journal
 /_data/.reset-token
 /_data/uploads/
+/.demo
 
 # Nested page directories created by the AI (services/, blog/, etc.)
 # Ignore ALL root-level directories, then whitelist known framework dirs

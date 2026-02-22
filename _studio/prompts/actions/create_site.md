@@ -128,9 +128,9 @@ Prefer design token colors (via `style.css` `:root`) for theme colors that shoul
 
 **Example — a hero section done RIGHT:**
 ```php
-<section class="relative min-h-[80vh] flex items-center justify-center overflow-hidden"
+<section class="relative min-h-[80vh] flex items-center justify-center overflow-hidden pt-24"
          style="background-image: url('/assets/images/backgrounds/...);">
-  <div class="absolute inset-0 bg-gradient-to-br from-black/70 via-black/40 to-black/60"></div>
+  <div class="absolute inset-0 bg-black opacity-50"></div>
   <div class="relative z-10 text-center px-4 max-w-4xl mx-auto">
     <p class="text-sm uppercase tracking-widest text-white/70 mb-4">Lyon, France</p>
     <h1 class="text-5xl md:text-7xl font-bold text-white mb-6" style="text-shadow: 0 2px 20px rgba(0,0,0,0.3);">Sable & Lune</h1>
@@ -159,7 +159,7 @@ Every new site should use images from the built-in library. The IMAGE LIBRARY se
 1. Max 3–4 library images per page. Don't over-use — the site should feel curated, not stuffed.
 2. Never repeat an image on the same page.
 3. Always match the text color to the image tone (the `contrast` segment in the filename: `dark-text` or `light-text`).
-4. **Always use the Tailwind 4 overlay `<div>` pattern** when placing text over a background image. Use `style="background-image: url(...); background-size: cover; background-position: center;"` on the container, then an `<div class="absolute inset-0 bg-gradient-to-br from-black/60 via-black/30 to-black/50"></div>` overlay, and `<div class="relative z-10">` for content. Add `text-shadow` on hero text. **Never use CSS `background:` shorthand with gradients** — it conflicts with Tailwind.
+4. **Always use an overlay `<div>` over background images.** Use `style="background-image: url(...); background-size: cover; background-position: center;"` on the container, then `<div class="absolute inset-0 bg-black opacity-50"></div>` (or `bg-white`, or a brand color), and `<div class="relative z-10">` for content. Users can easily adjust `opacity-*` in the visual editor. Add `text-shadow` on hero text. **Do NOT use gradient classes** for overlays — use simple `bg-color` + `opacity-*`.
 5. The design intelligence should note which library images were selected and why.
 
 ## Animations

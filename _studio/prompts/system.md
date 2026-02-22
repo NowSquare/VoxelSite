@@ -207,33 +207,26 @@ Every component should feel like it was designed by the same person:
 
 **Hero Sections:**
 - Full viewport height or close to it: `min-height: 80vh` minimum
-- **Always use a transparent gradient overlay** when a library image is the background. Never place raw text on an image without an overlay. Use the **Tailwind 4 overlay `<div>` pattern** — it's the only reliable approach since `background:` shorthand conflicts with Tailwind:
+- **Must include top padding** (`pt-24` or `pt-32`) to clear the fixed navigation bar. Without this, content overlaps the nav on shorter viewports.
+- **Always use an overlay `<div>` over background images.** Never place raw text directly on an image. Use a simple `bg-{color} opacity-{value}` overlay — this is easy for users to adjust in the visual editor:
 
   ```html
-  <!-- ✅ CORRECT: Tailwind 4 overlay pattern for hero with background image -->
   <section class="relative min-h-[80vh] flex items-center justify-center overflow-hidden"
            style="background-image: url(/assets/library/backgrounds/vs-bg_golden-clouds_atmosphere_warm_light_dark-text.png); background-size: cover; background-position: center;">
-    <!-- Gradient overlay — use Tailwind gradient classes -->
-    <div class="absolute inset-0 bg-gradient-to-br from-black/60 via-black/30 to-black/50"></div>
-    <!-- Content sits above the overlay -->
+    <div class="absolute inset-0 bg-black opacity-50"></div>
     <div class="relative z-10 text-center text-white px-4">
       <h1 class="text-5xl font-bold" style="text-shadow: 0 2px 20px rgba(0,0,0,0.3);">Your Headline</h1>
     </div>
   </section>
   ```
 
-  **Overlay variations (change the Tailwind classes on the overlay div):**
-  - Dark diagonal: `bg-gradient-to-br from-black/60 via-black/30 to-black/50`
-  - Brand tint: `bg-gradient-to-b from-primary/70 to-black/40` (use brand color)
-  - Radial spotlight: use `style="background: radial-gradient(ellipse at center, rgba(0,0,0,0.2), rgba(0,0,0,0.65));"`
-  - Bottom fade: `bg-gradient-to-b from-transparent via-transparent to-black/70`
-
-  **Key rules for this pattern:**
-  - The `background-image: url(...)` goes as an inline `style` on the container (Tailwind can't do `url()`)
-  - The gradient overlay is a separate `<div class="absolute inset-0 ...">` using Tailwind gradient utilities
-  - Content uses `relative z-10` to sit above the overlay
-  - Always add `text-shadow` on hero text for extra legibility
-  - Hero image sections MUST use this pattern — no exceptions
+  **Overlay rules:**
+  - Use `bg-black opacity-45` to `opacity-60` for dark overlays, `bg-white opacity-40` to `opacity-60` for light overlays, or `bg-{brand-color} opacity-50` for tinted overlays.
+  - The `background-image: url(...)` goes as an inline `style` on the container.
+  - The overlay is a separate `<div class="absolute inset-0 bg-{color} opacity-{value}">` — users can tweak `opacity-*` in the visual editor.
+  - Content uses `relative z-10` to sit above the overlay.
+  - Always add `text-shadow` on hero text for extra legibility.
+  - **Do NOT use gradient classes** (`bg-gradient-to-br from-black/60 via-black/30`) for overlays — they are hard for users to adjust. Use simple `bg-color` + `opacity-*` instead.
 
 ### Delightful Animations
 
@@ -442,6 +435,7 @@ Pages use PHP `include` for shared layout elements. **Navigation and footer live
 - **Any `<button>` MUST include `bg-transparent border-0 cursor-pointer`** — browsers apply a white/grey default background otherwise
 - **If using a toggle icon**, use inline SVG with `stroke="currentColor"`. Never `<span>` bars.
 - **Nav must be readable on page load.** Give it a semi-opaque background (`bg-white/90 backdrop-blur` or `bg-gray-900/90 backdrop-blur`). A transparent nav over a background image makes text invisible — this is the most common visual bug.
+- **Fixed/sticky nav padding.** The nav overlays page content. The first section on every page MUST have top padding to clear the nav height (use `pt-24` or `pt-32`). Without this, hero text and content overlap the navigation bar on shorter viewports.
 
 ### Mobile Navigation
 
@@ -459,6 +453,7 @@ Pages use PHP `include` for shared layout elements. **Navigation and footer live
 **If the site has 2–3 pages, a toggle is overkill.** Just show all links.
 
 **When using a toggle pattern:**
+- The mobile menu MUST use `fixed inset-0 z-[60]` or higher to guarantee it sits above all page content — including sticky headers, hero overlays, and positioned sections. The close button must be inside this container and always reachable.
 - The shipped `navigation.js` adds/removes `is-open` on `#mobile-menu` and waits for `transitionend`. Define CSS transitions in `style.css` (fade, slide, scale — match the site's personality).
 - The mobile menu must have its own explicit background — never transparent.
 - Touch targets: 48px minimum. Stagger link entrances for overlays/panels.
@@ -698,15 +693,7 @@ These rules prevent the most common AI generation errors.
   - Content section backgrounds → use **texture** images with a semi-transparent overlay
   - Gallery/portfolio sections → use **gallery** images (`vs-gal_{subject}_{categories}_{tone}_{contrast}.png`)
   - Match warm sites to warm-tone images, dark sites to dark-tone images
-  - When using an image as a background, **always** use the **Tailwind 4 overlay `<div>` pattern** — never a flat uniform color, never CSS `background:` shorthand with gradients:
-    ```html
-    <section class="relative overflow-hidden"
-             style="background-image: url(/assets/library/backgrounds/vs-bg_slate-crags_texture_moody_dark_light-text.png); background-size: cover; background-position: center;">
-      <div class="absolute inset-0 bg-gradient-to-br from-black/60 via-black/30 to-black/50"></div>
-      <div class="relative z-10"><!-- content here --></div>
-    </section>
-    ```
-    Always add `text-shadow: 0 2px 20px rgba(0,0,0,0.3)` on text over images.
+  - When using an image as a background, **always** add an overlay `<div class="absolute inset-0 bg-black opacity-50"></div>` (or `bg-white`, or a brand color) so users can adjust the `opacity-*` in the visual editor. Content uses `relative z-10`. Always add `text-shadow` on text over images.
 - User-uploaded images always take priority over library images. If the user has uploaded a hero image, use it — not a library image.
 - **Never** use `via.placeholder.com`, `placeholder.com`, `unsplash.com`, `picsum.photos`, or any external URL for images.
 - Do not use external assets except optional Google Fonts links in `_partials/header.php`. Everything else must be local: `/assets/images/...`, `/assets/library/...`, `/assets/css/...`, `/assets/js/...`.

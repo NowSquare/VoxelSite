@@ -1348,15 +1348,17 @@ Keep page files at the root level (`*.php`), not inside nested directories.
 The AI creates `_partials/nav.php` and `_partials/footer.php` from scratch using Tailwind classes. The design should match the site's personality — there is no fixed template. A restaurant might have a centered logo with a reservation CTA. A SaaS might have a dark nav with dropdowns. A portfolio might be ultra-minimal.
 
 **Nav must always:**
-- Be responsive (hamburger or alternative pattern on mobile)
+- Be responsive — choose the mobile pattern that fits the site (compact persistent, bottom tab bar, text toggle, full-screen overlay, slide-in panel, or hamburger)
 - Use `aria-current="page"` on the active link
 - Include the site name/logo
 - Use Tailwind utility classes for ALL styling including colors, backgrounds, hover states, and transitions
 - The TailwindCompiler supports ALL standard Tailwind colors (gray-*, yellow-*, blue-*, red-*, etc.) plus design tokens (primary-*, accent-*, etc.) — use them freely
 - All `<ul>` elements must use `list-none` to remove default browser bullets
-- Include a mobile toggle button with JS in `navigation.js`
+- Any `<button>` must include `bg-transparent border-0 cursor-pointer` to neutralize browser defaults
 - Include a styled CTA button (colored background, rounded, hover effects)
 - Use backdrop-blur or background color for sticky/fixed navs
+- First content section must have `pt-24` or `pt-32` to clear the fixed nav
+- Mobile menus must use `fixed inset-0 z-[60]` to sit above all content, with close button always reachable
 
 **Footer must always:**
 - Include copyright with year

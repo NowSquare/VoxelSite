@@ -42,6 +42,15 @@ function renderEditorLayout() {
               <div class="text-xs text-vs-text-ghost py-4 text-center">Loading files…</div>
             </div>
           </div>
+          <!-- SEO & AI -->
+          <div class="vs-explorer-section">
+            <div class="vs-explorer-section-header" data-section="config">
+              <svg class="vs-explorer-caret" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+              <span>SEO & AI</span>
+            </div>
+            <div id="editor-tree-config" class="vs-editor-tree" style="padding-bottom: 8px;">
+            </div>
+          </div>
           <!-- SYSTEM PROMPTS -->
           <div class="vs-explorer-section">
             <div class="vs-explorer-section-header" data-section="prompts">
@@ -131,6 +140,7 @@ async function initEditorPage() {
     files: [],
     treeData: {
       site: [],
+      config: [],
       prompts: []
     },
     openTabs: [],        // [{path, baseline, dirty}]  — populated after load
@@ -141,7 +151,7 @@ async function initEditorPage() {
     fontSize: saved?.fontSize || 13,
     wordWrap: saved?.wordWrap || false,
     expandedFolders: new Set(saved?.expandedFolders || ['_partials', 'assets', 'assets/css', 'assets/js', 'assets/data', 'assets/forms', '_prompts/actions']),
-    expandedSections: new Set(saved?.expandedSections || ['site', 'prompts']),
+    expandedSections: new Set(saved?.expandedSections || ['site', 'config', 'prompts']),
     // Paths to restore after init
     _pendingRestore: saved ? { tabs: saved.openTabs || [], active: saved.activeTab } : null,
   };
@@ -178,6 +188,7 @@ async function initEditorPage() {
   };
 
   const treeEl = document.getElementById('editor-tree');
+  const treeConfigEl = document.getElementById('editor-tree-config');
   const treePromptsEl = document.getElementById('editor-tree-prompts');
   const tabBarEl = document.getElementById('editor-tab-bar');
   const hostEl = document.getElementById('editor-host');
@@ -351,12 +362,15 @@ async function initEditorPage() {
     };
 
     const siteHeader = document.querySelector('[data-section="site"]');
+    const configHeader = document.querySelector('[data-section="config"]');
     const promptsHeader = document.querySelector('[data-section="prompts"]');
 
     if (siteHeader) updateSectionState('site', treeEl, siteHeader);
+    if (configHeader && treeConfigEl) updateSectionState('config', treeConfigEl, configHeader);
     if (promptsHeader && treePromptsEl) updateSectionState('prompts', treePromptsEl, promptsHeader);
 
     treeEl.innerHTML = renderItems(editorState.treeData.site);
+    if (treeConfigEl) treeConfigEl.innerHTML = renderItems(editorState.treeData.config);
     if (treePromptsEl) treePromptsEl.innerHTML = renderItems(editorState.treeData.prompts);
     
     bindTreeEvents();
@@ -861,6 +875,7 @@ async function initEditorPage() {
     };
 
     bindClicks(treeEl);
+    bindClicks(treeConfigEl);
     bindClicks(treePromptsEl);
 
     // Section headers
@@ -1005,9 +1020,10 @@ async function initEditorPage() {
     }
     editorState.files = data.files;
     
-    // Split logically rather than storing one combined state
+    // Split into three sections: site files, config files (_root/), and prompts
     editorState.treeData = {
-      site: buildTree(data.files.filter(f => !f.path.startsWith('_prompts/'))),
+      site: buildTree(data.files.filter(f => !f.path.startsWith('_prompts/') && !f.path.startsWith('_root/'))),
+      config: buildTree(data.files.filter(f => f.path.startsWith('_root/')), '_root/'),
       prompts: buildTree(data.files.filter(f => f.path.startsWith('_prompts/')), '_prompts/')
     };
     

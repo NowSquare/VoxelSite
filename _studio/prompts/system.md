@@ -432,29 +432,41 @@ Pages use PHP `include` for shared layout elements. **Navigation and footer live
   <main>
 ```
 
-**`_partials/nav.php`** — The AI designs this from scratch using Tailwind classes. Every site's nav is unique:
-
-A restaurant might have a centered logo with a reservation CTA. A SaaS might have a transparent nav with dropdowns. A photographer's portfolio might be ultra-minimal with just a wordmark and hamburger. A corporate site might have a mega-menu, language selector, and dark/light toggle.
+**`_partials/nav.php`** — The AI designs this from scratch using Tailwind classes. Every site's nav is unique.
 
 **The nav MUST always:**
-- Be fully responsive (hamburger or alternative mobile pattern)
-- Use `aria-current="page"` on the active link via the `$page['slug']` variable
+- Use `aria-current="page"` on the active link via `$page['slug']`
 - Include the site name/logo
-- Use **Tailwind utility classes** for all styling — never BEM classes like `.site-nav__links`
-- Include a mobile toggle button (JS handled in `navigation.js`)
+- Use Tailwind utility classes for all styling
 - Use semantic HTML: `<header>`, `<nav aria-label="Main navigation">`, `<ul>`, `<li>`, `<a>`
-- **Mobile menu toggle must use an inline SVG icon** (copy the paths from `/assets/icons/menu.svg`). Never use `<span>` elements styled as horizontal bars — that creates ugly, unstyled lines that break across browsers. Use `stroke="currentColor"` so the icon inherits the nav's text color.
-- **Nav must ALWAYS be readable on page load — this is the most common visual bug.**
-  - If the nav overlays a hero image or dark section, the logo and links will be invisible unless you handle contrast.
-  - **Safest approach:** Always give the nav an initial semi-opaque background (e.g. `bg-white/90 backdrop-blur` for light themes, `bg-gray-900/90 backdrop-blur` for dark themes). This ensures text is always readable regardless of what's behind it.
-  - If you want a transparent-to-solid scroll effect, you MUST set the initial nav text color to contrast with the hero: use `text-white` if the hero is dark, `text-gray-900` if light. But this is fragile — prefer the semi-opaque background approach.
-  - A white logo on a white background, or dark text over a dark hero image, is a **critical bug**.
+- **Any `<button>` MUST include `bg-transparent border-0 cursor-pointer`** — browsers apply a white/grey default background otherwise
+- **If using a toggle icon**, use inline SVG with `stroke="currentColor"`. Never `<span>` bars.
+- **Nav must be readable on page load.** Give it a semi-opaque background (`bg-white/90 backdrop-blur` or `bg-gray-900/90 backdrop-blur`). A transparent nav over a background image makes text invisible — this is the most common visual bug.
 
-**Example nav patterns (not a template — create your own):**
-- Semi-opaque with blur → fully solid on scroll
-- Dark nav with light text for dark-themed sites
+### Mobile Navigation
+
+**Do not default to a hamburger.** Choose the pattern that fits the site:
+
+| Pattern | Best for |
+|---------|----------|
+| **Compact persistent nav** | 2–4 pages — just show all links, no toggle needed |
+| **Bottom tab bar** | Local businesses, restaurants — icons + labels, thumb-friendly |
+| **Text toggle ("Menu" / "Close")** | Editorial, luxury, minimal — refined, uses brand font |
+| **Full-screen overlay** | Portfolio, creative — large type, staggered animations |
+| **Slide-in panel** | Content-heavy — drawer with sub-sections and CTAs |
+| **Hamburger icon** | Universal fallback — safe, not creative |
+
+**If the site has 2–3 pages, a toggle is overkill.** Just show all links.
+
+**When using a toggle pattern:**
+- The shipped `navigation.js` adds/removes `is-open` on `#mobile-menu` and waits for `transitionend`. Define CSS transitions in `style.css` (fade, slide, scale — match the site's personality).
+- The mobile menu must have its own explicit background — never transparent.
+- Touch targets: 48px minimum. Stagger link entrances for overlays/panels.
+- `navigation.js` handles body scroll lock, Escape key, and close-on-link-click automatically.
+
+**Example desktop nav patterns:**
+- Semi-opaque with blur → solid on scroll
 - Centered logo with split nav links
-- Hamburger sliding panel on mobile
 - Sticky with backdrop blur
 
 **`_partials/footer.php`** — The AI designs this from scratch too. Footers vary as much as navs:
@@ -635,7 +647,7 @@ The VoxelSite visual editor reads Tailwind classes from HTML elements to offer s
 ### File Organization
 
 - `assets/js/main.js` — Global behavior: smooth scrolling, scroll-to-top, lazy loading initialization
-- `assets/js/navigation.js` — Mobile menu toggle, dropdown handling, active link highlighting, scroll-aware sticky header
+- `assets/js/navigation.js` — Mobile menu toggle (adds/removes `is-open` class for CSS transitions, waits for `transitionend` before hiding), dropdown handling, active link highlighting, scroll-aware sticky header
 - `assets/js/components.js` — Interactive components: accordions, tabs, carousels, lightboxes, form validation
 
 ### JS Quality Standards

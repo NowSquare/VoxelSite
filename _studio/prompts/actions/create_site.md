@@ -89,12 +89,20 @@ The navigation and footer are the most visible, site-wide components. They must 
 - Design a distinctive navigation that reflects the site's visual identity.
 - Use full Tailwind utility classes for ALL styling: layout, colors, spacing, hover states, transitions.
 - All `<ul>` elements must use `list-none` to remove default browser bullets.
-- Include mobile-responsive behavior: hamburger menu with slide/fade animation on mobile, horizontal nav on desktop.
 - The CTA button (e.g. "Contact") should be a styled, eye-catching element (colored background, rounded, hover effects).
 - Use `bg-*`, `text-*`, `hover:bg-*`, `hover:text-*` classes — the compiler supports ALL standard Tailwind colors (gray, yellow, red, blue, etc.) and design tokens (primary, accent, etc.).
 - Add backdrop blur and/or background opacity for sticky/fixed navs.
 - Style the active page link differently using the `aria-current="page"` attribute.
-- **CRITICAL: The nav must be readable on page load over ANY background.** Always give the nav an initial semi-opaque background (e.g. `bg-white/90 backdrop-blur-md` for light themes, `bg-gray-900/90 backdrop-blur-md` for dark). Never use a fully transparent nav unless the hero has a solid, predictable background color — a transparent nav over a background image makes the logo and links invisible.
+- **CRITICAL: The nav must be readable on page load over ANY background.** Always give the nav an initial semi-opaque background (e.g. `bg-white/90 backdrop-blur-md` for light themes, `bg-gray-900/90 backdrop-blur-md` for dark). Never use a fully transparent nav unless the hero has a solid, predictable background color.
+- **CRITICAL: Any `<button>` in the nav MUST include `bg-transparent border-0`.** Browsers apply a white/grey default background to nav buttons. Always neutralize it.
+- **Mobile navigation is a design decision, not an afterthought.** Do not default to a hamburger. Choose the pattern that fits:
+  - **2–3 pages?** Keep all links visible — no toggle needed. A compact persistent row is faster and more direct.
+  - **Luxury/editorial site?** Use a "Menu" text toggle in the brand font instead of an icon.
+  - **Local business?** A bottom tab bar with icons feels native and thumb-friendly.
+  - **Creative/portfolio?** A full-screen overlay with large type and staggered animations.
+  - **Content-heavy?** A slide-in drawer with sub-sections and CTA.
+  - **Hamburger** is the universal fallback — fine when executed well, but the safe choice, not the creative one.
+- When using a toggle pattern, define CSS transitions in `style.css` that hook into the `is-open` class (added by `navigation.js`). The menu must have its own explicit background, 48px touch targets, and staggered link animations for overlays/panels.
 
 ### Footer (`_partials/footer.php`)
 - Create a footer that complements the nav and reinforces the site's design language.

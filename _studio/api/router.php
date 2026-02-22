@@ -113,6 +113,9 @@ $routes = [
     ['POST',   '/publish',               'publish.php',        true],
     ['POST',   '/publish/rollback',      'publish.php',        true],
 
+    // Export (download)
+    ['POST',   '/export',                'export.php',         true],
+
     // Snapshots
     ['GET',    '/snapshots',             'snapshots.php',      true],
     ['POST',   '/snapshots',             'snapshots.php',      true],

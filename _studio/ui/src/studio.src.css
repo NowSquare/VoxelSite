@@ -4465,6 +4465,183 @@ select.vs-input {
   animation: vs-modal-shake 0.4s ease;
 }
 
+/* ─── Download Modal ─── */
+
+.vs-download-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: none;
+  background: transparent;
+  color: var(--vs-text-ghost);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.vs-download-close-btn:hover {
+  background: var(--vs-bg-raised);
+  color: var(--vs-text-secondary);
+}
+
+.vs-download-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, #eab308 8%, var(--vs-bg-surface));
+  border: 1px solid color-mix(in srgb, #eab308 25%, transparent);
+}
+
+.vs-download-warning-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #a16207;
+  line-height: 1.4;
+}
+
+:root[data-theme="dark"] .vs-download-warning-content {
+  color: #eab308;
+}
+
+.vs-download-warning-content svg {
+  flex-shrink: 0;
+  color: #eab308;
+}
+
+.vs-download-publish-link {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a16207;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+:root[data-theme="dark"] .vs-download-publish-link {
+  color: #eab308;
+}
+
+.vs-download-publish-link:hover {
+  color: #854d0e;
+  text-decoration: underline;
+}
+
+:root[data-theme="dark"] .vs-download-publish-link:hover {
+  color: #facc15;
+}
+
+.vs-download-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vs-download-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--vs-border-subtle);
+  background: var(--vs-bg-surface);
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--duration-fast) var(--ease-out);
+  box-shadow: var(--vs-cream-shadow);
+}
+
+.vs-download-card:hover {
+  border-color: var(--vs-border-medium);
+  box-shadow: var(--vs-cream-hover);
+}
+
+.vs-download-card.is-selected {
+  border-color: color-mix(in srgb, var(--vs-accent) 50%, transparent);
+  background: color-mix(in srgb, var(--vs-accent) 4%, var(--vs-bg-surface));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--vs-accent) 18%, transparent),
+              var(--vs-cream-shadow);
+}
+
+.vs-download-card-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vs-accent-dim);
+  color: var(--vs-accent);
+  border-radius: var(--radius-md);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.vs-download-card.is-selected .vs-download-card-icon {
+  background: color-mix(in srgb, var(--vs-accent) 16%, transparent);
+}
+
+.vs-download-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.vs-download-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vs-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.vs-download-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--vs-accent);
+  background: var(--vs-accent-dim);
+  padding: 1px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.vs-download-card-desc {
+  font-size: 12px;
+  color: var(--vs-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.vs-download-card-note {
+  font-size: 11px;
+  color: var(--vs-text-ghost);
+  line-height: 1.4;
+  margin: 6px 0 0;
+  font-style: italic;
+}
+
+.vs-download-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: vs-spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+
 /* ─── Pages Modal (Chat Scope Selector) ─── */
 
 .vs-pages-modal-item {

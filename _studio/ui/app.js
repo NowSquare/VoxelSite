@@ -2848,6 +2848,9 @@ function renderStatusBar() {
         </button>
       </div>
       <div class="flex items-center gap-2">
+        <button id="btn-download" class="vs-btn vs-btn-ghost vs-btn-xs" title="Download your website">
+          ${icons.download} Download
+        </button>
         <span id="publish-state-label" class="text-2xs text-vs-text-ghost">Checking changes...</span>
         <button id="btn-publish"
           class="vs-btn vs-btn-primary vs-btn-xs">
@@ -3802,6 +3805,27 @@ function bindAppEvents() {
     });
   }
 
+  // ── Status Bar: Download ──
+  const downloadBtn = document.getElementById('btn-download');
+  if (downloadBtn) {
+    // Check publish state to determine if download should be enabled
+    (async () => {
+      const { ok, data } = await api.get('/settings');
+      const lastPublished = data?.settings?.last_published_at;
+      if (!lastPublished) {
+        downloadBtn.disabled = true;
+        downloadBtn.title = 'Publish your site first to enable download.';
+        downloadBtn.classList.add('opacity-40');
+      }
+    })();
+
+    downloadBtn.addEventListener('click', () => {
+      if (downloadBtn.disabled) return;
+      if (demoGuard()) return;
+      openDownloadModal();
+    });
+  }
+
   // ── Status Bar: Publish ──
   const publishBtn = document.getElementById('btn-publish');
   if (publishBtn) {
@@ -4365,6 +4389,186 @@ function applyPublishStateUi() {
   }
 }
 window.applyPublishStateUi = applyPublishStateUi;
+
+// ═══════════════════════════════════════════
+//  Download Modal
+// ═══════════════════════════════════════════
+
+function openDownloadModal() {
+  const existing = document.getElementById('vs-download-modal-overlay');
+  if (existing) existing.remove();
+
+  const publishState = ensurePublishState();
+  const hasUnpublishedChanges = publishState.hasChanges === true;
+
+  // Build the unpublished warning HTML if applicable
+  const warningHtml = hasUnpublishedChanges ? `
+    <div class="vs-download-warning">
+      <div class="vs-download-warning-content">
+        ${icons.alertTriangle}
+        <span>You have unpublished changes. This export reflects your last published version.</span>
+      </div>
+      <a href="#" id="vs-download-publish-link" class="vs-download-publish-link">Publish first →</a>
+    </div>
+  ` : '';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'vs-download-modal-overlay';
+  overlay.className = 'vs-modal-overlay';
+  overlay.innerHTML = `
+    <div class="vs-modal" style="max-width: 520px;">
+      <div class="vs-modal-header" style="position: relative;">
+        <button id="vs-download-close" class="vs-download-close-btn" type="button" title="Close">
+          ${icons.x}
+        </button>
+        <h2 class="vs-modal-title">Download Your Website</h2>
+        <p class="vs-modal-desc">Take your files anywhere. No VoxelSite required to run them.</p>
+      </div>
+      <div class="vs-modal-body" style="padding-top: 16px;">
+        ${warningHtml}
+        <div class="vs-download-cards" id="vs-download-cards">
+          <button type="button" class="vs-download-card is-selected" data-format="php">
+            <div class="vs-download-card-icon">
+              ${icons.fileCode}
+            </div>
+            <div class="vs-download-card-body">
+              <div class="vs-download-card-title">
+                PHP Website
+                <span class="vs-download-badge">Recommended</span>
+              </div>
+              <p class="vs-download-card-desc">Your complete website source. PHP pages, stylesheets, scripts, and all your assets. Upload to any shared hosting with PHP support.</p>
+            </div>
+          </button>
+          <button type="button" class="vs-download-card" data-format="html">
+            <div class="vs-download-card-icon">
+              ${icons.globe}
+            </div>
+            <div class="vs-download-card-body">
+              <div class="vs-download-card-title">Static HTML</div>
+              <p class="vs-download-card-desc">Every page rendered to plain HTML. Open directly in a browser, or drop on any static host or CDN. No PHP required.</p>
+              <p class="vs-download-card-note">Dynamic features like contact forms require a server.</p>
+            </div>
+          </button>
+        </div>
+      </div>
+      <div style="padding: 0 24px 24px;">
+        <button id="vs-download-action" class="vs-btn vs-btn-primary" type="button" style="width: 100%; justify-content: center; height: 42px; font-size: 14px; font-weight: 600;">
+          ${icons.download} Download PHP
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('is-visible'));
+
+  // ── Close handlers ──
+  const close = () => closeModal(overlay);
+  overlay.querySelector('#vs-download-close').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close();
+  });
+
+  // ── Publish first link ──
+  const publishLink = overlay.querySelector('#vs-download-publish-link');
+  if (publishLink) {
+    publishLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      close();
+      setTimeout(() => {
+        const publishBtn = document.getElementById('btn-publish');
+        if (publishBtn && !publishBtn.disabled) publishBtn.click();
+      }, 400);
+    });
+  }
+
+  // ── Card selection toggle ──
+  const cards = overlay.querySelectorAll('.vs-download-card');
+  const actionBtn = overlay.querySelector('#vs-download-action');
+  let selectedFormat = 'php';
+
+  cards.forEach(card => {
+    card.addEventListener('click', () => {
+      if (card.classList.contains('is-loading')) return;
+      cards.forEach(c => c.classList.remove('is-selected'));
+      card.classList.add('is-selected');
+      selectedFormat = card.dataset.format;
+      const label = selectedFormat === 'php' ? 'Download PHP' : 'Download HTML';
+      actionBtn.innerHTML = `${icons.download} ${label}`;
+    });
+  });
+
+  // ── Download action ──
+  let isDownloading = false;
+  actionBtn.addEventListener('click', async () => {
+    if (isDownloading) return;
+    isDownloading = true;
+
+    // Enter loading state
+    actionBtn.disabled = true;
+    actionBtn.innerHTML = `<span class="vs-download-spinner"></span> Preparing download…`;
+    cards.forEach(c => c.style.pointerEvents = 'none');
+
+    try {
+      const token = store.get('sessionToken');
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/zip',
+      };
+      if (token) headers['X-VS-Token'] = token;
+
+      const res = await fetch('/_studio/api/router.php?_path=%2Fexport', {
+        method: 'POST',
+        headers,
+        credentials: 'same-origin',
+        body: JSON.stringify({ format: selectedFormat }),
+      });
+
+      if (!res.ok) {
+        // Try to parse an error message
+        let errMsg = 'Export failed.';
+        try {
+          const errJson = await res.json();
+          errMsg = errJson?.error?.message || errMsg;
+        } catch (_) {}
+        showToast(errMsg, 'error');
+        return;
+      }
+
+      // Get the filename from Content-Disposition header
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const filenameMatch = disposition.match(/filename="?(.+?)"?$/i);
+      const filename = filenameMatch ? filenameMatch[1] : `site-${selectedFormat}-${new Date().toISOString().slice(0, 10)}.zip`;
+
+      // Stream the response as a blob and trigger download
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        a.remove();
+      }, 100);
+
+      showToast(`✓ ${filename} downloaded`, 'success');
+    } catch (err) {
+      showToast('Download failed. Check your connection.', 'error');
+    } finally {
+      isDownloading = false;
+      actionBtn.disabled = false;
+      const label = selectedFormat === 'php' ? 'Download PHP' : 'Download HTML';
+      actionBtn.innerHTML = `${icons.download} ${label}`;
+      cards.forEach(c => c.style.pointerEvents = '');
+    }
+  });
+}
 
 async function refreshPublishState({ silent = false } = {}) {
   const state = ensurePublishState();

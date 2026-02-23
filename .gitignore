@@ -86,9 +86,9 @@ assets/fonts/*
 # ── Generated site files (AI output) ──
 # Root-level PHP pages created by the AI
 /*.php
-!index.php
-!LocalValetDriver.php
-!submit.php
+!/index.php
+!/LocalValetDriver.php
+!/submit.php
 
 # AEO-generated root files
 /llms.txt

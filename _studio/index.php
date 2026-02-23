@@ -24,7 +24,7 @@ $basePath = '/_studio';
 $isDemo = \VoxelSite\DemoMode::isActive();
 ?>
 <!DOCTYPE html>
-<html lang="en" data-theme="forge"<?= $isDemo ? ' data-demo="true"' : '' ?>>
+<html lang="en" data-theme="dark"<?= $isDemo ? ' data-demo="true"' : '' ?>>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -45,7 +45,7 @@ $isDemo = \VoxelSite\DemoMode::isActive();
   <script>
     (function() {
       var t = localStorage.getItem('vs-theme');
-      if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'studio' : 'forge';
+      if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', t);
     })();
   </script>

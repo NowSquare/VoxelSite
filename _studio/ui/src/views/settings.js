@@ -115,7 +115,7 @@ async function loadSettings() {
     <div class="vs-settings-card">
       <h2 class="vs-settings-card-title">Site Identity</h2>
       <p class="vs-settings-card-subtitle">Your website name and description.</p>
-      <div class="space-y-4">
+      <div class="flex flex-col gap-4">
         <div>
           <label for="set-site-name" class="block text-sm font-medium text-vs-text-secondary mb-1">Site Name</label>
           <input id="set-site-name" type="text" value="${escapeHtml(s.site_name || '')}"
@@ -140,7 +140,7 @@ async function loadSettings() {
     <div class="vs-settings-card">
       <h2 class="vs-settings-card-title">AI Provider</h2>
       <p class="vs-settings-card-subtitle">Configure the AI engine that powers your website generation.</p>
-      <div class="space-y-4">
+      <div class="flex flex-col gap-4">
         <div>
           <label for="set-ai-provider" class="block text-sm font-medium text-vs-text-secondary mb-1">Provider</label>
           <select id="set-ai-provider" class="vs-input">
@@ -178,7 +178,7 @@ async function loadSettings() {
     <div class="vs-settings-card">
       <h2 class="vs-settings-card-title">Email & Notifications</h2>
       <p class="vs-settings-card-subtitle">Configure how VoxelSite sends transactional emails.</p>
-      <div class="space-y-4">
+      <div class="flex flex-col gap-4">
         <div>
           <label for="set-mail-driver" class="block text-sm font-medium text-vs-text-secondary mb-1">Delivery Method</label>
           <select id="set-mail-driver" class="vs-input">
@@ -191,7 +191,7 @@ async function loadSettings() {
 
         <!-- SMTP Fields -->
         <div id="mail-smtp-fields" style="display: ${mailConfig.driver === 'smtp' ? 'block' : 'none'};">
-          <div class="space-y-4">
+          <div class="flex flex-col gap-4">
             <div>
               <label for="set-smtp-preset" class="block text-sm font-medium text-vs-text-secondary mb-1">Provider</label>
               <select id="set-smtp-preset" class="vs-input">
@@ -440,8 +440,8 @@ async function loadSettings() {
           : logFiles.map(f => {
             const sizeKB = (f.size / 1024).toFixed(1);
             const date = new Date(f.modified * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-            return `<div class="vs-log-row" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--vs-bg-raised); border-radius: var(--radius-md);">
-              <span style="font-family: var(--font-mono); font-size: 11px; color: var(--vs-text-secondary);">${f.name}</span>
+            return `<div class="vs-log-row" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid var(--vs-border-subtle); border-radius: var(--radius-md);">
+              <span style="font-family: var(--font-mono); font-size: 12px; color: var(--vs-text-primary);">${f.name}</span>
               <span style="display: flex; align-items: center; gap: 10px;">
                 <span style="font-size: 11px; color: var(--vs-text-ghost); white-space: nowrap;">${f.lines} lines · ${sizeKB} KB · ${date}</span>
                 <a href="/_studio/api/router.php?_path=%2Fsettings%2Flogs%2Fdownload&file=${encodeURIComponent(f.name)}" download class="vs-btn vs-btn-ghost vs-btn-xs" style="text-decoration: none; padding: 2px 8px;">

@@ -1,7 +1,7 @@
 import { store } from './state.js';
 
 const THEME_ATTRIBUTE = 'data-theme';
-const DEFAULT_THEME = 'forge';
+const DEFAULT_THEME = 'dark';
 
 export function initializeTheme() {
   const current = store.get('theme') || localStorage.getItem('vs-theme') || DEFAULT_THEME;
@@ -19,5 +19,5 @@ export function applyTheme(theme) {
 
 export function toggleTheme() {
   const current = store.get('theme') || DEFAULT_THEME;
-  return applyTheme(current === 'forge' ? 'studio' : 'forge');
+  return applyTheme(current === 'dark' ? 'light' : 'dark');
 }

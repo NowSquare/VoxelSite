@@ -1222,7 +1222,7 @@ async function initEditorPage() {
 }
 
 function monacoThemeForCurrentUi() {
-  return document.documentElement.getAttribute('data-theme') === 'studio' ? 'vs' : 'vs-dark';
+  return document.documentElement.getAttribute('data-theme') === 'light' ? 'vs' : 'vs-dark';
 }
 
 async function ensureMonacoReady() {

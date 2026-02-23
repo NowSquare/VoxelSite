@@ -84,11 +84,10 @@ assets/fonts/*
 !assets/fonts/.gitkeep
 
 # ── Generated site files (AI output) ──
-# Root-level PHP pages created by the AI
+# Root-level PHP pages created by the AI (index.php is also AI-generated)
 /*.php
-!index.php
-!LocalValetDriver.php
-!submit.php
+!/LocalValetDriver.php
+!/submit.php
 
 # AEO-generated root files
 /llms.txt

@@ -73,6 +73,10 @@ class LocalValetDriver extends \Valet\Drivers\BasicValetDriver
      */
     public function frontControllerPath(string $sitePath, string $siteName, string $uri): ?string
     {
+        // Ensure DOCUMENT_ROOT is set — Valet/Herd may leave it empty,
+        // which breaks AI-generated code using $_SERVER['DOCUMENT_ROOT'].
+        $_SERVER['DOCUMENT_ROOT'] = $sitePath;
+
         // API routes → router.php
         if (preg_match('#^/_studio/api/#', $uri)) {
             // Set REQUEST_URI so the router can parse the path

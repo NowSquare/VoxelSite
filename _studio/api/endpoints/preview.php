@@ -605,8 +605,8 @@ function getEmptyPreviewHtml(): string
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            background: #FAFAF8;
-            color: #4A4539;
+            background: #FAFAFA;
+            color: #09090B;
         }
         .empty-state {
             text-align: center;
@@ -616,42 +616,74 @@ function getEmptyPreviewHtml(): string
         .voxelsite-mark {
             width: 52px;
             height: 52px;
-            color: #F4A024;
+            color: #EA580C;
             margin: 0 auto 0.875rem;
-            opacity: 0.9;
+            opacity: 1;
         }
         .voxelsite-mark svg {
             width: 100%;
             height: 100%;
             display: block;
-            stroke: currentColor;
-            fill: none;
         }
         h1 {
             font-size: 1.25rem;
             font-weight: 600;
             margin-bottom: 0.5rem;
-            color: #2C2820;
+            color: #09090B;
         }
         p {
             font-size: 0.875rem;
-            color: #8C8474;
+            color: #52525B;
             line-height: 1.5;
+        }
+
+        [data-theme="dark"] body {
+            background: #09090B;
+            color: #FAFAFA;
+        }
+        [data-theme="dark"] h1 {
+            color: #FAFAFA;
+        }
+        [data-theme="dark"] p {
+            color: #A1A1AA;
+        }
+        [data-theme="dark"] .voxelsite-mark {
+            color: #EA580C;
         }
     </style>
 </head>
 <body>
     <div class="empty-state">
         <div class="voxelsite-mark" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
-                <path d="m3.3 7 8.7 5 8.7-5"/>
-                <path d="M12 22V12"/>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path class="voxel-top" style="opacity:1" fill="currentColor" d="M12 3L20 7.5L12 12L4 7.5Z"/>
+                <path class="voxel-left" style="opacity:0.7" fill="currentColor" d="M4 7.5L12 12L12 21L4 16.5Z"/>
+                <path class="voxel-right" style="opacity:0.4" fill="currentColor" d="M20 7.5L12 12L12 21L20 16.5Z"/>
             </svg>
         </div>
         <h1>Your website will appear here</h1>
         <p>Describe what you want to build in the chat panel, and watch your website take shape in real time.</p>
     </div>
+    <script>
+        const syncTheme = () => {
+            try {
+                if (window.parent && window.parent.document.documentElement.getAttribute('data-theme') === 'dark') {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                }
+            } catch(e) {}
+        };
+        syncTheme();
+        try {
+            if (window.parent) {
+                new MutationObserver(syncTheme).observe(
+                    window.parent.document.documentElement, 
+                    { attributes: true, attributeFilter: ['data-theme'] }
+                );
+            }
+        } catch(e) {}
+    </script>
 </body>
 </html>
 HTML;

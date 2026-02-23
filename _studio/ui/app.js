@@ -262,7 +262,13 @@ function renderTopBar() {
         <!-- Logo + Nav -->
         <div class="flex items-center gap-1">
           <a href="#/chat" class="vs-logo">
-            <span class="vs-logo-icon">${icons.box}</span>
+            <span class="vs-logo-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path class="voxel-top" style="opacity:1" fill="currentColor" d="M12 3L20 7.5L12 12L4 7.5Z"/>
+                <path class="voxel-left" style="opacity:0.7" fill="currentColor" d="M4 7.5L12 12L12 21L4 16.5Z"/>
+                <path class="voxel-right" style="opacity:0.4" fill="currentColor" d="M20 7.5L12 12L12 21L20 16.5Z"/>
+              </svg>
+            </span>
             <span class="vs-logo-text hidden sm:inline">VoxelSite</span>
           </a>
           <nav class="flex items-center gap-0.5" aria-label="Studio navigation">
@@ -286,8 +292,8 @@ function renderTopBar() {
 
           <button id="btn-theme-toggle"
             class="vs-btn-ghost vs-btn-icon"
-            title="${theme === 'forge' ? 'Switch to light' : 'Switch to dark'}">
-            ${theme === 'forge' ? icons.sun : icons.moon}
+            title="${theme === 'dark' ? 'Switch to light' : 'Switch to dark'}">
+            ${theme === 'dark' ? icons.sun : icons.moon}
           </button>
 
           <div class="relative" id="user-menu-container">
@@ -479,10 +485,10 @@ function renderPlaceholderPage(title, description) {
   return `
     <div class="vs-empty-state" style="min-height: 300px;">
       <div class="vs-empty-icon" style="animation: none;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
-          <path d="m3.3 7 8.7 5 8.7-5"/>
-          <path d="M12 22V12"/>
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24">
+          <path style="opacity:1" fill="currentColor" d="M12 3L20 7.5L12 12L4 7.5Z"/>
+          <path style="opacity:0.7" fill="currentColor" d="M4 7.5L12 12L12 21L4 16.5Z"/>
+          <path style="opacity:0.4" fill="currentColor" d="M20 7.5L12 12L12 21L20 16.5Z"/>
         </svg>
       </div>
       <h1 class="vs-empty-title">${title}</h1>
@@ -573,7 +579,7 @@ function renderProfileView() {
       <div class="vs-settings-card">
         <h2 class="vs-settings-card-title">Personal Info</h2>
         <p class="vs-settings-card-subtitle">Your name and email address.</p>
-        <div class="space-y-4">
+        <div class="flex flex-col gap-4">
           <div>
             <label class="vs-input-label" for="profile-name">Name</label>
             <input type="text" id="profile-name" class="vs-input" value="${escapeHtml(user.name || '')}" placeholder="Your name" />
@@ -595,7 +601,7 @@ function renderProfileView() {
       <div class="vs-settings-card">
         <h2 class="vs-settings-card-title">Change Password</h2>
         <p class="vs-settings-card-subtitle">Use a strong password with at least 8 characters.</p>
-        <div class="space-y-4">
+        <div class="flex flex-col gap-4">
           <div>
             <label class="vs-input-label" for="profile-current-pw">Current Password</label>
             <input type="password" id="profile-current-pw" class="vs-input" placeholder="Enter current password" autocomplete="current-password" />
@@ -763,7 +769,7 @@ function renderAssetsView() {
       </div>
 
       <!-- Asset grid -->
-      <div id="assets-grid" class="space-y-2">
+      <div id="assets-grid" class="flex flex-col gap-4">
         <div class="text-sm text-vs-text-ghost py-8 text-center">Loading assets...</div>
       </div>
     </div>
@@ -1428,7 +1434,7 @@ function showSnapshotCreateModal() {
         <p class="vs-modal-desc">Save a restore point of your current site state.</p>
       </div>
       <div class="vs-modal-body">
-        <div class="space-y-4">
+        <div class="flex flex-col gap-4">
           <div>
             <label class="block text-sm text-vs-text-secondary mb-1">Description <span class="text-vs-text-ghost">(optional)</span></label>
             <input id="snap-desc" type="text" class="vs-input w-full" placeholder="e.g. Before redesigning the header" autofocus>
@@ -1539,7 +1545,7 @@ function showSnapshotPreviewModal(snap) {
  * Status badge color map for form submissions.
  */
 const SUBMISSION_STATUS_COLORS = {
-  new:      { bg: 'var(--vs-warning-dim)', text: 'var(--vs-warning)',  label: 'New' },
+  new:      { bg: 'var(--vs-info-dim)',    text: 'var(--vs-info)',     label: 'New' },
   read:     { bg: 'var(--vs-accent-dim)',  text: 'var(--vs-accent)',   label: 'Read' },
   replied:  { bg: 'var(--vs-success-dim)', text: 'var(--vs-success)',  label: 'Replied' },
   archived: { bg: 'var(--vs-bg-raised)',   text: 'var(--vs-text-ghost)', label: 'Archived' },
@@ -1592,7 +1598,7 @@ async function loadForms() {
   }
 
   container.innerHTML = `
-    <div class="space-y-3">
+    <div class="flex flex-col gap-4">
       ${forms.map(form => `
         <a href="#/forms/${encodeURIComponent(form.id)}" class="vs-form-card" data-form-id="${escapeHtml(form.id)}">
           <div class="vs-form-card-icon">
@@ -1669,7 +1675,7 @@ async function loadFormDetail(formId) {
         <span class="vs-form-stat-label">Total</span>
       </div>
       <div class="vs-form-stat">
-        <span class="vs-form-stat-value" style="color: var(--vs-warning)">${stats.new || 0}</span>
+        <span class="vs-form-stat-value">${stats.new || 0}</span>
         <span class="vs-form-stat-label">New</span>
       </div>
       <div class="vs-form-stat">
@@ -1778,7 +1784,7 @@ async function loadFormSubmissions(formId, page = 1) {
   }
 
   container.innerHTML = `
-    <div class="space-y-2" id="submissions-list">
+    <div class="flex flex-col gap-4" id="submissions-list">
       ${submissions.map(sub => {
         const statusConf = SUBMISSION_STATUS_COLORS[sub.status] || SUBMISSION_STATUS_COLORS.new;
         // Extract preview fields: show first 2-3 meaningful data fields
@@ -2793,10 +2799,10 @@ function renderEmptyChat() {
   return `
     <div class="vs-empty-state">
       <div class="vs-empty-icon vs-animate-in vs-stagger-1">
-        <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
-          <path d="m3.3 7 8.7 5 8.7-5"/>
-          <path d="M12 22V12"/>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path class="voxel-top" style="opacity:1" fill="currentColor" d="M12 3L20 7.5L12 12L4 7.5Z"/>
+          <path class="voxel-left" style="opacity:0.7" fill="currentColor" d="M4 7.5L12 12L12 21L4 16.5Z"/>
+          <path class="voxel-right" style="opacity:0.4" fill="currentColor" d="M20 7.5L12 12L12 21L20 16.5Z"/>
         </svg>
       </div>
       <h2 class="vs-empty-title vs-animate-in vs-stagger-2">${heading}</h2>
@@ -3426,7 +3432,7 @@ function renderOnboardingWizardStep() {
 
   if (step === 1) {
     body.innerHTML = `
-      <div class="space-y-4">
+      <div class="flex flex-col gap-4">
         <div>
           <label class="block text-sm text-vs-text-secondary mb-1">Business Name</label>
           <input id="onboard-business-name" type="text" class="vs-input w-full" value="${escapeHtml(draft.business_name)}" placeholder="e.g. Harbor & Pine Studio">
@@ -3443,7 +3449,7 @@ function renderOnboardingWizardStep() {
     `;
   } else if (step === 2) {
     body.innerHTML = `
-      <div class="space-y-4">
+      <div class="flex flex-col gap-4">
         <div>
           <label class="block text-sm text-vs-text-secondary mb-1">Target Audience</label>
           <textarea id="onboard-audience" class="vs-textarea w-full" rows="3" placeholder="Who should this website attract?">${escapeHtml(draft.audience)}</textarea>
@@ -3483,7 +3489,7 @@ function renderOnboardingWizardStep() {
     ];
 
     body.innerHTML = `
-      <div class="space-y-4">
+      <div class="flex flex-col gap-4">
         <div>
           <label class="block text-sm text-vs-text-secondary mb-2">Pages to Create</label>
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -3658,9 +3664,9 @@ function bindAppEvents() {
       const newTheme = toggleTheme();
 
       // Update the theme button icon + tooltip without re-rendering
-      const isForge = newTheme === 'forge';
-      themeBtn.innerHTML = isForge ? icons.sun : icons.moon;
-      themeBtn.title = isForge ? 'Switch to light' : 'Switch to dark';
+      const isLight = newTheme === 'light';
+      themeBtn.innerHTML = isLight ? icons.sun : icons.moon;
+      themeBtn.title = isLight ? 'Switch to dark' : 'Switch to light';
 
       // Sync Monaco editor theme if the editor page is active
       if (window.__vsEditorPage && window.monaco?.editor) {
@@ -4374,7 +4380,7 @@ function applyPublishStateUi() {
     if (labelEl) {
       const suffix = totalChanges === 1 ? '' : 's';
       labelEl.textContent = `${totalChanges} unpublished change${suffix}`;
-      labelEl.className = 'text-2xs text-vs-warning';
+      labelEl.className = 'text-2xs text-vs-accent';
     }
     return;
   }
@@ -4649,7 +4655,7 @@ async function handleSend() {
     <div class="vs-msg-ai mb-6" data-stream-id="${streamId}">
       <div class="flex items-center gap-2 mb-2">
         <span class="text-vs-accent">${icons.box}</span>
-        <span class="text-xs font-medium text-vs-text-tertiary">VoxelSite</span>
+        <span class="text-xs text-vs-text-ghost font-medium">VoxelSite</span>
       </div>
       <div data-role="typing" class="vs-typing-indicator">
         <span class="vs-typing-dot"></span>
@@ -5105,7 +5111,7 @@ function renderLoginRedirect() {
 
           <div id="login-error" class="hidden mb-5 px-4 py-3 bg-vs-error-dim text-vs-error text-sm rounded-xl border border-vs-error/10"></div>
 
-          <form id="login-form" class="space-y-5">
+          <form id="login-form" class="flex flex-col gap-4">
             <div>
               <label class="vs-input-label">Email</label>
               <input id="login-email" type="email" required
@@ -5159,7 +5165,7 @@ function renderLoginRedirect() {
       <!-- Theme toggle — subtle floating button in the corner -->
       <button id="btn-login-theme" class="vs-login-theme-toggle"
         title="Toggle light/dark mode">
-        ${(store.get('theme') || 'forge') === 'forge' ? icons.sun : icons.moon}
+        ${(store.get('theme') || 'light') === 'light' ? icons.sun : icons.moon}
       </button>
     </div>
   `;
@@ -5185,7 +5191,7 @@ function renderLoginRedirect() {
       loginThemeBtn.style.transform = 'rotate(180deg) scale(0.8)';
       loginThemeBtn.style.opacity = '0';
       setTimeout(() => {
-        loginThemeBtn.innerHTML = newTheme === 'forge' ? icons.sun : icons.moon;
+        loginThemeBtn.innerHTML = newTheme === 'light' ? icons.sun : icons.moon;
         loginThemeBtn.style.transform = 'rotate(0deg) scale(1)';
         loginThemeBtn.style.opacity = '1';
       }, 150);
@@ -5231,7 +5237,7 @@ function renderLoginRedirect() {
               <p class="vs-login-subtitle">Enter your email to receive a recovery link.</p>
             </div>
             <div id="forgot-message" class="hidden mb-5 px-4 py-3 text-sm rounded-xl border"></div>
-            <form id="forgot-form" class="space-y-5">
+            <form id="forgot-form" class="flex flex-col gap-4">
               <div>
                 <label class="vs-input-label">Email</label>
                 <input id="forgot-email" type="email" required class="vs-input" placeholder="you@example.com">
@@ -5300,7 +5306,7 @@ function renderLoginRedirect() {
               </div>
             </div>
             <div id="forgot-message" class="hidden mb-5 px-4 py-3 text-sm rounded-xl border"></div>
-            <form id="forgot-form" class="space-y-5">
+            <form id="forgot-form" class="flex flex-col gap-4">
               <div>
                 <label class="vs-input-label">Email</label>
                 <input id="forgot-email" type="email" required class="vs-input" placeholder="you@example.com">
@@ -5383,7 +5389,7 @@ function renderLoginRedirect() {
           <p class="vs-login-subtitle">Enter your new password below.</p>
         </div>
         <div id="forgot-message" class="hidden mb-5 px-4 py-3 text-sm rounded-xl border"></div>
-        <form id="token-reset-form" class="space-y-5">
+        <form id="token-reset-form" class="flex flex-col gap-4">
           <div>
             <label class="vs-input-label">New Password</label>
             <div class="vs-login-password-wrap">

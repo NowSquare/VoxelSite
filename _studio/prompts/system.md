@@ -1087,11 +1087,11 @@ If the user provided social media links (real URLs, not `#`), add a `"social"` o
 
 The pattern is generic: any collection of structured content should have a corresponding JSON file. The file schema is flexible — determine appropriate fields based on business context.
 
-**Pages must read structured data from these JSON files using `$_SERVER['DOCUMENT_ROOT']`:**
+**Pages must read structured data from these JSON files using `__DIR__`:**
 
 ```php
 <?php
-$dataPath = $_SERVER['DOCUMENT_ROOT'] . '/assets/data/menu.json';
+$dataPath = __DIR__ . '/assets/data/menu.json';
 $menu = file_exists($dataPath) ? json_decode(file_get_contents($dataPath), true) : null;
 ?>
 
@@ -1109,7 +1109,7 @@ $menu = file_exists($dataPath) ? json_decode(file_get_contents($dataPath), true)
 <?php endif; ?>
 ```
 
-**Important:** Always use `$_SERVER['DOCUMENT_ROOT']` to resolve data file paths, NOT `__DIR__`. This ensures correct resolution in both preview and production environments. Always check `file_exists()` before reading — the data file may not exist yet.
+**Important:** Always use `__DIR__` to resolve data file paths, NOT `$_SERVER['DOCUMENT_ROOT']`. `$_SERVER['DOCUMENT_ROOT']` can be empty or unreliable in Herd/Valet and some hosting setups, while `__DIR__` always resolves correctly. Since page PHP files live at the document root, `__DIR__ . '/assets/data/...'` is the correct pattern. Always check `file_exists()` before reading — the data file may not exist yet.
 
 This ensures the data is available to HTML pages (for humans), Schema.org structured data (for search engines), llms.txt (for AI models), and future MCP endpoints (for AI agents). **The data files are the single source of truth.**
 
@@ -1298,7 +1298,7 @@ The handler reads `assets/data/services.json` and uses `name` or `title` fields 
 
 ```php
 <?php
-$services = json_decode(file_get_contents($_SERVER['DOCUMENT_ROOT'] . '/assets/data/services.json'), true);
+$services = json_decode(file_get_contents(__DIR__ . '/assets/data/services.json'), true);
 foreach ($services['services'] ?? [] as $service): ?>
   <option value="<?= htmlspecialchars($service['name']) ?>">
     <?= htmlspecialchars($service['name']) ?>

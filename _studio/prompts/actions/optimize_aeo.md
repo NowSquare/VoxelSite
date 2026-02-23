@@ -22,7 +22,7 @@ You are analyzing an existing website and optimizing it for AI Engine Optimizati
    - Team members on pages but no `team.json` → create it
    - Same pattern for: products, pricing, events, testimonials, portfolio, gallery
 
-4. **Ensure pages read from data** — Pages that display structured content should read from JSON files via `json_decode(file_get_contents($_SERVER['DOCUMENT_ROOT'] . '/assets/data/{feature}.json'), true)`, not hardcode it. Update pages to read from data files.
+4. **Ensure pages read from data** — Pages that display structured content should read from JSON files via `json_decode(file_get_contents(__DIR__ . '/assets/data/{feature}.json'), true)`, not hardcode it. Update pages to read from data files.
 
 5. **Add meta descriptions** — Ensure every page has a meaningful `<meta name="description">` in its `<head>` section. The description should be:
    - 150–160 characters
@@ -36,7 +36,7 @@ You are analyzing an existing website and optimizing it for AI Engine Optimizati
 - Output all changed/new files using the standard file operation format
 - Preserve all existing design, layout, and styling — this is a data optimization, not a redesign
 - Only modify HTML structure where necessary to read from data files
-- Always use `$_SERVER['DOCUMENT_ROOT']` for data file paths
+- Always use `__DIR__` for data file paths (NOT `$_SERVER['DOCUMENT_ROOT']` — it can be empty in Herd/Valet)
 - Always check `file_exists()` before reading data files
 
 ## Site Memory — Extract During Audit

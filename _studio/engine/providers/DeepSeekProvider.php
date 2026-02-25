@@ -85,6 +85,7 @@ class DeepSeekProvider implements AIProviderInterface
             foreach ($data['data'] as $model) {
                 $id = $model['id'] ?? '';
                 if (empty($id)) continue;
+                if (!$this->isChatCompletionsModel($id)) continue;
 
                 $models[] = [
                     'id'         => $id,
@@ -160,9 +161,10 @@ class DeepSeekProvider implements AIProviderInterface
         }
 
         try {
+            $model = $this->resolveRuntimeModel((string) ($config['model'] ?? $this->getModels()[0]['id']));
             $response = $this->apiCall([
-                'model'      => $config['model'] ?? $this->getModels()[0]['id'],
-                'max_tokens' => 10,
+                'model'      => $model,
+                'max_tokens' => $this->resolveMaxTokens(10, $model),
                 'messages'   => [['role' => 'user', 'content' => 'Hi']],
             ]);
 
@@ -179,16 +181,18 @@ class DeepSeekProvider implements AIProviderInterface
         callable $onComplete,
         array $options = []
     ): void {
-        $model = $options['model'] ?? $this->model ?? $this->getModels()[0]['id'];
-        $maxTokens = $options['max_tokens'] ?? $this->maxTokens;
+        $model = $this->resolveRuntimeModel((string) ($options['model'] ?? $this->model ?? $this->getModels()[0]['id']));
+        $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), $model);
         $isStructured = !empty($options['structured_output']);
+        $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
 
-        array_unshift($messages, ['role' => 'system', 'content' => $systemPrompt]);
+        $requestMessages = $messages;
+        array_unshift($requestMessages, ['role' => 'system', 'content' => $systemPrompt]);
 
         $payload = [
             'model'      => $model,
             'max_tokens' => $maxTokens,
-            'messages'   => $messages,
+            'messages'   => $requestMessages,
             'stream'     => true,
         ];
         if ($isStructured) {
@@ -203,6 +207,7 @@ class DeepSeekProvider implements AIProviderInterface
         $usage = ['input_tokens' => 0, 'output_tokens' => 0];
         $toolArgsByIndex = [];
         $toolNamesByIndex = [];
+        $errorBody = '';
 
         $ch = curl_init(self::API_URL);
         curl_setopt_array($ch, [
@@ -217,12 +222,16 @@ class DeepSeekProvider implements AIProviderInterface
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_LOW_SPEED_LIMIT => 1,
             CURLOPT_LOW_SPEED_TIME  => 180,
-            CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$fullResponse, &$usage, &$toolArgsByIndex, &$toolNamesByIndex, $isStructured, $onToken) {
+            CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$fullResponse, &$usage, &$toolArgsByIndex, &$toolNamesByIndex, &$errorBody, $isStructured, $onToken) {
                 $lines = explode("\n", $data);
 
                 foreach ($lines as $line) {
                     $line = trim($line);
-                    if (empty($line) || !str_starts_with($line, 'data: ')) continue;
+                    if ($line === '') continue;
+                    if (!str_starts_with($line, 'data: ')) {
+                        $errorBody .= $line;
+                        continue;
+                    }
 
                     $json = substr($line, 6);
                     if ($json === '[DONE]') continue;
@@ -276,6 +285,14 @@ class DeepSeekProvider implements AIProviderInterface
 
         $durationMs = (int) ((microtime(true) - $startTime) * 1000);
 
+        if ($isStructured && !$structuredFallbackTried && $this->shouldRetryWithoutTools($httpCode, $errorBody) && empty($fullResponse)) {
+            $fallbackOptions = $options;
+            $fallbackOptions['structured_output'] = false;
+            $fallbackOptions['_structured_fallback_tried'] = true;
+            $this->stream($systemPrompt, $messages, $onToken, $onComplete, $fallbackOptions);
+            return;
+        }
+
         if (!empty($error)) {
             throw new RuntimeException("DeepSeek API connection failed: {$error}");
         }
@@ -285,6 +302,10 @@ class DeepSeekProvider implements AIProviderInterface
         if ($httpCode >= 500) throw new RuntimeException('provider_unavailable');
 
         if ($httpCode !== 200 && empty($fullResponse)) {
+            $apiMessage = $this->extractApiErrorMessage($errorBody);
+            if ($apiMessage !== '') {
+                throw new RuntimeException("DeepSeek API error (HTTP {$httpCode}): {$apiMessage}");
+            }
             throw new RuntimeException("DeepSeek API returned HTTP {$httpCode}");
         }
 
@@ -312,16 +333,18 @@ class DeepSeekProvider implements AIProviderInterface
         array $messages,
         array $options = []
     ): string {
-        $model = $options['model'] ?? $this->model ?? $this->getModels()[0]['id'];
-        $maxTokens = $options['max_tokens'] ?? $this->maxTokens;
+        $model = $this->resolveRuntimeModel((string) ($options['model'] ?? $this->model ?? $this->getModels()[0]['id']));
+        $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), $model);
         $isStructured = !empty($options['structured_output']);
+        $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
 
-        array_unshift($messages, ['role' => 'system', 'content' => $systemPrompt]);
+        $requestMessages = $messages;
+        array_unshift($requestMessages, ['role' => 'system', 'content' => $systemPrompt]);
 
         $payload = [
             'model'      => $model,
             'max_tokens' => $maxTokens,
-            'messages'   => $messages,
+            'messages'   => $requestMessages,
         ];
         if ($isStructured) {
             $payload['tools'] = [$this->getStructuredToolDefinition()];
@@ -331,7 +354,24 @@ class DeepSeekProvider implements AIProviderInterface
             ];
         }
 
-        $response = $this->apiCall($payload);
+        try {
+            $response = $this->apiCall($payload);
+        } catch (\Throwable $e) {
+            $msg = strtolower($e->getMessage());
+            if ($isStructured && !$structuredFallbackTried && (
+                str_contains($msg, 'http 400')
+                || str_contains($msg, 'http 404')
+                || str_contains($msg, 'http 422')
+                || str_contains($msg, 'tool')
+                || str_contains($msg, 'function')
+            )) {
+                $fallbackOptions = $options;
+                $fallbackOptions['structured_output'] = false;
+                $fallbackOptions['_structured_fallback_tried'] = true;
+                return $this->complete($systemPrompt, $messages, $fallbackOptions);
+            }
+            throw $e;
+        }
 
         if ($isStructured) {
             $toolArgs = $response['choices'][0]['message']['tool_calls'][0]['function']['arguments'] ?? '';
@@ -346,6 +386,25 @@ class DeepSeekProvider implements AIProviderInterface
     public function estimateTokens(string $text): int
     {
         return (int) ceil(strlen($text) / 3.5);
+    }
+
+    /**
+     * Conservative output caps to avoid max_tokens 400s on future model variants.
+     */
+    private function resolveMaxTokens(int $requested, string $model): int
+    {
+        $requested = max(1, $requested);
+        $id = strtolower($model);
+
+        if (str_contains($id, 'reasoner') || str_contains($id, 'r1')) {
+            return min($requested, 16384);
+        }
+
+        if (str_contains($id, 'chat') || str_contains($id, 'v3')) {
+            return min($requested, 16384);
+        }
+
+        return min($requested, 8192);
     }
 
     /**
@@ -411,6 +470,70 @@ class DeepSeekProvider implements AIProviderInterface
         }
 
         return $decoded;
+    }
+
+    private function isChatCompletionsModel(string $id): bool
+    {
+        $idLower = strtolower($id);
+
+        $excluded = [
+            'embed',
+            'embedding',
+            'rerank',
+            'tts',
+            'speech',
+            'audio',
+            'transcribe',
+            'asr',
+            'image',
+            'moderation',
+        ];
+        foreach ($excluded as $needle) {
+            if (str_contains($idLower, $needle)) {
+                return false;
+            }
+        }
+
+        // Future-proof: if it isn't obviously a non-chat model, allow it.
+        return true;
+    }
+
+    private function resolveRuntimeModel(string $model): string
+    {
+        $model = trim($model);
+        if ($model === '') {
+            return $this->getModels()[0]['id'];
+        }
+
+        return $this->isChatCompletionsModel($model) ? $model : $this->getModels()[0]['id'];
+    }
+
+    private function extractApiErrorMessage(string $raw): string
+    {
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return '';
+        }
+
+        return (string) ($decoded['error']['message'] ?? $decoded['message'] ?? '');
+    }
+
+    private function shouldRetryWithoutTools(int $httpCode, string $errorBody): bool
+    {
+        if (!in_array($httpCode, [400, 404, 422, 501], true)) {
+            return false;
+        }
+
+        $msg = strtolower($this->extractApiErrorMessage($errorBody));
+        if ($msg === '') {
+            // 400/422 with no parsable body often means unsupported tools/function calling.
+            return true;
+        }
+
+        return str_contains($msg, 'tool')
+            || str_contains($msg, 'function')
+            || str_contains($msg, 'tool_choice')
+            || str_contains($msg, 'tools');
     }
 
     private function formatModelName(string $id): string

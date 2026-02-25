@@ -207,7 +207,9 @@ class GeminiProvider implements AIProviderInterface
         array $options = []
     ): void {
         $model = $options['model'] ?? $this->model ?? $this->getModels()[0]['id'];
-        $maxTokens = $options['max_tokens'] ?? $this->maxTokens;
+        $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), (string) $model);
+        $isStructured = !empty($options['structured_output']);
+        $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
 
         // Convert messages to Gemini format
         $contents = [];
@@ -230,13 +232,14 @@ class GeminiProvider implements AIProviderInterface
                 'maxOutputTokens' => $maxTokens,
             ],
         ];
-        if (!empty($options['structured_output'])) {
+        if ($isStructured) {
             $payload['generationConfig']['responseMimeType'] = 'application/json';
             $payload['generationConfig']['responseSchema'] = $this->getStructuredResponseSchema();
         }
 
         $fullResponse = '';
         $usage = ['input_tokens' => 0, 'output_tokens' => 0];
+        $errorBody = '';
 
         $ch = curl_init($url);
         curl_setopt_array($ch, [
@@ -248,12 +251,16 @@ class GeminiProvider implements AIProviderInterface
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_LOW_SPEED_LIMIT => 1,
             CURLOPT_LOW_SPEED_TIME  => 180,
-            CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$fullResponse, &$usage, $onToken) {
+            CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$fullResponse, &$usage, &$errorBody, $onToken) {
                 $lines = explode("\n", $data);
 
                 foreach ($lines as $line) {
                     $line = trim($line);
-                    if (empty($line) || !str_starts_with($line, 'data: ')) continue;
+                    if ($line === '' || str_starts_with($line, 'event:')) continue;
+                    if (!str_starts_with($line, 'data: ')) {
+                        $errorBody .= $line;
+                        continue;
+                    }
 
                     $json = substr($line, 6);
                     $event = json_decode($json, true);
@@ -286,6 +293,14 @@ class GeminiProvider implements AIProviderInterface
 
         $durationMs = (int) ((microtime(true) - $startTime) * 1000);
 
+        if ($isStructured && !$structuredFallbackTried && $this->shouldRetryWithoutSchema($httpCode, $errorBody) && empty($fullResponse)) {
+            $fallbackOptions = $options;
+            $fallbackOptions['structured_output'] = false;
+            $fallbackOptions['_structured_fallback_tried'] = true;
+            $this->stream($systemPrompt, $messages, $onToken, $onComplete, $fallbackOptions);
+            return;
+        }
+
         if (!empty($error)) {
             throw new RuntimeException("Gemini API connection failed: {$error}");
         }
@@ -295,6 +310,10 @@ class GeminiProvider implements AIProviderInterface
         if ($httpCode >= 500) throw new RuntimeException('provider_unavailable');
 
         if ($httpCode !== 200 && empty($fullResponse)) {
+            $apiMessage = $this->extractApiErrorMessage($errorBody);
+            if ($apiMessage !== '') {
+                throw new RuntimeException("Gemini API error (HTTP {$httpCode}): {$apiMessage}");
+            }
             throw new RuntimeException("Gemini API returned HTTP {$httpCode}");
         }
 
@@ -312,7 +331,9 @@ class GeminiProvider implements AIProviderInterface
         array $options = []
     ): string {
         $model = $options['model'] ?? $this->model ?? $this->getModels()[0]['id'];
-        $maxTokens = $options['max_tokens'] ?? $this->maxTokens;
+        $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), (string) $model);
+        $isStructured = !empty($options['structured_output']);
+        $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
 
         $contents = [];
         foreach ($messages as $msg) {
@@ -334,7 +355,7 @@ class GeminiProvider implements AIProviderInterface
                 'maxOutputTokens' => $maxTokens,
             ],
         ];
-        if (!empty($options['structured_output'])) {
+        if ($isStructured) {
             $payload['generationConfig']['responseMimeType'] = 'application/json';
             $payload['generationConfig']['responseSchema'] = $this->getStructuredResponseSchema();
         }
@@ -361,6 +382,12 @@ class GeminiProvider implements AIProviderInterface
         $decoded = json_decode($response, true);
         if (!is_array($decoded) || $httpCode !== 200) {
             $msg = $decoded['error']['message'] ?? "HTTP {$httpCode}";
+            if ($isStructured && !$structuredFallbackTried && $this->shouldRetryWithoutSchema($httpCode, (string) json_encode($decoded))) {
+                $fallbackOptions = $options;
+                $fallbackOptions['structured_output'] = false;
+                $fallbackOptions['_structured_fallback_tried'] = true;
+                return $this->complete($systemPrompt, $messages, $fallbackOptions);
+            }
             throw new RuntimeException("Gemini API error: {$msg}");
         }
 
@@ -370,6 +397,54 @@ class GeminiProvider implements AIProviderInterface
     public function estimateTokens(string $text): int
     {
         return (int) ceil(strlen($text) / 3.5);
+    }
+
+    /**
+     * Conservative maxOutputTokens caps to avoid 400s across Gemini variants.
+     */
+    private function resolveMaxTokens(int $requested, string $model): int
+    {
+        $requested = max(1, $requested);
+        $id = strtolower($model);
+
+        if (str_contains($id, 'pro')) {
+            return min($requested, 16384);
+        }
+
+        if (str_contains($id, 'flash')) {
+            return min($requested, 8192);
+        }
+
+        return min($requested, 8192);
+    }
+
+    private function extractApiErrorMessage(string $raw): string
+    {
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return '';
+        }
+
+        return (string) ($decoded['error']['message'] ?? $decoded['message'] ?? '');
+    }
+
+    private function shouldRetryWithoutSchema(int $httpCode, string $errorBody): bool
+    {
+        if (!in_array($httpCode, [400, 422], true)) {
+            return false;
+        }
+
+        $msg = strtolower($this->extractApiErrorMessage($errorBody));
+        if ($msg === '') {
+            // Many schema validation failures return 400 with sparse bodies.
+            return true;
+        }
+
+        return str_contains($msg, 'schema')
+            || str_contains($msg, 'responseschema')
+            || str_contains($msg, 'response schema')
+            || str_contains($msg, 'responsemimetype')
+            || str_contains($msg, 'json schema');
     }
 
     /**
@@ -440,7 +515,7 @@ class GeminiProvider implements AIProviderInterface
                                 'type' => 'STRING',
                                 'enum' => ['write', 'delete', 'merge'],
                             ],
-                            'content' => ['type' => 'string'],
+                            'content' => ['type' => 'STRING'],
                         ],
                     ],
                 ],

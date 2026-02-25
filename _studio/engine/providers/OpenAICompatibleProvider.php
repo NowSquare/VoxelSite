@@ -220,7 +220,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
         array $options = []
     ): void {
         $model = $options['model'] ?? $this->model ?? '';
-        $maxTokens = $options['max_tokens'] ?? $this->maxTokens;
+        $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), (string) $model);
         $isStructured = !empty($options['structured_output']);
         $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
 
@@ -399,7 +399,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
         $durationMs = (int) ((microtime(true) - $startTime) * 1000);
 
         // Structured mode fallback for compatible servers that reject tools.
-        if ($isStructured && !$structuredFallbackTried && $httpCode === 400 && empty($fullResponse)) {
+        if ($isStructured && !$structuredFallbackTried && $this->shouldRetryWithoutTools($httpCode, $errorBody) && empty($fullResponse)) {
             $fallbackOptions = $options;
             $fallbackOptions['structured_output'] = false;
             $fallbackOptions['_structured_fallback_tried'] = true;
@@ -458,7 +458,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
         array $options = []
     ): string {
         $model = $options['model'] ?? $this->model ?? '';
-        $maxTokens = $options['max_tokens'] ?? $this->maxTokens;
+        $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), (string) $model);
         $isStructured = !empty($options['structured_output']);
         $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
 
@@ -509,7 +509,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
         $decoded = json_decode($response, true);
         if (!is_array($decoded) || $httpCode !== 200) {
             $msg = $decoded['error']['message'] ?? "HTTP {$httpCode}";
-            if ($isStructured && !$structuredFallbackTried && $httpCode === 400) {
+            if ($isStructured && !$structuredFallbackTried && $this->shouldRetryWithoutTools($httpCode, (string) json_encode($decoded))) {
                 $fallbackOptions = $options;
                 $fallbackOptions['structured_output'] = false;
                 $fallbackOptions['_structured_fallback_tried'] = true;
@@ -531,6 +531,57 @@ class OpenAICompatibleProvider implements AIProviderInterface
     public function estimateTokens(string $text): int
     {
         return (int) ceil(strlen($text) / 3.5);
+    }
+
+    /**
+     * Conservative cap for arbitrary compatible servers.
+     *
+     * We don't know the target model's true output limit, so prefer
+     * compatibility over aggressively large defaults (global default is 32000).
+     */
+    private function resolveMaxTokens(int $requested, string $model): int
+    {
+        $requested = max(1, $requested);
+        $id = strtolower($model);
+
+        if (preg_match('/^o\d/', $id) === 1) {
+            return min($requested, 32000);
+        }
+
+        if (str_starts_with($id, 'gpt-') || str_starts_with($id, 'chatgpt-')) {
+            return min($requested, 16384);
+        }
+
+        // Many local/open-source models expose much smaller generation limits.
+        return min($requested, 8192);
+    }
+
+    private function extractApiErrorMessage(string $raw): string
+    {
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return '';
+        }
+
+        return (string) ($decoded['error']['message'] ?? $decoded['message'] ?? '');
+    }
+
+    private function shouldRetryWithoutTools(int $httpCode, string $errorBody): bool
+    {
+        if (!in_array($httpCode, [400, 404, 422, 501], true)) {
+            return false;
+        }
+
+        $msg = strtolower($this->extractApiErrorMessage($errorBody));
+        if ($msg === '') {
+            return true;
+        }
+
+        return str_contains($msg, 'tool')
+            || str_contains($msg, 'function')
+            || str_contains($msg, 'tool_choice')
+            || str_contains($msg, 'unsupported')
+            || str_contains($msg, 'schema');
     }
 
     /**

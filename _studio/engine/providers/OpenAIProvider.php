@@ -88,34 +88,11 @@ class OpenAIProvider implements AIProviderInterface
                 return $this->getModels();
             }
 
-            // Filter to chat-capable models only
-            $chatPrefixes = ['gpt-4', 'gpt-3.5', 'o1', 'o3', 'o4', 'chatgpt'];
-            $excludePrefixes = ['gpt-4-base', 'gpt-4o-realtime', 'gpt-4o-audio', 'gpt-4o-mini-realtime', 'gpt-4o-mini-audio'];
-
             $models = [];
             foreach ($data['data'] as $model) {
                 $id = $model['id'] ?? '';
                 if (empty($id)) continue;
-
-                // Must start with a chat-capable prefix
-                $isChatModel = false;
-                foreach ($chatPrefixes as $prefix) {
-                    if (str_starts_with($id, $prefix)) {
-                        $isChatModel = true;
-                        break;
-                    }
-                }
-                if (!$isChatModel) continue;
-
-                // Skip known non-chat variants
-                $isExcluded = false;
-                foreach ($excludePrefixes as $excl) {
-                    if (str_starts_with($id, $excl)) {
-                        $isExcluded = true;
-                        break;
-                    }
-                }
-                if ($isExcluded) continue;
+                if (!$this->isChatCompletionsModel($id)) continue;
 
                 $models[] = [
                     'id'         => $id,
@@ -195,10 +172,15 @@ class OpenAIProvider implements AIProviderInterface
         }
 
         try {
+            $model = $this->resolveRuntimeModel((string) ($config['model'] ?? $this->getModels()[0]['id']));
+            $payload = [
+                'model'    => $model,
+                'messages' => $this->prependSystemMessage([['role' => 'user', 'content' => 'Hi']], 'You are a helpful assistant.', $model),
+            ];
+            $this->setOutputTokenLimit($payload, 10, $model);
+
             $response = $this->apiCall([
-                'model'      => $config['model'] ?? $this->getModels()[0]['id'],
-                'max_tokens' => 10,
-                'messages'   => [['role' => 'user', 'content' => 'Hi']],
+                ...$payload,
             ]);
 
             return isset($response['id']);
@@ -214,19 +196,17 @@ class OpenAIProvider implements AIProviderInterface
         callable $onComplete,
         array $options = []
     ): void {
-        $model = $options['model'] ?? $this->model ?? $this->getModels()[0]['id'];
-        $maxTokens = $options['max_tokens'] ?? $this->maxTokens;
+        $model = $this->resolveRuntimeModel((string) ($options['model'] ?? $this->model ?? $this->getModels()[0]['id']));
+        $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), $model);
         $isStructured = !empty($options['structured_output']);
-
-        // Prepend system message
-        array_unshift($messages, ['role' => 'system', 'content' => $systemPrompt]);
+        $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
 
         $payload = [
-            'model'      => $model,
-            'max_tokens' => $maxTokens,
-            'messages'   => $messages,
-            'stream'     => true,
+            'model'    => $model,
+            'messages' => $this->prependSystemMessage($messages, $systemPrompt, $model),
+            'stream'   => true,
         ];
+        $this->setOutputTokenLimit($payload, $maxTokens, $model);
         if ($isStructured) {
             $payload['tools'] = [$this->getStructuredToolDefinition()];
             $payload['tool_choice'] = [
@@ -239,6 +219,7 @@ class OpenAIProvider implements AIProviderInterface
         $usage = ['input_tokens' => 0, 'output_tokens' => 0];
         $toolArgsByIndex = [];
         $toolNamesByIndex = [];
+        $errorBody = '';
 
         $ch = curl_init(self::API_URL);
         curl_setopt_array($ch, [
@@ -253,12 +234,16 @@ class OpenAIProvider implements AIProviderInterface
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_LOW_SPEED_LIMIT => 1,
             CURLOPT_LOW_SPEED_TIME  => 180,
-            CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$fullResponse, &$usage, &$toolArgsByIndex, &$toolNamesByIndex, $isStructured, $onToken) {
+            CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$fullResponse, &$usage, &$toolArgsByIndex, &$toolNamesByIndex, &$errorBody, $isStructured, $onToken) {
                 $lines = explode("\n", $data);
 
                 foreach ($lines as $line) {
                     $line = trim($line);
-                    if (empty($line) || !str_starts_with($line, 'data: ')) continue;
+                    if ($line === '') continue;
+                    if (!str_starts_with($line, 'data: ')) {
+                        $errorBody .= $line;
+                        continue;
+                    }
 
                     $json = substr($line, 6);
                     if ($json === '[DONE]') continue;
@@ -315,6 +300,14 @@ class OpenAIProvider implements AIProviderInterface
 
         $durationMs = (int) ((microtime(true) - $startTime) * 1000);
 
+        if ($isStructured && !$structuredFallbackTried && $this->shouldRetryWithoutTools($httpCode, $errorBody) && empty($fullResponse)) {
+            $fallbackOptions = $options;
+            $fallbackOptions['structured_output'] = false;
+            $fallbackOptions['_structured_fallback_tried'] = true;
+            $this->stream($systemPrompt, $messages, $onToken, $onComplete, $fallbackOptions);
+            return;
+        }
+
         if (!empty($error)) {
             throw new RuntimeException("OpenAI API connection failed: {$error}");
         }
@@ -324,6 +317,13 @@ class OpenAIProvider implements AIProviderInterface
         if ($httpCode >= 500) throw new RuntimeException('provider_unavailable');
 
         if ($httpCode !== 200 && empty($fullResponse)) {
+            $decodedError = json_decode($errorBody, true);
+            $apiMessage = is_array($decodedError)
+                ? (string) ($decodedError['error']['message'] ?? $decodedError['message'] ?? '')
+                : '';
+            if ($apiMessage !== '') {
+                throw new RuntimeException("OpenAI API error (HTTP {$httpCode}): {$apiMessage}");
+            }
             throw new RuntimeException("OpenAI API returned HTTP {$httpCode}");
         }
 
@@ -351,17 +351,16 @@ class OpenAIProvider implements AIProviderInterface
         array $messages,
         array $options = []
     ): string {
-        $model = $options['model'] ?? $this->model ?? $this->getModels()[0]['id'];
-        $maxTokens = $options['max_tokens'] ?? $this->maxTokens;
+        $model = $this->resolveRuntimeModel((string) ($options['model'] ?? $this->model ?? $this->getModels()[0]['id']));
+        $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), $model);
         $isStructured = !empty($options['structured_output']);
-
-        array_unshift($messages, ['role' => 'system', 'content' => $systemPrompt]);
+        $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
 
         $payload = [
-            'model'      => $model,
-            'max_tokens' => $maxTokens,
-            'messages'   => $messages,
+            'model'    => $model,
+            'messages' => $this->prependSystemMessage($messages, $systemPrompt, $model),
         ];
+        $this->setOutputTokenLimit($payload, $maxTokens, $model);
         if ($isStructured) {
             $payload['tools'] = [$this->getStructuredToolDefinition()];
             $payload['tool_choice'] = [
@@ -370,7 +369,26 @@ class OpenAIProvider implements AIProviderInterface
             ];
         }
 
-        $response = $this->apiCall($payload);
+        try {
+            $response = $this->apiCall($payload);
+        } catch (\Throwable $e) {
+            $msg = strtolower($e->getMessage());
+            if ($isStructured && !$structuredFallbackTried && (
+                str_contains($msg, 'http 400')
+                || str_contains($msg, 'http 404')
+                || str_contains($msg, 'http 422')
+                || str_contains($msg, 'tool')
+                || str_contains($msg, 'function')
+                || str_contains($msg, 'tool_choice')
+                || str_contains($msg, 'unsupported')
+            )) {
+                $fallbackOptions = $options;
+                $fallbackOptions['structured_output'] = false;
+                $fallbackOptions['_structured_fallback_tried'] = true;
+                return $this->complete($systemPrompt, $messages, $fallbackOptions);
+            }
+            throw $e;
+        }
 
         if ($isStructured) {
             $toolArgs = $response['choices'][0]['message']['tool_calls'][0]['function']['arguments'] ?? '';
@@ -385,6 +403,34 @@ class OpenAIProvider implements AIProviderInterface
     public function estimateTokens(string $text): int
     {
         return (int) ceil(strlen($text) / 3.5);
+    }
+
+    /**
+     * Cap requested output tokens to avoid OpenAI 400 errors.
+     *
+     * Limits vary by model family and change over time, so these are
+     * conservative values that are known-safe for chat completions.
+     */
+    private function resolveMaxTokens(int $requested, string $model): int
+    {
+        $requested = max(1, $requested);
+        $id = strtolower($model);
+
+        // Reasoning models often allow large outputs, but cap conservatively.
+        if (preg_match('/^o\d/i', $id) === 1) {
+            return min($requested, 32000);
+        }
+
+        // GPT-4o / 4.1 family commonly reject values above ~16K on chat completions.
+        if (str_starts_with($id, 'gpt-') || str_starts_with($id, 'chatgpt-')) {
+            return min($requested, 16384);
+        }
+
+        if (str_starts_with($id, 'gpt-3.5')) {
+            return min($requested, 4096);
+        }
+
+        return min($requested, 16384);
     }
 
     /**
@@ -471,6 +517,128 @@ class OpenAIProvider implements AIProviderInterface
         }
 
         return $decoded;
+    }
+
+    /**
+     * Add the correct OpenAI output-token field for the selected model family.
+     *
+     * Reasoning models use max_completion_tokens. Most GPT chat models still
+     * use max_tokens on /v1/chat/completions.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function setOutputTokenLimit(array &$payload, int $maxTokens, string $model): void
+    {
+        if ($this->usesMaxCompletionTokens($model)) {
+            $payload['max_completion_tokens'] = $maxTokens;
+            return;
+        }
+
+        $payload['max_tokens'] = $maxTokens;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $messages
+     * @return array<int, array<string, mixed>>
+     */
+    private function prependSystemMessage(array $messages, string $systemPrompt, string $model): array
+    {
+        $role = $this->usesDeveloperRole($model) ? 'developer' : 'system';
+        array_unshift($messages, ['role' => $role, 'content' => $systemPrompt]);
+        return $messages;
+    }
+
+    private function usesDeveloperRole(string $model): bool
+    {
+        $id = strtolower($model);
+        return preg_match('/^o\d/', $id) === 1;
+    }
+
+    private function usesMaxCompletionTokens(string $model): bool
+    {
+        $id = strtolower($model);
+        return preg_match('/^o\d/', $id) === 1;
+    }
+
+    private function extractApiErrorMessage(string $raw): string
+    {
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return '';
+        }
+
+        return (string) ($decoded['error']['message'] ?? $decoded['message'] ?? '');
+    }
+
+    private function shouldRetryWithoutTools(int $httpCode, string $errorBody): bool
+    {
+        if (!in_array($httpCode, [400, 404, 422, 501], true)) {
+            return false;
+        }
+
+        $msg = strtolower($this->extractApiErrorMessage($errorBody));
+        if ($msg === '') {
+            return true;
+        }
+
+        return str_contains($msg, 'tool')
+            || str_contains($msg, 'function')
+            || str_contains($msg, 'tool_choice')
+            || str_contains($msg, 'tools')
+            || str_contains($msg, 'unsupported');
+    }
+
+    /**
+     * Filter to models that work with this provider's /v1/chat/completions integration.
+     */
+    private function isChatCompletionsModel(string $id): bool
+    {
+        $idLower = strtolower($id);
+
+        // Future-proof: allow new GPT and o-series chat model names (e.g. gpt-5, o5).
+        $matchesPrefix = str_starts_with($idLower, 'gpt-')
+            || str_starts_with($idLower, 'chatgpt-')
+            || preg_match('/^o\d/', $idLower) === 1;
+        if ($matchesPrefix !== true) {
+            return false;
+        }
+
+        $excludedSubstrings = [
+            'search-preview',
+            'realtime',
+            'audio',
+            'transcribe',
+            'tts',
+            'moderation',
+            'embedding',
+            'dall-e',
+            'whisper',
+        ];
+        foreach ($excludedSubstrings as $needle) {
+            if (str_contains($idLower, $needle)) {
+                return false;
+            }
+        }
+
+        if (str_starts_with($idLower, 'gpt-4-base')) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Older saved settings may point to a model that /chat/completions rejects
+     * (for example search-preview variants). Fall back to a safe default.
+     */
+    private function resolveRuntimeModel(string $model): string
+    {
+        $model = trim($model);
+        if ($model === '') {
+            return $this->getModels()[0]['id'];
+        }
+
+        return $this->isChatCompletionsModel($model) ? $model : $this->getModels()[0]['id'];
     }
 
     /**

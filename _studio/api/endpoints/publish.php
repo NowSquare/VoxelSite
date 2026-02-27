@@ -191,6 +191,13 @@ if ($method === 'POST' && $path === '/publish') {
     try {
         $aeo = new \VoxelSite\AEOGenerator();
         $siteUrl = rtrim($settings->get('site_url', ''), '/');
+
+        // Auto-detect from request when site_url isn't configured
+        if (empty($siteUrl) && !empty($_SERVER['HTTP_HOST'])) {
+            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $siteUrl = $scheme . '://' . $_SERVER['HTTP_HOST'];
+        }
+
         $aeoResult = $aeo->generateAll($siteUrl);
         $aeoFiles = $aeoResult['generated'] ?? [];
     } catch (\Throwable $e) {

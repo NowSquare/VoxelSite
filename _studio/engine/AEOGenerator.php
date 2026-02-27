@@ -14,6 +14,7 @@ namespace VoxelSite;
  * Reads the structured data layer (assets/data/*.json) and generates:
  * - llms.txt       — plain-text site summary for AI models
  * - robots.txt     — crawler directives with AI bot allowances
+ * - sitemap.xml    — XML sitemap listing all published pages
  * - Schema.org     — _partials/schema.php for JSON-LD structured data
  * - MCP server     — mcp.php endpoint for AI agent interaction
  *
@@ -83,12 +84,19 @@ class AEOGenerator
         $this->writeFileAtomic($this->docRoot . '/_partials/schema.php', $schemaPhp);
         $generated[] = '_partials/schema.php';
 
-        // 4. mcp.php — MCP server for AI agent interaction
+        // 4. sitemap.xml — XML sitemap for search engines
+        $sitemapXml = $this->generateSitemapXml($baseUrl);
+        if ($sitemapXml !== null) {
+            $this->writeFileAtomic($this->docRoot . '/sitemap.xml', $sitemapXml);
+            $generated[] = 'sitemap.xml';
+        }
+
+        // 5. mcp.php — MCP server for AI agent interaction
         $mcpPhp = $this->generateMcpServer();
         $this->writeFileAtomic($this->docRoot . '/mcp.php', $mcpPhp);
         $generated[] = 'mcp.php';
 
-        // 5. Inject schema include into head.php if not already present
+        // 6. Inject schema include into head.php if not already present
         $this->ensureSchemaInclude();
         $generated[] = '_partials/head.php (schema include)';
 
@@ -541,6 +549,69 @@ class AEOGenerator
         }
 
         return implode("\n", $lines) . "\n";
+    }
+
+    // ═══════════════════════════════════════════
+    //  XML Sitemap Generation
+    // ═══════════════════════════════════════════
+
+    /**
+     * Generate a standard XML sitemap listing all published pages.
+     *
+     * Reads verified pages from the database and maps slugs to
+     * proper URLs. The index page gets priority 1.0, all others 0.8.
+     * Returns null if no base URL is configured (sitemap requires
+     * absolute URLs per the protocol spec).
+     *
+     * @see https://www.sitemaps.org/protocol.html
+     */
+    public function generateSitemapXml(string $baseUrl = ''): ?string
+    {
+        if (empty($baseUrl)) {
+            return null;
+        }
+
+        $baseUrl = rtrim($baseUrl, '/');
+        $pages = $this->loadVerifiedPagesList();
+        $now = date('Y-m-d');
+
+        $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+        $xml .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
+
+        // Always include the homepage
+        $homepageAdded = false;
+
+        foreach ($pages as $page) {
+            $slug = $page['slug'];
+
+            if ($slug === 'index') {
+                $loc = $baseUrl . '/';
+                $priority = '1.0';
+                $homepageAdded = true;
+            } else {
+                $loc = $baseUrl . '/' . $slug;
+                $priority = '0.8';
+            }
+
+            $xml .= '  <url>' . "\n";
+            $xml .= '    <loc>' . htmlspecialchars($loc, ENT_XML1, 'UTF-8') . '</loc>' . "\n";
+            $xml .= '    <lastmod>' . $now . '</lastmod>' . "\n";
+            $xml .= '    <priority>' . $priority . '</priority>' . "\n";
+            $xml .= '  </url>' . "\n";
+        }
+
+        // If no index page was found, add the homepage anyway
+        if (!$homepageAdded) {
+            $xml .= '  <url>' . "\n";
+            $xml .= '    <loc>' . htmlspecialchars($baseUrl . '/', ENT_XML1, 'UTF-8') . '</loc>' . "\n";
+            $xml .= '    <lastmod>' . $now . '</lastmod>' . "\n";
+            $xml .= '    <priority>1.0</priority>' . "\n";
+            $xml .= '  </url>' . "\n";
+        }
+
+        $xml .= '</urlset>' . "\n";
+
+        return $xml;
     }
 
     // ═══════════════════════════════════════════

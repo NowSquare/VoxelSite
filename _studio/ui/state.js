@@ -185,6 +185,7 @@ export const store = new Store({
   // Auth
   user: null,
   sessionToken: null,
+  siteName: '',
 
   // Navigation
   route: 'chat',

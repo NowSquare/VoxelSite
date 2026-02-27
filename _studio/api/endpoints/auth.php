@@ -301,11 +301,16 @@ if ($method === 'GET' && $path === '/auth/session') {
         return;
     }
 
+    // Include site_name so the topbar can show it instead of "VoxelSite"
+    $settings = new \VoxelSite\Settings();
+    $siteName = $settings->get('site_name', '');
+
     jsonResponse([
         'ok'   => true,
         'data' => [
-            'user'  => $user,
-            'token' => $_COOKIE['vs_session'] ?? null,
+            'user'      => $user,
+            'token'     => $_COOKIE['vs_session'] ?? null,
+            'site_name' => $siteName,
         ],
     ]);
     return;

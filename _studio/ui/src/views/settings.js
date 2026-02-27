@@ -1697,6 +1697,12 @@ function bindSettingsEvents(currentSettings, providers) {
         if (ok) {
           identityStatus.textContent = '✓ Saved';
           identityStatus.className = 'text-xs text-vs-success ml-3';
+          // Update topbar site name and document title
+          store.set('siteName', updates.site_name);
+          document.title = updates.site_name ? `Studio — ${updates.site_name}` : 'Studio — VoxelSite';
+          // Refresh the topbar text in-place (no full re-render needed)
+          const logoText = document.querySelector('.vs-logo-text');
+          if (logoText) logoText.textContent = updates.site_name || 'VoxelSite';
         } else {
           identityStatus.textContent = '✗ ' + (error?.message || 'Failed to save.');
           identityStatus.className = 'text-xs text-vs-error ml-3';

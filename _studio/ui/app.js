@@ -113,11 +113,18 @@ async function init() {
     return;
   }
 
-  // Store user + session token
+  // Store user + session token + site name
   store.batch(() => {
     store.set('user', sessionResult.data.user);
     store.set('sessionToken', sessionResult.data.token);
+    store.set('siteName', sessionResult.data.site_name || '');
   });
+
+  // Update document title with site name
+  const siteName = sessionResult.data.site_name;
+  if (siteName) {
+    document.title = `Studio — ${siteName}`;
+  }
 
   // Register routes
   window.addEventListener('beforeunload', (e) => {
@@ -269,7 +276,7 @@ function renderTopBar() {
                 <path class="voxel-right" style="opacity:0.4" fill="currentColor" d="M20 7.5L12 12L12 21L20 16.5Z"/>
               </svg>
             </span>
-            <span class="vs-logo-text hidden sm:inline">VoxelSite</span>
+            <span class="vs-logo-text hidden sm:inline">${escapeHtml(store.get('siteName') || 'VoxelSite')}</span>
           </a>
           <nav class="flex items-center gap-0.5" aria-label="Studio navigation">
             ${navHtml}
@@ -308,7 +315,7 @@ function renderTopBar() {
               </a>
               <div style="border-top: 1px solid var(--vs-border-subtle); margin: 4px 0;"></div>
               <button id="btn-logout" class="vs-dropdown-item">
-                ${icons.logOut} Sign out
+                ${icons.logOut} Sign Out
               </button>
             </div>
           </div>

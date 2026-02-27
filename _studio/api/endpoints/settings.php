@@ -605,6 +605,119 @@ if ($method === 'DELETE' && $path === '/settings/logs') {
     return;
 }
 
+// ═══════════════════════════════════════════
+//  POST /settings/favicon — Upload favicon
+// ═══════════════════════════════════════════
+
+if ($method === 'POST' && $path === '/settings/favicon') {
+    if (empty($_FILES['favicon'])) {
+        jsonResponse(['ok' => false, 'error' => [
+            'code' => 'validation',
+            'message' => 'No file was uploaded.',
+        ]], 400);
+        return;
+    }
+
+    $file = $_FILES['favicon'];
+
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        jsonResponse(['ok' => false, 'error' => [
+            'code' => 'upload_error',
+            'message' => 'Upload failed (error code: ' . $file['error'] . ').',
+        ]], 400);
+        return;
+    }
+
+    // Validate file size (max 512 KB)
+    if ($file['size'] > 512 * 1024) {
+        jsonResponse(['ok' => false, 'error' => [
+            'code' => 'validation',
+            'message' => 'Favicon must be under 512 KB.',
+        ]], 400);
+        return;
+    }
+
+    // Validate file type
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if ($ext !== 'ico') {
+        jsonResponse(['ok' => false, 'error' => [
+            'code' => 'validation',
+            'message' => 'Favicon must be a .ico file.',
+        ]], 400);
+        return;
+    }
+
+    // Validate MIME type
+    $finfo = new \finfo(FILEINFO_MIME_TYPE);
+    $mime = $finfo->file($file['tmp_name']);
+    $allowedMimes = [
+        'image/x-icon', 'image/vnd.microsoft.icon',
+    ];
+    if (!in_array($mime, $allowedMimes, true)) {
+        jsonResponse(['ok' => false, 'error' => [
+            'code' => 'validation',
+            'message' => 'Invalid file type. Upload a valid .ico file.',
+        ]], 400);
+        return;
+    }
+
+    // Target is always favicon.ico in the webroot
+    $docRoot = dirname(__DIR__, 3);
+    $targetPath = $docRoot . '/favicon.ico';
+
+    // Back up old favicon before overwriting
+    $backupPath = $docRoot . '/favicon.ico.bak';
+    if (is_file($targetPath)) {
+        @copy($targetPath, $backupPath);
+    }
+
+    // Move uploaded file
+    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+        jsonResponse(['ok' => false, 'error' => [
+            'code' => 'server_error',
+            'message' => 'Could not save favicon file.',
+        ]], 500);
+        return;
+    }
+
+    // Store in settings
+    $settings->set('site_favicon', 'favicon.ico');
+
+    // Clean up backup
+    if (is_file($backupPath)) {
+        @unlink($backupPath);
+    }
+
+    jsonResponse(['ok' => true, 'data' => [
+        'message' => 'Favicon updated.',
+        'favicon' => 'favicon.ico',
+    ]]);
+    return;
+}
+
+// ═══════════════════════════════════════════
+//  DELETE /settings/favicon — Remove favicon
+// ═══════════════════════════════════════════
+
+if ($method === 'DELETE' && $path === '/settings/favicon') {
+    $docRoot = dirname(__DIR__, 3);
+
+    // Remove the custom favicon (restores to whatever ships with the install)
+    $removed = false;
+    $filePath = $docRoot . '/favicon.ico';
+    if (is_file($filePath) && @unlink($filePath)) {
+        $removed = true;
+    }
+
+    // Clear the setting
+    $settings->set('site_favicon', null);
+
+    jsonResponse(['ok' => true, 'data' => [
+        'message' => $removed ? 'Favicon removed.' : 'No favicon to remove.',
+    ]]);
+    return;
+}
+
 jsonResponse(['ok' => false, 'error' => [
     'code'    => 'not_found',
     'message' => 'Settings endpoint not found.',

@@ -157,6 +157,8 @@ $routes = [
     ['GET',    '/settings/logs',         'settings.php',       true],
     ['GET',    '/settings/logs/download','settings.php',       true],
     ['DELETE', '/settings/logs',         'settings.php',       true],
+    ['POST',   '/settings/favicon',     'settings.php',       true],
+    ['DELETE', '/settings/favicon',     'settings.php',       true],
 
     // Site management
     ['POST',   '/site/reset',            'site.php',           true],

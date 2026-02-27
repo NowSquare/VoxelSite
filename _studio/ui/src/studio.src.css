@@ -2607,6 +2607,97 @@ select.vs-input {
   border-top: 1px solid var(--vs-border-subtle);
 }
 
+/* Favicon upload component */
+.vs-favicon-zone {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: var(--radius-md);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.vs-favicon-zone:hover {
+  border-color: var(--vs-border);
+}
+
+.vs-favicon-zone.is-dragover {
+  border-color: var(--vs-accent);
+  background: color-mix(in srgb, var(--vs-accent), transparent 95%);
+}
+
+.vs-favicon-preview {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--vs-bg-elevated);
+  border: 1px solid var(--vs-border-subtle);
+  overflow: hidden;
+}
+
+.vs-favicon-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+.vs-favicon-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--vs-text-ghost);
+}
+
+.vs-favicon-uploading {
+  color: var(--vs-accent);
+}
+
+.vs-favicon-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.vs-favicon-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vs-favicon-remove {
+  color: var(--vs-text-ghost) !important;
+  transition: color 0.15s ease;
+}
+
+.vs-favicon-remove:hover {
+  color: var(--vs-error) !important;
+}
+
+.vs-favicon-hint {
+  font-size: 11px;
+  color: var(--vs-text-ghost);
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* Spinner for upload state */
+@keyframes vs-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.vs-spin {
+  animation: vs-spin 0.6s linear infinite;
+}
+
 /* System info grid */
 .vs-sys-grid {
   display: grid;

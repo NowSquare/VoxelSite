@@ -49,6 +49,12 @@ async function loadSettings() {
   const s = settingsRes.data?.settings || {};
   const sys = systemRes.data?.system || {};
 
+  // Detect current favicon — always show the img, use onerror to fall back
+  const currentFavicon = s.site_favicon || null;
+  const faviconUrl = currentFavicon
+    ? `/${currentFavicon}?v=${Date.now()}`
+    : '/favicon.ico?v=' + Date.now();
+
   // AI Knowledge files (may not exist for new sites)
   let memoryData = null;
   let designData = null;
@@ -126,6 +132,32 @@ async function loadSettings() {
           <input id="set-site-tagline" type="text" value="${escapeHtml(s.site_tagline || '')}"
             class="vs-input"
             placeholder="A short description of your site" />
+        </div>
+
+        <!-- Favicon -->
+        <div>
+          <label class="block text-sm font-medium text-vs-text-secondary mb-2">Favicon</label>
+          <div class="vs-favicon-zone" id="vs-favicon-zone">
+            <div class="vs-favicon-preview" id="vs-favicon-preview">
+              <img src="${faviconUrl}" alt="Current favicon" class="vs-favicon-img" id="vs-favicon-img"
+                onerror="this.style.display='none'; this.parentElement.innerHTML = '<div class=\\'vs-favicon-placeholder\\'><svg width=\\'20\\' height=\\'20\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'><rect x=\\'3\\' y=\\'3\\' width=\\'18\\' height=\\'18\\' rx=\\'2\\'/><circle cx=\\'8.5\\' cy=\\'8.5\\' r=\\'1.5\\'/><path d=\\'m21 15-5-5L5 21\\'/></svg></div>';" />
+            </div>
+            <div class="vs-favicon-info">
+              <div class="vs-favicon-actions">
+                <button type="button" class="vs-btn vs-btn-secondary vs-btn-xs" id="btn-favicon-upload">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  Upload
+                </button>
+                ${currentFavicon ? `
+                <button type="button" class="vs-btn vs-btn-ghost vs-btn-xs vs-favicon-remove" id="btn-favicon-remove" title="Remove favicon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+                ` : ''}
+              </div>
+              <p class="vs-favicon-hint">.ico format — max 512 KB</p>
+            </div>
+            <input type="file" id="vs-favicon-file" accept=".ico,image/x-icon,image/vnd.microsoft.icon" class="hidden" />
+          </div>
         </div>
       </div>
       <div class="vs-settings-card-footer">
@@ -558,6 +590,9 @@ async function loadSettings() {
   // Bind update upload
   bindUpdateUpload();
 
+  // Bind favicon upload
+  bindFaviconUpload();
+
   // Auto-load models from stored credentials
   autoLoadModels(currentModel);
 }
@@ -869,6 +904,115 @@ function bindUpdateUpload() {
     if (unit === 'MB' || unit === 'M') return val * 1024 * 1024;
     if (unit === 'KB' || unit === 'K') return val * 1024;
     return 0;
+  }
+}
+
+/**
+ * Bind the favicon upload zone: click-to-browse, drag-and-drop,
+ * upload via FormData, and remove.
+ */
+function bindFaviconUpload() {
+  const zone = document.getElementById('vs-favicon-zone');
+  const fileInput = document.getElementById('vs-favicon-file');
+  const uploadBtn = document.getElementById('btn-favicon-upload');
+  const removeBtn = document.getElementById('btn-favicon-remove');
+
+  if (!zone || !fileInput) return;
+
+  // Click upload button → open file picker
+  uploadBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (window.demoGuard?.()) return;
+    fileInput.click();
+  });
+
+  // Drag-and-drop on the zone
+  zone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    zone.classList.add('is-dragover');
+  });
+  zone.addEventListener('dragleave', () => zone.classList.remove('is-dragover'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('is-dragover');
+    if (window.demoGuard?.()) return;
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleFaviconFile(file);
+  });
+
+  // File input change
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0];
+    if (file) handleFaviconFile(file);
+    fileInput.value = '';
+  });
+
+  // Remove button
+  removeBtn?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (window.demoGuard?.()) return;
+    removeBtn.disabled = true;
+    removeBtn.style.opacity = '0.5';
+    try {
+      const res = await api.delete('/settings/favicon');
+      if (res.ok) {
+        showToast('Favicon removed.', 'success');
+        loadSettings();
+      } else {
+        showToast(res.error?.message || 'Could not remove favicon.', 'error');
+      }
+    } catch {
+      showToast('Could not remove favicon.', 'error');
+    }
+  });
+
+  async function handleFaviconFile(file) {
+    // Validate client-side
+    const maxSize = 512 * 1024;
+    if (file.size > maxSize) {
+      showToast('Favicon must be under 512 KB.', 'error');
+      return;
+    }
+
+    const allowed = ['image/x-icon', 'image/vnd.microsoft.icon'];
+    const extOk = /\.ico$/i.test(file.name);
+    if (!extOk && !allowed.includes(file.type)) {
+      showToast('Favicon must be a .ico file.', 'error');
+      return;
+    }
+
+    // Show uploading state
+    const preview = document.getElementById('vs-favicon-preview');
+    if (preview) {
+      preview.innerHTML = `<div class="vs-favicon-placeholder vs-favicon-uploading">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="vs-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+      </div>`;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('favicon', file);
+
+      const token = store.get('sessionToken');
+      const res = await fetch('/_studio/api/router.php?_path=%2Fsettings%2Ffavicon', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: token ? { 'X-VS-Token': token } : {},
+        body: formData,
+      });
+
+      const json = await res.json();
+      if (json.ok) {
+        showToast('Favicon updated.', 'success');
+        loadSettings();
+      } else {
+        showToast(json.error?.message || 'Upload failed.', 'error');
+        loadSettings();
+      }
+    } catch {
+      showToast('Upload failed. Check your connection.', 'error');
+      loadSettings();
+    }
   }
 }
 

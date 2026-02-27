@@ -112,6 +112,7 @@ $routes = [
     ['GET',    '/preview/diff',           'preview.php',        true],
     ['POST',   '/publish',               'publish.php',        true],
     ['POST',   '/publish/rollback',      'publish.php',        true],
+    ['POST',   '/publish/unpublish',     'publish.php',        true],
 
     // Export (download)
     ['POST',   '/export',                'export.php',         true],

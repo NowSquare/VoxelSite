@@ -54,18 +54,24 @@ if ($method === 'POST' && $path === '/publish') {
         return;
     }
 
-    // ── Step 1: Create pre-publish snapshot ──
-    $snapshot = createPrePublishSnapshot($db, $snapshotDir, $previewDir, $assetsDir, $docRoot);
-    if (!($snapshot['ok'] ?? false)) {
-        Logger::error('system', 'Pre-publish snapshot failed', [
-            'error' => $snapshot['error'] ?? 'Unknown',
-        ]);
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'snapshot_failed',
-            'message' => 'Publish aborted: could not create pre-publish snapshot. '
-                . ($snapshot['error'] ?? 'Unknown snapshot error.'),
-        ]], 500);
-        return;
+    // ── Step 1: Create pre-publish snapshot (optional) ──
+    $body = getJsonBody();
+    $createSnapshot = ($body['create_snapshot'] ?? true) !== false;
+    $snapshot = ['ok' => true, 'id' => null];
+
+    if ($createSnapshot) {
+        $snapshot = createPrePublishSnapshot($db, $snapshotDir, $previewDir, $assetsDir, $docRoot);
+        if (!($snapshot['ok'] ?? false)) {
+            Logger::error('system', 'Pre-publish snapshot failed', [
+                'error' => $snapshot['error'] ?? 'Unknown',
+            ]);
+            jsonResponse(['ok' => false, 'error' => [
+                'code'    => 'snapshot_failed',
+                'message' => 'Publish aborted: could not create pre-publish snapshot. '
+                    . ($snapshot['error'] ?? 'Unknown snapshot error.'),
+            ]], 500);
+            return;
+        }
     }
 
     // ── Step 2: Copy preview files to document root ──
@@ -324,6 +330,80 @@ if ($method === 'POST' && $path === '/publish/rollback') {
     jsonResponse(['ok' => true, 'data' => [
         'message'     => 'Rolled back to pre-publish state.',
         'snapshot_id' => $snapshot['id'],
+    ]]);
+    return;
+}
+
+// ═══════════════════════════════════════════
+//  POST /publish/unpublish — Take the live site offline
+// ═══════════════════════════════════════════
+
+if ($method === 'POST' && $path === '/publish/unpublish') {
+    $removed = [];
+    $errors  = [];
+
+    // ── Step 1: Remove published PHP pages ──
+    $preserveRootPhp = ['submit.php', 'LocalValetDriver.php'];
+    foreach (glob($docRoot . '/*.php') ?: [] as $phpFile) {
+        $name = basename($phpFile);
+        if (in_array($name, $preserveRootPhp, true)) {
+            continue;
+        }
+        if (@unlink($phpFile)) {
+            $removed[] = $name;
+        } else {
+            $errors[] = "Could not remove: {$name}";
+        }
+    }
+
+    // ── Step 2: Remove _partials/ ──
+    $partialsDir = $docRoot . '/_partials';
+    if (is_dir($partialsDir)) {
+        clearDirectoryRecursive($partialsDir);
+        $remaining = glob($partialsDir . '/*') ?: [];
+        if (empty($remaining)) {
+            @rmdir($partialsDir);
+        }
+        $removed[] = '_partials/';
+    }
+
+    // ── Step 3: Remove AEO files ──
+    foreach (['llms.txt', 'robots.txt', 'sitemap.xml', 'mcp.php'] as $file) {
+        $fullPath = $docRoot . '/' . $file;
+        if (is_file($fullPath) && @unlink($fullPath)) {
+            $removed[] = $file;
+        }
+    }
+
+    // ── Step 4: Restore the unpublish placeholder ──
+    $unpublishIndex = dirname(__DIR__, 2) . '/data/default-unpublish-index.php';
+    if (file_exists($unpublishIndex)) {
+        if (copy($unpublishIndex, $docRoot . '/index.php')) {
+            // Bust OPcache
+            if (function_exists('opcache_invalidate')) {
+                opcache_invalidate($docRoot . '/index.php', true);
+            }
+        } else {
+            $errors[] = 'Could not restore default index.php';
+        }
+    } else {
+        $errors[] = 'Default unpublish template not found.';
+    }
+
+    // ── Step 5: Clear publish state ──
+    $settings->set('last_published_at', '');
+    saveJsonFile($manifestPath, ['files' => [], 'updated_at' => now()]);
+
+    Logger::info('system', 'Site unpublished', [
+        'removed'  => $removed,
+        'errors'   => $errors,
+        'user_id'  => $_REQUEST['_user']['id'] ?? null,
+    ]);
+
+    jsonResponse(['ok' => true, 'data' => [
+        'message' => 'Site unpublished. Default page restored.',
+        'removed' => $removed,
+        'errors'  => $errors,
     ]]);
     return;
 }

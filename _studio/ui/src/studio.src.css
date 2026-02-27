@@ -1522,6 +1522,181 @@ select.vs-input {
   font-size: var(--text-2xs);
 }
 
+/* ── Publish Split Button ── */
+.vs-publish-split {
+  display: inline-flex;
+  align-items: stretch;
+  position: relative;
+}
+
+.vs-publish-split .vs-publish-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+
+.vs-publish-split .vs-publish-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  padding: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 1px solid rgba(255,255,255,0.15);
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+/* Primary state: amber hover */
+.vs-publish-split .vs-btn-primary.vs-publish-chevron:hover {
+  background: var(--vs-accent-hover);
+}
+
+/* Ghost state (up-to-date): subtle zinc hover like other ghost buttons */
+.vs-publish-split .vs-btn-ghost.vs-publish-chevron {
+  border-left-color: var(--vs-border-subtle);
+}
+
+.vs-publish-split .vs-btn-ghost.vs-publish-chevron:hover {
+  background: var(--vs-bg-hover);
+}
+
+/* ── Publish Dropup Menu ── */
+.vs-publish-dropup {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  background: var(--vs-bg-surface);
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--vs-shadow-lg);
+  padding: 4px;
+  z-index: 110;
+  min-width: 170px;
+  animation: dropup-in 150ms var(--ease-out) both;
+}
+
+@keyframes dropup-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.vs-publish-dropup-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--vs-text-secondary);
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 100ms ease;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.vs-publish-dropup-item:hover {
+  background: var(--vs-bg-hover);
+  color: var(--vs-text-primary);
+}
+
+.vs-publish-dropup-item.is-danger:hover {
+  color: var(--vs-error);
+}
+
+/* ── Snapshot Checkbox (Publish Modal) ── */
+.vs-publish-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--vs-bg-inset);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--vs-border-subtle);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.vs-publish-option:hover {
+  border-color: color-mix(in srgb, var(--vs-accent) 50%, transparent);
+  background: color-mix(in srgb, var(--vs-accent) 3%, var(--vs-bg-inset));
+}
+
+/* Hide the native checkbox */
+.vs-publish-option input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Custom checkbox indicator */
+.vs-publish-check {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  border: 1.5px solid var(--vs-border-subtle);
+  background: var(--vs-bg-surface);
+  transition: all 150ms ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vs-publish-check svg {
+  width: 12px;
+  height: 12px;
+  color: #fff;
+  opacity: 0;
+  transform: scale(0.5);
+  transition: all 150ms ease;
+}
+
+/* Checked state */
+.vs-publish-option input:checked ~ .vs-publish-check {
+  background: var(--vs-accent);
+  border-color: var(--vs-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--vs-accent) 15%, transparent);
+}
+
+.vs-publish-option input:checked ~ .vs-publish-check svg {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Focus ring for keyboard users */
+.vs-publish-option input:focus-visible ~ .vs-publish-check {
+  box-shadow: 0 0 0 2px var(--vs-accent);
+}
+
+.vs-publish-option-label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--vs-text-secondary);
+  line-height: 1.4;
+}
+
+/* Spacing: when modal footer directly follows the publish option */
+.vs-modal-header:has(.vs-publish-option) + .vs-modal-footer {
+  padding-top: 20px;
+}
+
 
 /* ═══════════════════════════════════════════ */
 /*  PREVIEW PANEL                             */

@@ -2858,10 +2858,17 @@ function renderStatusBar() {
           ${icons.download} Download
         </button>
         <span id="publish-state-label" class="text-2xs text-vs-text-ghost">Checking changes...</span>
-        <button id="btn-publish"
-          class="vs-btn vs-btn-primary vs-btn-xs">
-          ${icons.publish} Publish
-        </button>
+        <div class="vs-publish-split">
+          <button id="btn-publish"
+            class="vs-btn vs-btn-primary vs-btn-xs vs-publish-main">
+            ${icons.publish} Publish
+          </button>
+          <button id="btn-publish-menu"
+            class="vs-btn vs-btn-primary vs-btn-xs vs-publish-chevron"
+            title="More publish options">
+            ${icons.chevronUp}
+          </button>
+        </div>
       </div>
     </footer>
   `;
@@ -3850,22 +3857,27 @@ function bindAppEvents() {
       const counts = publishState.counts || { added: 0, modified: 0, deleted: 0 };
       const totalChanges = Number(counts.added || 0) + Number(counts.modified || 0) + Number(counts.deleted || 0);
 
-      const confirmed = await showConfirmModal({
-        title: 'Publish Website',
-        description: totalChanges > 0
-          ? `A snapshot will be created automatically before publishing. ${totalChanges} unpublished change(s) will go live.`
-          : 'A snapshot will be created automatically before publishing.',
-        confirmLabel: 'Publish',
+      // Read persisted snapshot preference (default: true)
+      const snapshotPref = localStorage.getItem('vs_publish_snapshot');
+      const snapshotDefault = snapshotPref === null ? true : snapshotPref !== 'false';
+
+      // Show custom confirm with snapshot checkbox
+      const result = await showPublishConfirmModal({
+        totalChanges,
+        snapshotDefault,
       });
-      if (!confirmed) {
-        return;
-      }
+      if (!result) return;
+
+      // Persist the snapshot preference
+      localStorage.setItem('vs_publish_snapshot', String(result.createSnapshot));
 
       publishState.publishing = true;
       applyPublishStateUi();
       setStatusText('Publishing...');
 
-      const { ok, data, error } = await api.post('/publish');
+      const { ok, data, error } = await api.post('/publish', {
+        create_snapshot: result.createSnapshot,
+      });
       publishState.publishing = false;
 
       if (ok) {
@@ -3887,6 +3899,78 @@ function bindAppEvents() {
         setStatusText('✗ ' + (error?.message || 'Publish failed'), 'error', 5000);
         refreshPublishState({ silent: true });
       }
+    });
+  }
+
+  // ── Status Bar: Publish Menu (Split Button Chevron) ──
+  const publishMenuBtn = document.getElementById('btn-publish-menu');
+  if (publishMenuBtn) {
+    publishMenuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (demoGuard()) return;
+
+      // Close any existing dropup
+      const existing = document.querySelector('.vs-publish-dropup');
+      if (existing) { existing.remove(); return; }
+
+      const dropup = document.createElement('div');
+      dropup.className = 'vs-publish-dropup';
+      dropup.innerHTML = `
+        <button type="button" class="vs-publish-dropup-item is-danger" id="btn-unpublish">
+          ${icons.cloudOff} Unpublish
+        </button>
+      `;
+
+      // Position relative to the split container
+      const splitContainer = publishMenuBtn.closest('.vs-publish-split');
+      if (splitContainer) {
+        splitContainer.appendChild(dropup);
+      } else {
+        publishMenuBtn.parentElement.appendChild(dropup);
+      }
+
+      // Wire unpublish action
+      dropup.querySelector('#btn-unpublish').addEventListener('click', async () => {
+        dropup.remove();
+        const confirmed = await showConfirmModal({
+          title: 'Unpublish Website',
+          description: 'This will take your live website offline and replace it with a default placeholder page. Your preview and all your work stays intact.',
+          confirmLabel: 'Unpublish',
+          danger: true,
+        });
+        if (!confirmed) return;
+
+        setStatusText('Unpublishing...');
+        const { ok, data, error } = await api.post('/publish/unpublish');
+
+        if (ok) {
+          showToast('Unpublished. Default page restored.', 'success');
+          setStatusText('✓ Site unpublished', 'success', 5000);
+          refreshPublishState({ silent: true });
+        } else {
+          showToast(error?.message || 'Unpublish failed.', 'error');
+          setStatusText('✗ ' + (error?.message || 'Unpublish failed'), 'error', 5000);
+        }
+      });
+
+      // Close on outside click
+      const closeDropup = (e) => {
+        if (!dropup.contains(e.target) && e.target !== publishMenuBtn) {
+          dropup.remove();
+          document.removeEventListener('click', closeDropup);
+        }
+      };
+      setTimeout(() => document.addEventListener('click', closeDropup), 0);
+
+      // Close on Escape
+      const onEscape = (e) => {
+        if (e.key === 'Escape') {
+          dropup.remove();
+          document.removeEventListener('keydown', onEscape);
+          document.removeEventListener('click', closeDropup);
+        }
+      };
+      document.addEventListener('keydown', onEscape);
     });
   }
 
@@ -4336,8 +4420,21 @@ function setStatusText(message, tone = 'neutral', resetAfterMs = 0) {
 function applyPublishStateUi() {
   const state = ensurePublishState();
   const publishBtn = document.getElementById('btn-publish');
+  const chevronBtn = document.getElementById('btn-publish-menu');
   const labelEl = document.getElementById('publish-state-label');
   if (!publishBtn) return;
+
+  // Helper to sync chevron style with main button
+  const setChevronStyle = (isPrimary) => {
+    if (!chevronBtn) return;
+    if (isPrimary) {
+      chevronBtn.classList.remove('vs-btn-ghost');
+      chevronBtn.classList.add('vs-btn-primary');
+    } else {
+      chevronBtn.classList.remove('vs-btn-primary');
+      chevronBtn.classList.add('vs-btn-ghost');
+    }
+  };
 
   const counts = state.counts || { added: 0, modified: 0, deleted: 0 };
   const totalChanges = Number(counts.added || 0) + Number(counts.modified || 0) + Number(counts.deleted || 0);
@@ -4345,12 +4442,16 @@ function applyPublishStateUi() {
   if (state.publishing) {
     publishBtn.disabled = true;
     publishBtn.innerHTML = `${icons.publish} Publishing...`;
+    if (chevronBtn) chevronBtn.disabled = true;
     if (labelEl) {
       labelEl.textContent = 'Publishing changes...';
       labelEl.className = 'text-2xs text-vs-text-tertiary';
     }
     return;
   }
+
+  // Re-enable chevron in all non-publishing states
+  if (chevronBtn) chevronBtn.disabled = false;
 
   if (state.checking && state.hasChanges === null) {
     publishBtn.disabled = true;
@@ -4365,6 +4466,7 @@ function applyPublishStateUi() {
   if (state.error) {
     publishBtn.disabled = false;
     publishBtn.innerHTML = `${icons.publish} Publish`;
+    setChevronStyle(true);
     if (labelEl) {
       labelEl.textContent = 'Status unavailable';
       labelEl.className = 'text-2xs text-vs-warning';
@@ -4377,6 +4479,7 @@ function applyPublishStateUi() {
     publishBtn.innerHTML = `${icons.publish} Publish`;
     publishBtn.classList.remove('vs-btn-ghost');
     publishBtn.classList.add('vs-btn-primary');
+    setChevronStyle(true);
     if (labelEl) {
       const suffix = totalChanges === 1 ? '' : 's';
       labelEl.textContent = `${totalChanges} unpublished change${suffix}`;
@@ -4389,12 +4492,74 @@ function applyPublishStateUi() {
   publishBtn.innerHTML = `${icons.publish} Up to date`;
   publishBtn.classList.remove('vs-btn-primary');
   publishBtn.classList.add('vs-btn-ghost');
+  setChevronStyle(false);
   if (labelEl) {
     labelEl.textContent = 'No unpublished changes';
     labelEl.className = 'text-2xs text-vs-text-ghost';
   }
 }
 window.applyPublishStateUi = applyPublishStateUi;
+
+/**
+ * Custom publish confirm modal with snapshot checkbox.
+ * Returns null if cancelled, or { createSnapshot: boolean } if confirmed.
+ */
+function showPublishConfirmModal({ totalChanges = 0, snapshotDefault = true }) {
+  return new Promise((resolve) => {
+    const existing = document.getElementById('vs-confirm-overlay');
+    if (existing) existing.remove();
+
+    const desc = totalChanges > 0
+      ? `${totalChanges} unpublished change${totalChanges === 1 ? '' : 's'} will go live.`
+      : 'Your current preview will be published.';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'vs-confirm-overlay';
+    overlay.className = 'vs-modal-overlay';
+    overlay.innerHTML = `
+      <div class="vs-modal" style="max-width: 520px;">
+        <div class="vs-modal-header">
+          <h2 class="vs-modal-title">Publish Website</h2>
+          <p class="vs-modal-desc">${escapeHtml(desc)}</p>
+          <label class="vs-publish-option" for="vs-publish-snapshot-cb">
+            <input type="checkbox" id="vs-publish-snapshot-cb" ${snapshotDefault ? 'checked' : ''}>
+            <span class="vs-publish-check">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </span>
+            <span class="vs-publish-option-label">Create snapshot before publishing</span>
+          </label>
+        </div>
+        <div class="vs-modal-footer">
+          <button id="vs-confirm-cancel" class="vs-btn vs-btn-secondary vs-btn-sm" type="button">Cancel</button>
+          <button id="vs-confirm-ok" class="vs-btn vs-btn-primary vs-btn-sm" type="button">Publish</button>
+        </div>
+      </div>
+    `;
+
+    const onKeydown = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); close(null); }
+    };
+    const close = (value) => {
+      document.removeEventListener('keydown', onKeydown);
+      closeModal(overlay);
+      resolve(value);
+    };
+
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('is-visible'));
+
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+    document.getElementById('vs-confirm-cancel')?.addEventListener('click', () => close(null));
+    document.getElementById('vs-confirm-ok')?.addEventListener('click', () => {
+      const cb = document.getElementById('vs-publish-snapshot-cb');
+      close({ createSnapshot: cb ? cb.checked : true });
+    });
+    document.addEventListener('keydown', onKeydown);
+
+    // Focus the confirm button
+    setTimeout(() => document.getElementById('vs-confirm-ok')?.focus(), 220);
+  });
+}
 
 // ═══════════════════════════════════════════
 //  Download Modal

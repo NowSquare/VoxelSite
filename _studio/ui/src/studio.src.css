@@ -1319,12 +1319,12 @@ select.vs-input {
 }
 
 .vs-prompt-container {
-  position: relative;
   background: var(--bg-panel);
   border: 1px solid var(--vs-border-subtle);
   border-radius: var(--radius-2xl);
   transition: all 150ms ease-out;
   box-shadow: 0 -10px 40px rgba(255,255,255,0.9);
+  overflow: hidden;
 }
 [data-theme="dark"] .vs-prompt-container {
   box-shadow: 0 -10px 40px rgba(9,9,11,0.9);
@@ -1343,7 +1343,7 @@ select.vs-input {
   background: transparent;
   border: none;
   outline: none;
-  padding: 14px 52px 14px 18px;
+  padding: 14px 18px 8px;
   font-size: var(--text-sm);
   font-family: var(--font-sans);
   color: var(--vs-text-primary);
@@ -1355,10 +1355,15 @@ select.vs-input {
   color: var(--vs-text-ghost);
 }
 
+/* ── Prompt Toolbar (below textarea) ── */
+.vs-prompt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 8px;
+}
+
 .vs-prompt-send {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
   width: 36px;
   height: 36px;
   display: flex;
@@ -1370,6 +1375,7 @@ select.vs-input {
   border: none;
   cursor: pointer;
   transition: all 150ms var(--ease-out);
+  flex-shrink: 0;
 }
 
 .vs-prompt-send:hover {
@@ -1390,6 +1396,128 @@ select.vs-input {
 
 .vs-prompt-send:disabled:hover {
   box-shadow: none;
+}
+
+/* ── Image Attachment Button ── */
+.vs-prompt-attach-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--vs-text-ghost);
+  border: none;
+  cursor: pointer;
+  transition: all 150ms var(--ease-out);
+  flex-shrink: 0;
+}
+
+.vs-prompt-attach-btn:hover {
+  color: var(--vs-accent);
+  background: var(--vs-accent-dim);
+}
+
+.vs-prompt-attach-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ── Image Attachments Thumbnail Strip ── */
+.vs-image-attachments {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px 0;
+  flex-wrap: wrap;
+}
+
+.vs-image-thumb {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-lg);
+  overflow: visible;
+  animation: fade-in-up 200ms var(--ease-out) both;
+}
+
+.vs-image-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  border: 2px solid var(--vs-border-subtle);
+  transition: border-color 150ms ease;
+}
+
+.vs-image-thumb:hover img {
+  border-color: var(--vs-accent);
+}
+
+.vs-image-thumb-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: var(--vs-text-secondary);
+  color: #fff;
+  border: 2px solid var(--vs-bg-surface);
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 150ms ease, background 150ms ease;
+}
+
+.vs-image-thumb-remove svg {
+  width: 12px;
+  height: 12px;
+}
+
+.vs-image-thumb:hover .vs-image-thumb-remove {
+  opacity: 1;
+}
+
+.vs-image-thumb-remove:hover {
+  background: var(--vs-error);
+}
+
+/* ── Drag-over State ── */
+.vs-prompt-area.vs-drag-over {
+  background: var(--vs-accent-dim);
+}
+
+.vs-prompt-area.vs-drag-over .vs-prompt-container {
+  border-color: var(--vs-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--vs-accent) 30%, transparent);
+}
+
+/* ── User Message Image Thumbnails ── */
+.vs-msg-user-images {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.vs-msg-user-image {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--vs-border-subtle);
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.vs-msg-user-image:hover {
+  transform: scale(1.05);
+  box-shadow: var(--vs-shadow-md);
 }
 
 
@@ -2619,7 +2747,7 @@ select.vs-input {
 }
 
 .vs-favicon-zone:hover {
-  border-color: var(--vs-border);
+  border-color: var(--vs-accent, var(--vs-border-subtle));
 }
 
 .vs-favicon-zone.is-dragover {

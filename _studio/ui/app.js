@@ -60,6 +60,14 @@ const COMMAND_PINS_KEY = 'vs-prompt-pins-v1';
 const CODE_COLLAPSE_MIN_LINES = 8;
 const CODE_COLLAPSE_PREVIEW_LINES = 5;
 
+/** Image attachment constraints */
+const MAX_IMAGE_ATTACHMENTS = 5;
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+/** Pending image attachments for the next send */
+let pendingImages = [];
+
 /** Demo mode flag — read once from the server-rendered data attribute */
 const IS_DEMO = document.documentElement.dataset.demo === 'true';
 
@@ -383,19 +391,28 @@ function renderDashboardLayout() {
         <!-- Prompt Bar -->
         <div class="vs-prompt-area">
           <div class="vs-prompt-container">
+            <input type="file" id="image-file-input" accept="image/jpeg,image/png,image/gif,image/webp" multiple class="hidden" />
+            <div id="image-attachments" class="vs-image-attachments" hidden></div>
             <textarea id="prompt-input"
               class="vs-prompt-input vs-textarea"
               placeholder="Describe what you want to build..."
               rows="3"
               style="max-height: 200px;"></textarea>
-            <button id="btn-send"
-              class="vs-prompt-send"
-              title="Send (⌘+Enter)">
-              ${icons.send}
-            </button>
+            <div class="vs-prompt-toolbar">
+              <button id="btn-attach-image"
+                class="vs-prompt-attach-btn"
+                title="Attach images">
+                ${icons.image}
+              </button>
+              <button id="btn-send"
+                class="vs-prompt-send"
+                title="Send (⌘+Enter)">
+                ${icons.send}
+              </button>
+            </div>
           </div>
           <div class="flex items-center justify-between mt-2 px-1">
-            <span class="text-2xs text-vs-text-ghost">⌘+Enter to send</span>
+            <span class="text-2xs text-vs-text-ghost">⌘+Enter to send · drop images to attach</span>
           </div>
         </div>
       </div>
@@ -2235,11 +2252,19 @@ async function loadConversation(conversationId) {
   let hasStreamingPrompt = false;
 
   for (const prompt of prompts) {
-    // User message
+    // User message — parse embedded image thumbnails from [vx-img:...] markers
+    const { text: userText, images: userImages } = parseVxImages(prompt.user_prompt);
+    const historyImagesHtml = userImages.length > 0
+      ? `<div class="vs-msg-user-images">${userImages.map(src =>
+          `<img src="${src}" class="vs-msg-user-image" />`
+        ).join('')}</div>`
+      : '';
+
     messagesHtml += `
       <div class="mb-5">
         <div class="text-xs text-vs-text-ghost mb-1 font-medium">You</div>
-        <div class="text-sm text-vs-text-primary leading-relaxed">${escapeHtml(prompt.user_prompt)}</div>
+        ${historyImagesHtml}
+        <div class="text-sm text-vs-text-primary leading-relaxed">${escapeHtml(userText)}</div>
       </div>
     `;
 
@@ -4033,6 +4058,55 @@ function bindAppEvents() {
     sendBtn.addEventListener('click', handleSend);
   }
 
+  // ── Image Attachment Events ──
+  const attachBtn = document.getElementById('btn-attach-image');
+  const imageFileInput = document.getElementById('image-file-input');
+
+  if (attachBtn && imageFileInput) {
+    attachBtn.addEventListener('click', () => imageFileInput.click());
+    imageFileInput.addEventListener('change', () => {
+      if (imageFileInput.files.length > 0) {
+        addImageFiles(imageFileInput.files);
+        imageFileInput.value = ''; // Reset for re-selection
+      }
+    });
+  }
+
+  // Drag-and-drop on the prompt area
+  const promptArea = document.querySelector('.vs-prompt-area');
+  if (promptArea) {
+    promptArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      promptArea.classList.add('vs-drag-over');
+    });
+    promptArea.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      promptArea.classList.remove('vs-drag-over');
+    });
+    promptArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      promptArea.classList.remove('vs-drag-over');
+      const files = Array.from(e.dataTransfer.files).filter(f => ACCEPTED_IMAGE_TYPES.includes(f.type));
+      if (files.length > 0) addImageFiles(files);
+    });
+  }
+
+  // Paste images from clipboard
+  if (promptInput) {
+    promptInput.addEventListener('paste', (e) => {
+      const items = Array.from(e.clipboardData?.items || []);
+      const imageItems = items.filter(item => item.kind === 'file' && ACCEPTED_IMAGE_TYPES.includes(item.type));
+      if (imageItems.length > 0) {
+        e.preventDefault();
+        const files = imageItems.map(item => item.getAsFile()).filter(Boolean);
+        addImageFiles(files);
+      }
+    });
+  }
+
   // Quick prompt and first-run guide actions
   bindQuickPromptButtons();
 
@@ -4792,6 +4866,147 @@ function schedulePublishStatePolling() {
 }
 
 // ═══════════════════════════════════════════
+//  Image Attachment Helpers
+// ═══════════════════════════════════════════
+
+/**
+ * Parse [vx-img:data:image/...;base64,...] markers from a user prompt string.
+ * Returns { text: string (clean text without markers), images: string[] (data URLs) }.
+ */
+function parseVxImages(userPrompt) {
+  if (!userPrompt || !userPrompt.includes('[vx-img:')) {
+    return { text: userPrompt || '', images: [] };
+  }
+
+  const images = [];
+  // Match [vx-img:data:image/...;base64,...] markers
+  const cleaned = userPrompt.replace(/\[vx-img:(data:image\/[^;]+;base64,[A-Za-z0-9+/=]+)\]/g, (_, dataUrl) => {
+    images.push(dataUrl);
+    return '';
+  });
+
+  return { text: cleaned.trim(), images };
+}
+
+/**
+ * Process and add image files to the pending attachments.
+ * Validates size, type, and limit. Reads as base64.
+ * Also generates tiny canvas-downsized thumbnails for persistence.
+ */
+function addImageFiles(fileList) {
+  const files = Array.from(fileList);
+  const remaining = MAX_IMAGE_ATTACHMENTS - pendingImages.length;
+
+  if (remaining <= 0) {
+    showToast(`Maximum ${MAX_IMAGE_ATTACHMENTS} images per message.`, 'warning');
+    return;
+  }
+
+  const toProcess = files.slice(0, remaining);
+  if (files.length > remaining) {
+    showToast(`Only ${remaining} more image${remaining === 1 ? '' : 's'} allowed.`, 'warning');
+  }
+
+  toProcess.forEach(file => {
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      showToast(`${file.name}: unsupported format. Use JPEG, PNG, GIF, or WebP.`, 'warning');
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      showToast(`${file.name}: too large (max 5MB).`, 'warning');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      // Extract base64 data and media type
+      const match = dataUrl.match(/^data:(image\/[a-z+]+);base64,(.+)$/);
+      if (!match) return;
+
+      // Generate tiny thumbnail via canvas for persistence in chat history
+      const img = new Image();
+      img.onload = () => {
+        const thumbDataUrl = createThumbnailDataUrl(img, 120);
+        pendingImages.push({
+          media_type: match[1],
+          data: match[2],
+          name: file.name,
+          preview: dataUrl,     // Full data URL for attachment strip
+          thumbnail: thumbDataUrl, // Tiny ~3-5KB thumbnail for DB persistence
+        });
+        renderImageAttachments();
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Create a tiny canvas-downsized thumbnail data URL from an Image element.
+ * Outputs JPEG at quality 0.6, max dimension constrained to `maxDim` px.
+ * Typical output: ~3-5KB — safe to embed in a text column.
+ */
+function createThumbnailDataUrl(img, maxDim = 120) {
+  let w = img.naturalWidth;
+  let h = img.naturalHeight;
+
+  if (w > maxDim || h > maxDim) {
+    const scale = maxDim / Math.max(w, h);
+    w = Math.round(w * scale);
+    h = Math.round(h * scale);
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', 0.6);
+}
+
+/**
+ * Render the image thumbnail strip below the textarea.
+ */
+function renderImageAttachments() {
+  const container = document.getElementById('image-attachments');
+  if (!container) return;
+
+  if (pendingImages.length === 0) {
+    container.setAttribute('hidden', '');
+    container.innerHTML = '';
+    return;
+  }
+
+  container.removeAttribute('hidden');
+  container.innerHTML = pendingImages.map((img, i) => `
+    <div class="vs-image-thumb" data-index="${i}">
+      <img src="${img.preview}" alt="${escapeHtml(img.name)}" />
+      <button class="vs-image-thumb-remove" data-remove-index="${i}" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+  `).join('');
+
+  // Bind remove buttons
+  container.querySelectorAll('[data-remove-index]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const idx = parseInt(e.currentTarget.dataset.removeIndex, 10);
+      pendingImages.splice(idx, 1);
+      renderImageAttachments();
+    });
+  });
+}
+
+/**
+ * Clear all pending image attachments.
+ */
+function clearImageAttachments() {
+  pendingImages = [];
+  renderImageAttachments();
+}
+
+// ═══════════════════════════════════════════
 //  Send Message Handler
 // ═══════════════════════════════════════════
 
@@ -4802,7 +5017,8 @@ async function handleSend() {
   if (!input) return;
 
   const prompt = input.value.trim();
-  if (!prompt) return;
+  const hasImages = pendingImages.length > 0;
+  if (!prompt && !hasImages) return;
 
   // Don't allow sending while streaming
   if (store.get('aiStreaming')) return;
@@ -4813,10 +5029,21 @@ async function handleSend() {
   const chatMessages = document.getElementById('chat-messages');
   if (!chatMessages) return;
 
+  // Capture attached images before clearing
+  const sentImages = [...pendingImages];
+  clearImageAttachments();
+
   // ── Show user message (right-aligned bubble) ──
+  const imageThumbsHtml = sentImages.length > 0
+    ? `<div class="vs-msg-user-images">${sentImages.map(img =>
+        `<img src="${img.preview}" alt="${escapeHtml(img.name)}" class="vs-msg-user-image" />`
+      ).join('')}</div>`
+    : '';
+
   const userMsgHtml = `
     <div class="vs-msg-user mb-6 mt-4">
-      <div class="vs-msg-user-bubble">${escapeHtml(prompt)}</div>
+      ${imageThumbsHtml}
+      ${prompt ? `<div class="vs-msg-user-bubble">${escapeHtml(prompt)}</div>` : ''}
     </div>
   `;
 
@@ -4959,13 +5186,34 @@ async function handleSend() {
   }
 
   // ── Stream the AI response ──
-  await apiStream('/ai/prompt', {
-    user_prompt: prompt,
+  // Embed tiny thumbnail markers in the prompt text for history persistence.
+  // Format: [vx-img:data:image/jpeg;base64,...] at the start of the string.
+  // These are ~3-5KB each (canvas-downsized), safe for DB text columns.
+  let promptForDb = prompt || '(see attached images)';
+  if (sentImages.length > 0) {
+    const markers = sentImages
+      .map(img => `[vx-img:${img.thumbnail}]`)
+      .join('');
+    promptForDb = markers + promptForDb;
+  }
+
+  const requestBody = {
+    user_prompt: promptForDb,
     action_type: actionType,
     page_scope: store.get('activePageScope'),
     conversation_id: store.get('activeConversationId'),
     action_data: actionData,
-  }, {
+  };
+
+  // Include images if attached (send only data + media_type, not preview URLs)
+  if (sentImages.length > 0) {
+    requestBody.images = sentImages.map(img => ({
+      data: img.data,
+      media_type: img.media_type,
+    }));
+  }
+
+  await apiStream('/ai/prompt', requestBody, {
     signal: abortController.signal,
 
     onConversation(conversationId) {

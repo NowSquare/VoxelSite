@@ -27,12 +27,63 @@ $user = $_REQUEST['_user'];
 if ($method === 'POST' && $path === '/ai/prompt') {
     $body = getJsonBody();
 
-    if (empty($body['user_prompt']) && empty($body['action_data'])) {
+    $hasImages = !empty($body['images']) && is_array($body['images']);
+
+    if (empty($body['user_prompt']) && empty($body['action_data']) && !$hasImages) {
         jsonResponse(['ok' => false, 'error' => [
             'code'    => 'validation',
             'message' => 'Say something. The prompt can\'t be empty.',
         ]], 422);
         return;
+    }
+
+    // ── Validate images ──
+    $validatedImages = [];
+    if ($hasImages) {
+        $allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        $maxImages = 5;
+        $maxSizeBytes = 5 * 1024 * 1024; // 5MB decoded
+
+        if (count($body['images']) > $maxImages) {
+            jsonResponse(['ok' => false, 'error' => [
+                'code'    => 'validation',
+                'message' => "Maximum {$maxImages} images per message.",
+            ]], 422);
+            return;
+        }
+
+        foreach ($body['images'] as $i => $img) {
+            if (empty($img['data']) || empty($img['media_type'])) {
+                continue; // Skip malformed entries
+            }
+
+            if (!in_array($img['media_type'], $allowedTypes, true)) {
+                jsonResponse(['ok' => false, 'error' => [
+                    'code'    => 'validation',
+                    'message' => "Image " . ($i + 1) . ": unsupported format. Use JPEG, PNG, GIF, or WebP.",
+                ]], 422);
+                return;
+            }
+
+            // Validate base64 and check decoded size
+            $decoded = base64_decode($img['data'], true);
+            if ($decoded === false) {
+                continue; // Skip invalid base64
+            }
+
+            if (strlen($decoded) > $maxSizeBytes) {
+                jsonResponse(['ok' => false, 'error' => [
+                    'code'    => 'validation',
+                    'message' => "Image " . ($i + 1) . ": too large (max 5MB).",
+                ]], 422);
+                return;
+            }
+
+            $validatedImages[] = [
+                'data'       => $img['data'],
+                'media_type' => $img['media_type'],
+            ];
+        }
     }
 
     // ── Recover stale "streaming" prompts ──
@@ -72,6 +123,7 @@ if ($method === 'POST' && $path === '/ai/prompt') {
         'page_scope'      => $body['page_scope'] ?? null,
         'conversation_id' => $body['conversation_id'] ?? null,
         'user_id'         => $user['id'],
+        'images'          => $validatedImages,
     ]);
 
     return;

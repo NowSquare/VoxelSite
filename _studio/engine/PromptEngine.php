@@ -80,6 +80,7 @@ class PromptEngine
         $actionType = $request['action_type'] ?? 'free_prompt';
         $actionData = $request['action_data'] ?? [];
         $conversationId = $request['conversation_id'] ?? null;
+        $images = $request['images'] ?? [];
         $promptLogId = null;
 
         // ── Set up SSE ──
@@ -91,6 +92,7 @@ class PromptEngine
             'page_scope'      => $pageScope,
             'conversation_id' => $conversationId,
             'user_id'         => $userId,
+            'image_count'     => count($images),
         ]);
 
         // ── Shutdown safety net ──
@@ -245,7 +247,8 @@ class PromptEngine
                 $conversationId,
                 $userId,
                 $actionType,
-                $actionData
+                $actionData,
+                $images
             );
 
             // ── Stream the response ──
@@ -744,14 +747,19 @@ class PromptEngine
         ?string $conversationId,
         int $userId,
         string $actionType,
-        array $actionData
+        array $actionData,
+        array $images = []
     ): array {
         $messages = [];
+
+        // Strip [vx-img:...] thumbnail markers before AI consumption.
+        // These markers are for frontend display persistence only.
+        $cleanPrompt = $this->stripVxImageMarkers($userPrompt);
 
         // Enrich the user prompt with structured action data.
         $enrichedPrompt = $this->actionRegistry->buildPromptContext(
             $actionType,
-            $userPrompt,
+            $cleanPrompt,
             $actionData
         );
 
@@ -770,7 +778,7 @@ class PromptEngine
             foreach ($history as $entry) {
                 $messages[] = [
                     'role'    => 'user',
-                    'content' => $entry['user_prompt'],
+                    'content' => $this->stripVxImageMarkers($entry['user_prompt']),
                 ];
                 if (!empty($entry['ai_response'])) {
                     // Keep only assistant-facing narrative for context continuity.
@@ -788,19 +796,50 @@ class PromptEngine
         }
 
         // ── Add current context + user prompt as the final message ──
-        if (!empty($context)) {
+        $textContent = !empty($context)
+            ? $context . "\n\n---\n\n" . $enrichedPrompt
+            : $enrichedPrompt;
+
+        // When images are attached, build a multi-content message block
+        // that all major providers support (Claude, OpenAI, Gemini).
+        if (!empty($images)) {
+            $contentBlocks = [
+                ['type' => 'text', 'text' => $textContent],
+            ];
+
+            foreach ($images as $img) {
+                $contentBlocks[] = [
+                    'type'   => 'image',
+                    'source' => [
+                        'type'       => 'base64',
+                        'media_type' => $img['media_type'],
+                        'data'       => $img['data'],
+                    ],
+                ];
+            }
+
             $messages[] = [
                 'role'    => 'user',
-                'content' => $context . "\n\n---\n\n" . $enrichedPrompt,
+                'content' => $contentBlocks,
             ];
         } else {
             $messages[] = [
                 'role'    => 'user',
-                'content' => $enrichedPrompt,
+                'content' => $textContent,
             ];
         }
 
         return $messages;
+    }
+
+    /**
+     * Strip [vx-img:data:image/...;base64,...] thumbnail markers from a prompt.
+     * These markers are embedded by the frontend for chat history display.
+     * The AI should never see them — it gets the full images via multi-content blocks.
+     */
+    private function stripVxImageMarkers(string $text): string
+    {
+        return trim(preg_replace('/\[vx-img:data:image\/[^;]+;base64,[A-Za-z0-9+\/=]+\]/', '', $text));
     }
 
     /**

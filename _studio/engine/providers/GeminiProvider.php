@@ -212,14 +212,7 @@ class GeminiProvider implements AIProviderInterface
         $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
 
         // Convert messages to Gemini format
-        $contents = [];
-        foreach ($messages as $msg) {
-            $role = $msg['role'] === 'assistant' ? 'model' : 'user';
-            $contents[] = [
-                'role'  => $role,
-                'parts' => [['text' => $msg['content']]],
-            ];
-        }
+        $contents = $this->convertToGeminiContents($messages);
 
         $url = self::BASE_URL . "/models/{$model}:streamGenerateContent?alt=sse&key=" . urlencode($this->apiKey);
 
@@ -335,14 +328,7 @@ class GeminiProvider implements AIProviderInterface
         $isStructured = !empty($options['structured_output']);
         $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
 
-        $contents = [];
-        foreach ($messages as $msg) {
-            $role = $msg['role'] === 'assistant' ? 'model' : 'user';
-            $contents[] = [
-                'role'  => $role,
-                'parts' => [['text' => $msg['content']]],
-            ];
-        }
+        $contents = $this->convertToGeminiContents($messages);
 
         $url = self::BASE_URL . "/models/{$model}:generateContent?key=" . urlencode($this->apiKey);
 
@@ -426,6 +412,42 @@ class GeminiProvider implements AIProviderInterface
         }
 
         return (string) ($decoded['error']['message'] ?? $decoded['message'] ?? '');
+    }
+
+    /**
+     * Convert messages array to Gemini's contents format.
+     * Handles both plain text and multi-content (text + image) messages.
+     */
+    private function convertToGeminiContents(array $messages): array
+    {
+        $contents = [];
+        foreach ($messages as $msg) {
+            $role = $msg['role'] === 'assistant' ? 'model' : 'user';
+
+            if (is_array($msg['content'])) {
+                // Multi-content message (text + images)
+                $parts = [];
+                foreach ($msg['content'] as $block) {
+                    if (($block['type'] ?? '') === 'text') {
+                        $parts[] = ['text' => $block['text']];
+                    } elseif (($block['type'] ?? '') === 'image' && isset($block['source'])) {
+                        $parts[] = [
+                            'inline_data' => [
+                                'mime_type' => $block['source']['media_type'] ?? 'image/jpeg',
+                                'data'      => $block['source']['data'] ?? '',
+                            ],
+                        ];
+                    }
+                }
+                $contents[] = ['role' => $role, 'parts' => $parts];
+            } else {
+                $contents[] = [
+                    'role'  => $role,
+                    'parts' => [['text' => $msg['content']]],
+                ];
+            }
+        }
+        return $contents;
     }
 
     private function shouldRetryWithoutSchema(int $httpCode, string $errorBody): bool

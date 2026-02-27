@@ -186,7 +186,7 @@ class DeepSeekProvider implements AIProviderInterface
         $isStructured = !empty($options['structured_output']);
         $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
 
-        $requestMessages = $messages;
+        $requestMessages = $this->stripImageContent($messages);
         array_unshift($requestMessages, ['role' => 'system', 'content' => $systemPrompt]);
 
         $payload = [
@@ -338,7 +338,7 @@ class DeepSeekProvider implements AIProviderInterface
         $isStructured = !empty($options['structured_output']);
         $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
 
-        $requestMessages = $messages;
+        $requestMessages = $this->stripImageContent($messages);
         array_unshift($requestMessages, ['role' => 'system', 'content' => $systemPrompt]);
 
         $payload = [
@@ -516,6 +516,32 @@ class DeepSeekProvider implements AIProviderInterface
         }
 
         return (string) ($decoded['error']['message'] ?? $decoded['message'] ?? '');
+    }
+
+    /**
+     * Strip image content from messages.
+     * DeepSeek doesn't support vision — convert multi-content messages
+     * to plain text so the API doesn't reject them.
+     */
+    private function stripImageContent(array $messages): array
+    {
+        foreach ($messages as &$msg) {
+            if (!is_array($msg['content'] ?? null)) {
+                continue;
+            }
+
+            // Extract only text blocks, concatenate
+            $textParts = [];
+            foreach ($msg['content'] as $block) {
+                if (($block['type'] ?? '') === 'text') {
+                    $textParts[] = $block['text'];
+                }
+            }
+            $msg['content'] = implode("\n\n", $textParts);
+        }
+        unset($msg);
+
+        return $messages;
     }
 
     private function shouldRetryWithoutTools(int $httpCode, string $errorBody): bool

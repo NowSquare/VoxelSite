@@ -544,7 +544,45 @@ class OpenAIProvider implements AIProviderInterface
     private function prependSystemMessage(array $messages, string $systemPrompt, string $model): array
     {
         $role = $this->usesDeveloperRole($model) ? 'developer' : 'system';
+        $messages = $this->transformMessagesForVision($messages);
         array_unshift($messages, ['role' => $role, 'content' => $systemPrompt]);
+        return $messages;
+    }
+
+    /**
+     * Transform image blocks from the generic PromptEngine format
+     * to OpenAI's vision format (image_url with base64 data URI).
+     */
+    private function transformMessagesForVision(array $messages): array
+    {
+        foreach ($messages as &$msg) {
+            if (!is_array($msg['content'] ?? null)) {
+                continue;
+            }
+
+            $transformed = [];
+            foreach ($msg['content'] as $block) {
+                if (($block['type'] ?? '') === 'image' && isset($block['source'])) {
+                    // Convert from generic {type: 'image', source: {type: 'base64', ...}}
+                    // to OpenAI's {type: 'image_url', image_url: {url: 'data:...'}}
+                    $mediaType = $block['source']['media_type'] ?? 'image/jpeg';
+                    $data = $block['source']['data'] ?? '';
+                    $transformed[] = [
+                        'type'      => 'image_url',
+                        'image_url' => [
+                            'url'    => "data:{$mediaType};base64,{$data}",
+                            'detail' => 'auto',
+                        ],
+                    ];
+                } else {
+                    $transformed[] = $block;
+                }
+            }
+
+            $msg['content'] = $transformed;
+        }
+        unset($msg);
+
         return $messages;
     }
 

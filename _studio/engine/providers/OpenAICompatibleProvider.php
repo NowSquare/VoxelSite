@@ -228,7 +228,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
             throw new RuntimeException('No model selected. Please choose a model first.');
         }
 
-        $requestMessages = $messages;
+        $requestMessages = $this->transformMessagesForVision($messages);
         array_unshift($requestMessages, ['role' => 'system', 'content' => $systemPrompt]);
 
         $payload = [
@@ -466,6 +466,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
             throw new RuntimeException('No model selected.');
         }
 
+        $messages = $this->transformMessagesForVision($messages);
         array_unshift($messages, ['role' => 'system', 'content' => $systemPrompt]);
 
         $headers = [
@@ -564,6 +565,41 @@ class OpenAICompatibleProvider implements AIProviderInterface
         }
 
         return (string) ($decoded['error']['message'] ?? $decoded['message'] ?? '');
+    }
+
+    /**
+     * Transform image blocks from the generic PromptEngine format
+     * to OpenAI's vision format (image_url with base64 data URI).
+     * Most compatible servers that support vision use this format.
+     */
+    private function transformMessagesForVision(array $messages): array
+    {
+        foreach ($messages as &$msg) {
+            if (!is_array($msg['content'] ?? null)) {
+                continue;
+            }
+
+            $transformed = [];
+            foreach ($msg['content'] as $block) {
+                if (($block['type'] ?? '') === 'image' && isset($block['source'])) {
+                    $mediaType = $block['source']['media_type'] ?? 'image/jpeg';
+                    $data = $block['source']['data'] ?? '';
+                    $transformed[] = [
+                        'type'      => 'image_url',
+                        'image_url' => [
+                            'url' => "data:{$mediaType};base64,{$data}",
+                        ],
+                    ];
+                } else {
+                    $transformed[] = $block;
+                }
+            }
+
+            $msg['content'] = $transformed;
+        }
+        unset($msg);
+
+        return $messages;
     }
 
     private function shouldRetryWithoutTools(int $httpCode, string $errorBody): bool

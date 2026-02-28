@@ -430,8 +430,8 @@ function renderDashboardLayout() {
             <button id="btn-visual-editor" class="vs-btn vs-btn-ghost vs-btn-xs" title="Visual editor (V)">
               ${icons.pencil} Visual
             </button>
-            <button id="btn-edit-code" class="vs-btn vs-btn-ghost vs-btn-xs" title="Edit Code">
-              ${icons.fileCode} Edit
+            <button id="btn-edit-code" class="vs-btn vs-btn-ghost vs-btn-xs" title="Source code editor">
+              ${icons.fileCode} Code
             </button>
             <button id="btn-refresh-preview" class="vs-btn vs-btn-ghost vs-btn-xs" title="Refresh Preview">
               ${icons.rotateCcw} Refresh

@@ -91,9 +91,11 @@ export function toggleVisualEditor() {
   sendToPreview({ type: 'vx-editor:toggle', active: editorActive });
   if (!editorActive) {
     dismissToolbar();
+    dismissRichTextToolbar();
     closeStylePanel();
     closeAIEditPanel();
     selectedElement = null;
+    richTextActive = false;
   }
 }
 
@@ -105,15 +107,27 @@ export function deactivateVisualEditor() {
   updateEditorUI();
   sendToPreview({ type: 'vx-editor:toggle', active: false });
   dismissToolbar();
+  dismissRichTextToolbar();
   closeStylePanel();
   closeAIEditPanel();
   selectedElement = null;
+  richTextActive = false;
 }
 
 export function initVisualEditor() {
   if (visualEditorInitialized) return;
   visualEditorInitialized = true;
   window.addEventListener('message', handlePreviewMessage);
+
+  // Safety net: if the iframe navigates while editing, cancel editing
+  const iframe = document.getElementById('preview-iframe');
+  if (iframe) {
+    iframe.addEventListener('load', () => {
+      if (richTextActive) {
+        onEditingEnded();
+      }
+    });
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -141,12 +155,212 @@ function handlePreviewMessage(e) {
       break;
     case 'vx-editor:deselect':
       dismissToolbar();
+      dismissRichTextToolbar();
       closeStylePanel();
       selectedElement = null;
       break;
     case 'vx-editor:save-request':
       saveAllPending();
       break;
+    // Rich text events
+    case 'vx-editor:editing-started':
+      onEditingStarted(e.data);
+      break;
+    case 'vx-editor:editing-ended':
+      onEditingEnded();
+      break;
+    case 'vx-editor:selection-state':
+      onSelectionState(e.data);
+      break;
+    case 'vx-editor:element-rect':
+      onElementRectUpdate(e.data);
+      break;
+    case 'vx-editor:richtext-link-request':
+      promptForLink();
+      break;
+  }
+}
+
+// ═══════════════════════════════════════════
+//  Rich Text Editing Bar
+// ═══════════════════════════════════════════
+
+let richTextActive = false;
+let richTextHasPhp = false;
+let richTextElementRect = null; // rect of the element being edited (iframe-relative)
+let lastFormatting = {};
+let lastBlockTag = 'P';
+
+function onEditingStarted(data) {
+  richTextActive = true;
+  richTextHasPhp = !!data.hasPhp;
+  richTextElementRect = data.rect || null;
+  lastFormatting = {};
+  lastBlockTag = data.tagName || 'P';
+  dismissToolbar(); // hide the context toolbar while editing
+  showEditingBar();
+}
+
+function onEditingEnded() {
+  richTextActive = false;
+  richTextHasPhp = false;
+  richTextElementRect = null;
+  lastFormatting = {};
+  dismissEditingBar();
+}
+
+function onSelectionState(data) {
+  if (!richTextActive) return;
+  // Update element rect for toolbar repositioning
+  if (data.elementRect) {
+    richTextElementRect = data.elementRect;
+    repositionEditingBar();
+  }
+  if (!data.hasSelection) {
+    // Even without a selection, keep the bar visible — just clear active states
+    lastFormatting = {};
+    updateFormattingState();
+    return;
+  }
+  // Update formatting state on the persistent bar
+  lastFormatting = data.formatting || {};
+  lastBlockTag = data.blockTag || lastBlockTag;
+  updateFormattingState();
+}
+
+/** Handle element rect update (e.g., element grew after Enter) */
+function onElementRectUpdate(data) {
+  if (!richTextActive) return;
+  if (data.rect) {
+    richTextElementRect = data.rect;
+    repositionEditingBar();
+  }
+}
+
+/** Reposition the editing bar based on the current element rect. */
+function repositionEditingBar() {
+  const bar = document.getElementById('vx-richtext-toolbar');
+  if (bar) positionEditingBar(bar);
+}
+
+/** Show the persistent editing bar anchored above the element. */
+function showEditingBar() {
+  let bar = document.getElementById('vx-richtext-toolbar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'vx-richtext-toolbar';
+    bar.className = 'vx-richtext-toolbar';
+    // Prevent clicks from stealing focus from the contenteditable
+    bar.addEventListener('mousedown', (e) => e.preventDefault());
+    document.body.appendChild(bar);
+  }
+
+  positionEditingBar(bar);
+  renderEditingBarContent(bar);
+  bar.classList.add('vx-rt-visible');
+}
+
+function positionEditingBar(bar) {
+  if (!richTextElementRect) return;
+  const iframe = document.getElementById('preview-iframe');
+  if (!iframe) return;
+
+  const ir = iframe.getBoundingClientRect();
+  const elLeft = ir.left + richTextElementRect.left;
+  const elTop = ir.top + richTextElementRect.top;
+  const elWidth = richTextElementRect.width;
+
+  bar.style.left = `${elLeft + elWidth / 2}px`;
+  bar.style.top = `${elTop - 6}px`;
+}
+
+function renderEditingBarContent(bar) {
+  const fmt = lastFormatting;
+  const phpMode = richTextHasPhp;
+
+  bar.innerHTML = `<div class="vx-rt-actions">
+    ${phpMode ? `<span class="vx-rt-php-hint" title="This element contains PHP code. Use the Code Editor for full control.">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      PHP detected
+    </span>` : `
+    <button class="vx-rt-btn${fmt.bold ? ' vx-rt-active' : ''}" data-cmd="bold" title="Bold (⌘B)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/></svg>
+    </button>
+    <button class="vx-rt-btn${fmt.italic ? ' vx-rt-active' : ''}" data-cmd="italic" title="Italic (⌘I)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/></svg>
+    </button>
+    <div class="vx-rt-divider"></div>
+    <button class="vx-rt-btn" data-cmd="insertLink" title="Link (⌘K)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+    </button>
+    <div class="vx-rt-divider"></div>
+    <button class="vx-rt-btn vx-rt-btn-clear" data-cmd="removeFormat" title="Clear formatting">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>
+    </button>
+    `}
+    <div class="vx-rt-divider"></div>
+    <button class="vx-rt-btn vx-rt-btn-cancel" data-action="cancel" title="Cancel (Esc)">
+      Cancel
+    </button>
+    <button class="vx-rt-btn vx-rt-btn-save" data-action="save" title="Save (⌘↵)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      Save
+    </button>
+  </div>`;
+
+  // Bind formatting buttons
+  bar.querySelectorAll('[data-cmd]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cmd = btn.dataset.cmd;
+
+      if (cmd === 'insertLink') {
+        promptForLink();
+        return;
+      }
+
+      sendToPreview({ type: 'vx-editor:richtext-command', command: cmd });
+    });
+  });
+
+  // Bind Save / Cancel
+  const cancelBtn = bar.querySelector('[data-action="cancel"]');
+  const saveBtn = bar.querySelector('[data-action="save"]');
+  if (cancelBtn) cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); sendToPreview({ type: 'vx-editor:cancel-edit' }); });
+  if (saveBtn) saveBtn.addEventListener('click', (e) => { e.stopPropagation(); sendToPreview({ type: 'vx-editor:save-edit' }); });
+}
+
+/** Update the active/inactive state of formatting buttons without re-rendering. */
+function updateFormattingState() {
+  const bar = document.getElementById('vx-richtext-toolbar');
+  if (!bar) return;
+  const fmt = lastFormatting;
+  const stateMap = { bold: fmt.bold, italic: fmt.italic };
+  bar.querySelectorAll('[data-cmd]').forEach(btn => {
+    const cmd = btn.dataset.cmd;
+    if (cmd in stateMap) {
+      btn.classList.toggle('vx-rt-active', !!stateMap[cmd]);
+    }
+  });
+}
+
+function dismissEditingBar() {
+  const bar = document.getElementById('vx-richtext-toolbar');
+  if (bar) bar.classList.remove('vx-rt-visible');
+}
+
+// Keep backward compat alias  
+function dismissRichTextToolbar() { dismissEditingBar(); }
+
+function promptForLink() {
+  const url = prompt('Enter URL:');
+  if (url !== null) {
+    const trimmed = url.trim();
+    if (trimmed) {
+      sendToPreview({ type: 'vx-editor:richtext-command', command: 'insertLink', value: trimmed });
+    } else {
+      sendToPreview({ type: 'vx-editor:richtext-command', command: 'removeLink' });
+    }
   }
 }
 

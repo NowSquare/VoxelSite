@@ -5443,6 +5443,19 @@ select.vs-input {
 }
 .vx-editor-active:hover { background: var(--vs-accent-hover) !important; }
 
+/* ── Visual Editor UI Lockdown ──
+   When the visual editor is active, disable all controls that could
+   cause navigation, state corruption, or data loss. Only the visual
+   editor toggle and the preview area remain interactive. */
+.vx-editing .vs-topbar { pointer-events: none; opacity: 0.5; }
+.vx-editing .vs-statusbar { pointer-events: none; opacity: 0.5; }
+.vx-editing #conversation-panel { pointer-events: none; opacity: 0.5; }
+.vx-editing .vs-preview-toolbar { pointer-events: none; opacity: 0.5; }
+/* Re-enable just the visual editor toggle so the user can exit */
+.vx-editing #btn-visual-editor { pointer-events: auto; opacity: 1; }
+/* Re-enable the preview area itself (iframe + overlays) */
+.vx-editing #preview-frame-container { pointer-events: auto; }
+
 /* ── Context Toolbar ── */
 .vx-context-toolbar {
   position: fixed; z-index: 99999;
@@ -5479,6 +5492,81 @@ select.vs-input {
   color: var(--vs-accent);
 }
 .vx-tb-divider { width: 1px; height: 20px; background: var(--vs-border-subtle); margin: 0 2px; }
+
+/* ── Rich Text Toolbar ── */
+.vx-richtext-toolbar {
+  position: fixed; z-index: 100000;
+  display: flex; align-items: center;
+  background: var(--vs-bg-raised);
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: var(--radius-lg); padding: 3px;
+  box-shadow: var(--vs-shadow-lg), 0 0 0 1px rgba(0,0,0,0.04);
+  opacity: 0; pointer-events: none;
+  transition: opacity 100ms var(--ease-out), transform 100ms var(--ease-out);
+  transform: translate(-50%, -100%) translateY(4px);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+}
+.vx-rt-visible {
+  opacity: 1; pointer-events: auto;
+  transform: translate(-50%, -100%) translateY(0);
+}
+.vx-rt-actions {
+  display: flex; align-items: center; gap: 1px;
+}
+.vx-rt-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 28px;
+  padding: 0;
+  font: 600 10px/1 var(--font-mono);
+  color: var(--vs-text-secondary); background: transparent;
+  border: none; border-radius: var(--radius-md); cursor: pointer;
+  transition: all 100ms var(--ease-out);
+}
+.vx-rt-btn:hover {
+  background: var(--vs-bg-hover); color: var(--vs-text-primary);
+}
+.vx-rt-btn:active { transform: scale(0.92); }
+.vx-rt-active {
+  background: var(--vs-accent) !important;
+  color: var(--vs-bg-base, #1a1410) !important;
+}
+.vx-rt-btn-clear { color: var(--vs-text-ghost); }
+.vx-rt-btn-clear:hover { color: var(--vs-text-primary); }
+.vx-rt-divider {
+  width: 1px; height: 18px;
+  background: var(--vs-border-subtle);
+  margin: 0 2px; flex-shrink: 0;
+}
+.vx-rt-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--vs-accent) 55%, transparent);
+  outline-offset: 1px;
+}
+.vx-rt-btn-save {
+  width: auto; padding: 0 10px; gap: 4px;
+  font: 600 11px/1 var(--font-sans);
+  color: #fff;
+  background: var(--vs-accent);
+  border-radius: var(--radius-md);
+}
+.vx-rt-btn-save:hover {
+  background: var(--vs-accent-hover) !important;
+  color: #fff !important;
+}
+.vx-rt-btn-cancel {
+  width: auto; padding: 0 8px;
+  font: 500 11px/1 var(--font-sans);
+  color: var(--vs-text-ghost);
+}
+.vx-rt-btn-cancel:hover {
+  color: var(--vs-text-primary) !important;
+}
+.vx-rt-php-hint {
+  display: flex; align-items: center; gap: 5px;
+  padding: 0 8px;
+  font: 500 10px/1 var(--font-sans);
+  color: var(--vs-text-ghost);
+  white-space: nowrap;
+}
 
 /* ── Style Editor Panel ── */
 .vx-style-panel {

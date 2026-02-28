@@ -436,7 +436,14 @@
   // ═══════════════════════════════════════════
 
   function onClick(e) {
-    if (!active || isEditing || isAIGenerating) return;
+    if (!active) return;
+    if (isEditing) {
+      // Block link navigation while editing — prevent the iframe from navigating away
+      const link = e.target.closest('a[href]');
+      if (link) { e.preventDefault(); e.stopPropagation(); }
+      return;
+    }
+    if (isAIGenerating) return;
     if (isEditorElement(e.target)) return;
     e.preventDefault(); e.stopPropagation();
     const el = findEditableAncestor(e.target);
@@ -491,6 +498,12 @@
   //  Inline Text Editing
   // ═══════════════════════════════════════════
 
+  /** Does this element's raw HTML contain PHP template tags? */
+  function containsPhpTemplate(el) {
+    const raw = el.innerHTML || '';
+    return raw.includes('<?') || raw.includes('<?=') || raw.includes('<?php');
+  }
+
   function startTextEditing() {
     if (!selectedEl || isEditing || !isTextElement(selectedEl)) return;
     isEditing = true;
@@ -504,30 +517,241 @@
     const sel = window.getSelection();
     sel.removeAllRanges(); sel.addRange(range);
     hideHoverHighlight(); hideSelectionHighlight();
-    selectedEl.addEventListener('blur', onEditBlur, { once: true });
+    // No blur listener — editing is a committed mode, exits only on Save/Cancel
     selectedEl.addEventListener('keydown', onEditKeydown);
+
+    // Start monitoring selection for rich text toolbar
+    const hasPhp = containsPhpTemplate(selectedEl);
+    const rect = selectedEl.getBoundingClientRect();
+    notifyParent({
+      type: 'vx-editor:editing-started',
+      hasPhp,
+      tagName: selectedEl.tagName,
+      rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+    });
+    startSelectionMonitor();
   }
 
   function onEditKeydown(e) {
-    if (e.key === 'Escape') { e.preventDefault(); selectedEl.innerHTML = originalContent; finishEditing(); }
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finishEditing(); }
+    // Escape = Cancel (revert to original)
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEditing();
+      return;
+    }
+
+    // Rich text shortcuts — intercept during editing
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey) {
+      if (e.key === 'b') { e.preventDefault(); document.execCommand('bold', false); notifySelectionState(); }
+      if (e.key === 'i') { e.preventDefault(); document.execCommand('italic', false); notifySelectionState(); }
+      if (e.key === 'k') { e.preventDefault(); notifyParent({ type: 'vx-editor:richtext-link-request' }); }
+      // Cmd+Enter = Save shortcut
+      if (e.key === 'Enter') { e.preventDefault(); saveEditing(); }
+      return;
+    }
+
+    // Enter key — always insert <br> to prevent the browser from creating
+    // <div> elements inside <p>, <h1>, etc. which corrupts the HTML structure.
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // Insert a <br> at the cursor position
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const br = document.createElement('br');
+      range.insertNode(br);
+      // If <br> is at the end, add a second one so the cursor has somewhere to go
+      if (!br.nextSibling || (br.nextSibling.nodeType === Node.ELEMENT_NODE && br.nextSibling.tagName === 'BR')) {
+        const extraBr = document.createElement('br');
+        br.parentNode.insertBefore(extraBr, br.nextSibling);
+      }
+      // Move cursor after the br
+      range.setStartAfter(br);
+      range.setEndAfter(br);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      // Notify parent of updated element rect (element may have grown)
+      notifyElementRect();
+    }
   }
 
-  function onEditBlur() { setTimeout(() => { if (isEditing) finishEditing(); }, 150); }
+  /** Send the current element bounding rect to the parent for toolbar repositioning. */
+  function notifyElementRect() {
+    if (!isEditing || !selectedEl) return;
+    const rect = selectedEl.getBoundingClientRect();
+    notifyParent({
+      type: 'vx-editor:element-rect',
+      rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+    });
+  }
 
-  function finishEditing() {
+  /** Save editing — commit the changes and exit edit mode. */
+  function saveEditing() {
     if (!selectedEl || !isEditing) return;
     isEditing = false;
+    stopSelectionMonitor();
     const newContent = selectedEl.innerHTML;
     selectedEl.contentEditable = 'false';
     selectedEl.removeAttribute('contenteditable');
     selectedEl.style.outline = ''; selectedEl.style.outlineOffset = '';
     selectedEl.removeEventListener('keydown', onEditKeydown);
-    selectedEl.removeEventListener('blur', onEditBlur);
+    notifyParent({ type: 'vx-editor:editing-ended' });
     if (newContent !== originalContent) {
       notifyParent({ type: 'vx-editor:text-changed', filePath: getPageFilePath(), originalHTML: originalContent, newHTML: newContent });
     }
     originalContent = null;
+  }
+
+  /** Cancel editing — revert to original content and exit edit mode. */
+  function cancelEditing() {
+    if (!selectedEl || !isEditing) return;
+    isEditing = false;
+    stopSelectionMonitor();
+    selectedEl.innerHTML = originalContent;
+    selectedEl.contentEditable = 'false';
+    selectedEl.removeAttribute('contenteditable');
+    selectedEl.style.outline = ''; selectedEl.style.outlineOffset = '';
+    selectedEl.removeEventListener('keydown', onEditKeydown);
+    notifyParent({ type: 'vx-editor:editing-ended' });
+    originalContent = null;
+  }
+
+  // ═══════════════════════════════════════════
+  //  Rich Text — Selection Monitor
+  // ═══════════════════════════════════════════
+
+  let selectionMonitorId = null;
+
+  function startSelectionMonitor() {
+    stopSelectionMonitor();
+    // Use selectionchange + polling hybrid for reliability across browsers
+    document.addEventListener('selectionchange', onSelectionChange);
+  }
+
+  function stopSelectionMonitor() {
+    document.removeEventListener('selectionchange', onSelectionChange);
+    if (selectionMonitorId) { clearTimeout(selectionMonitorId); selectionMonitorId = null; }
+  }
+
+  function onSelectionChange() {
+    // Debounce to avoid flickering on rapid selection changes
+    if (selectionMonitorId) clearTimeout(selectionMonitorId);
+    selectionMonitorId = setTimeout(notifySelectionState, 60);
+  }
+
+  function notifySelectionState() {
+    if (!isEditing || !selectedEl) return;
+
+    // Always include the element's current rect for toolbar repositioning
+    const elRect = selectedEl.getBoundingClientRect();
+    const elementRect = { left: elRect.left, top: elRect.top, width: elRect.width, height: elRect.height };
+
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) {
+      notifyParent({ type: 'vx-editor:selection-state', hasSelection: false, elementRect });
+      return;
+    }
+
+    const range = sel.getRangeAt(0);
+    // Only report if the selection is inside the edited element
+    if (!selectedEl.contains(range.commonAncestorContainer)) {
+      notifyParent({ type: 'vx-editor:selection-state', hasSelection: false, elementRect });
+      return;
+    }
+
+    const text = sel.toString();
+    const hasSelection = text.length > 0;
+
+    if (!hasSelection) {
+      notifyParent({ type: 'vx-editor:selection-state', hasSelection: false, elementRect });
+      return;
+    }
+
+    // Get current formatting state
+    const rect = range.getBoundingClientRect();
+    notifyParent({
+      type: 'vx-editor:selection-state',
+      hasSelection: true,
+      text: text.substring(0, 100),
+      rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      elementRect,
+      formatting: {
+        bold: document.queryCommandState('bold'),
+        italic: document.queryCommandState('italic'),
+        underline: document.queryCommandState('underline'),
+        strikeThrough: document.queryCommandState('strikeThrough'),
+        orderedList: document.queryCommandState('insertOrderedList'),
+        unorderedList: document.queryCommandState('insertUnorderedList'),
+      },
+      blockTag: getClosestBlockTag(range),
+    });
+  }
+
+  /** Get the tag name of the closest block-level ancestor of the selection. */
+  function getClosestBlockTag(range) {
+    let node = range.commonAncestorContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    const blocks = new Set(['H1','H2','H3','H4','H5','H6','P','BLOCKQUOTE','LI','DIV','SECTION','ARTICLE']);
+    while (node && node !== selectedEl) {
+      if (blocks.has(node.tagName)) return node.tagName;
+      node = node.parentElement;
+    }
+    return selectedEl.tagName;
+  }
+
+  // ═══════════════════════════════════════════
+  //  Rich Text — Command Execution
+  // ═══════════════════════════════════════════
+
+  function execRichTextCommand(cmd, value) {
+    if (!isEditing || !selectedEl) return;
+
+    // Re-focus the editable element to restore selection
+    selectedEl.focus();
+
+    switch (cmd) {
+      case 'bold':
+        document.execCommand('bold', false);
+        break;
+      case 'italic':
+        document.execCommand('italic', false);
+        break;
+      case 'underline':
+        document.execCommand('underline', false);
+        break;
+      case 'strikeThrough':
+        document.execCommand('strikeThrough', false);
+        break;
+      case 'insertLink':
+        if (value) {
+          document.execCommand('createLink', false, value);
+        } else {
+          document.execCommand('unlink', false);
+        }
+        break;
+      case 'removeLink':
+        document.execCommand('unlink', false);
+        break;
+      case 'insertUnorderedList':
+        document.execCommand('insertUnorderedList', false);
+        break;
+      case 'insertOrderedList':
+        document.execCommand('insertOrderedList', false);
+        break;
+      case 'formatBlock':
+        // value should be like 'H2', 'H3', 'P', etc.
+        if (value) {
+          document.execCommand('formatBlock', false, `<${value}>`);
+        }
+        break;
+      case 'removeFormat':
+        document.execCommand('removeFormat', false);
+        break;
+    }
+
+    // Notify parent of updated formatting state
+    setTimeout(notifySelectionState, 20);
   }
 
   // ═══════════════════════════════════════════
@@ -680,11 +904,14 @@
         else { deselectElement(); hoveredEl = null; removeOverlay(); document.body.style.cursor = ''; clearJitCSS(); originalClasses = null; }
         break;
       case 'vx-editor:start-edit': if (e.data.mode === 'text') startTextEditing(); break;
+      case 'vx-editor:save-edit': saveEditing(); break;
+      case 'vx-editor:cancel-edit': cancelEditing(); break;
       case 'vx-editor:swap-image': swapImage(e.data.src); break;
       case 'vx-editor:preview-class': previewClass(e.data); break;
       case 'vx-editor:update-classes': applyClasses(e.data.classes || [], !!e.data.silent); break;
       case 'vx-editor:update-link': updateLink(e.data); break;
       case 'vx-editor:delete-element': deleteElement(); break;
+      case 'vx-editor:richtext-command': execRichTextCommand(e.data.command, e.data.value); break;
       case 'vx-editor:show-ai-overlay': showAIOverlay(e.data.status); break;
       case 'vx-editor:hide-ai-overlay': hideAIOverlay(); break;
       case 'vx-editor:update-ai-status': updateAIOverlayStatus(e.data.status); break;

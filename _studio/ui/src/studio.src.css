@@ -5450,9 +5450,16 @@ select.vs-input {
 .vx-editing .vs-topbar { pointer-events: none; opacity: 0.5; }
 .vx-editing .vs-statusbar { pointer-events: none; opacity: 0.5; }
 .vx-editing #conversation-panel { pointer-events: none; opacity: 0.5; }
-.vx-editing .vs-preview-toolbar { pointer-events: none; opacity: 0.5; }
-/* Re-enable just the visual editor toggle so the user can exit */
-.vx-editing #btn-visual-editor { pointer-events: auto; opacity: 1; }
+/* Preview toolbar: disable clicks on everything, then re-enable the visual toggle.
+   Opacity is applied per-element (not on the container) because parent opacity
+   is multiplicative and can't be overridden on children. */
+.vx-editing .vs-preview-toolbar { pointer-events: none; }
+.vx-editing .vs-device-toggle,
+.vx-editing #btn-edit-code,
+.vx-editing #btn-refresh-preview,
+.vx-editing #btn-external-preview { opacity: 0.35; }
+/* The visual editor toggle stays vivid and clickable — it's the only exit */
+.vx-editing #btn-visual-editor { pointer-events: auto; }
 /* Re-enable the preview area itself (iframe + overlays) */
 .vx-editing #preview-frame-container { pointer-events: auto; }
 

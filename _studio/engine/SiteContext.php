@@ -83,6 +83,11 @@ class SiteContext
 
         $essential[] = $this->buildSiteMap();
 
+        $pageManifest = $this->buildPageManifest($focusPageSlug);
+        if ($pageManifest !== null) {
+            $essential[] = $pageManifest;
+        }
+
         $headerPartial = $this->buildHeaderPartial();
         if ($headerPartial !== null) {
             $essential[] = $headerPartial;
@@ -541,6 +546,186 @@ class SiteContext
     }
 
     /**
+     * Page manifest — section-level summary of every page on the site.
+     *
+     * This is the core of multi-page awareness. It gives the AI a
+     * lightweight structural map of all pages without sending full
+     * HTML for each one. For a typical 5-page site this adds ~200-400
+     * tokens — worth every one, because it's what makes cross-page
+     * instructions like "match About to Home" actually work.
+     *
+     * The focus page is excluded since its full HTML is already in
+     * the context. No point summarizing what we're sending in full.
+     */
+    private function buildPageManifest(?string $focusPageSlug = null): ?string
+    {
+        $pages = $this->db->query(
+            "SELECT slug, title, page_type
+             FROM pages
+             ORDER BY nav_order IS NULL, nav_order ASC, title ASC"
+        );
+
+        if (empty($pages)) {
+            return null;
+        }
+
+        $manifest = "=== PAGE MANIFEST ===\n";
+        $manifest .= "Section-level structure of each page. Use this to understand the full site layout when making cross-page changes.\n\n";
+
+        $count = 0;
+        foreach ($pages as $page) {
+            $slug = $page['slug'];
+
+            // Skip the focus page — its full HTML is already in context
+            if ($focusPageSlug !== null && $slug === $focusPageSlug) {
+                continue;
+            }
+
+            // Cap at 10 pages to keep token budget reasonable
+            if (++$count > 10) {
+                $manifest .= "(additional pages omitted for brevity)\n";
+                break;
+            }
+
+            $filename = $slug === 'index' ? 'index.php' : "{$slug}.php";
+            $content = $this->fileManager->readFile($filename);
+
+            if ($content === null) {
+                $manifest .= "{$slug} ({$filename}): [file not found]\n";
+                continue;
+            }
+
+            $sections = $this->extractSectionSummaries($content);
+
+            $manifest .= "{$slug} ({$filename}): \"{$page['title']}\"\n";
+            if (!empty($sections)) {
+                foreach ($sections as $i => $summary) {
+                    $num = $i + 1;
+                    $manifest .= "  {$num}. {$summary}\n";
+                }
+            } else {
+                $manifest .= "  (no sections detected)\n";
+            }
+            $manifest .= "\n";
+        }
+
+        return rtrim($manifest);
+    }
+
+    /**
+     * Extract section summaries from a page's HTML source.
+     *
+     * Uses multiple signals the AI naturally produces:
+     * 1. HTML comments above sections (e.g. <!-- HERO SECTION -->)
+     * 2. Section id attributes (e.g. id="menu")
+     * 3. aria-label attributes
+     * 4. First h1/h2/h3 heading inside the section
+     *
+     * These combine into a compact description like:
+     * "Hero Section (id=hero) — h1: Ember & Oak"
+     *
+     * @return string[] Array of human-readable section summaries
+     */
+    private function extractSectionSummaries(string $html): array
+    {
+        $summaries = [];
+
+        // Find all <section> tags and extract attributes + nearby context
+        // The regex captures the full opening tag and optional preceding comment
+        $pattern = '/'
+            . '(?:<!--\s*[═─=\-\s]*([^>]*?)[═─=\-\s]*-->\s*)?'  // Optional HTML comment
+            . '<section\b([^>]*)>'                                // Section opening tag
+            . '(.*?)'                                             // Section content
+            . '<\/section>/si';
+
+        if (!preg_match_all($pattern, $html, $matches, PREG_SET_ORDER)) {
+            return $summaries;
+        }
+
+        foreach ($matches as $match) {
+            $commentLabel = trim($match[1] ?? '');
+            $attrs = $match[2] ?? '';
+            $content = $match[3] ?? '';
+
+            $parts = [];
+
+            // Signal 1: HTML comment label (most descriptive)
+            if ($commentLabel !== '') {
+                // Clean up: remove decorative characters, normalize whitespace
+                $label = preg_replace('/[═─=\-]+/u', '', $commentLabel);
+                $label = trim(preg_replace('/\s+/', ' ', $label));
+                if ($label !== '') {
+                    $parts[] = $label;
+                }
+            }
+
+            // Signal 2: id attribute
+            $id = null;
+            if (preg_match('/\bid=["\']([^"\']+)["\']/', $attrs, $idMatch)) {
+                $id = $idMatch[1];
+            }
+
+            // Signal 3: aria-label
+            $ariaLabel = null;
+            if (preg_match('/\baria-label=["\']([^"\']+)["\']/', $attrs, $ariaMatch)) {
+                $ariaLabel = $ariaMatch[1];
+            }
+
+            // Signal 4: First heading (h1, h2, or h3)
+            $heading = null;
+            if (preg_match('/<h[123][^>]*>(.*?)<\/h[123]>/si', $content, $hMatch)) {
+                // Replace <br> variants with space before stripping tags
+                $raw = preg_replace('/<br\s*\/?>/i', ' ', $hMatch[1]);
+                // Strip inner tags, decode entities, trim
+                $heading = trim(html_entity_decode(strip_tags($raw), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                // Collapse whitespace and line breaks
+                $heading = preg_replace('/\s+/', ' ', $heading);
+                // Cap at 80 chars
+                if (mb_strlen($heading) > 80) {
+                    $heading = mb_substr($heading, 0, 77) . '...';
+                }
+            }
+
+            // Build the summary line
+            if (empty($parts) && $ariaLabel) {
+                $parts[] = $ariaLabel;
+            }
+
+            // If nothing descriptive yet, use heading or id as fallback
+            if (empty($parts)) {
+                if ($heading) {
+                    $parts[] = $heading;
+                } elseif ($id) {
+                    $parts[] = ucfirst(str_replace(['-', '_'], ' ', $id));
+                } else {
+                    $parts[] = 'Section';
+                }
+            }
+
+            $summary = implode('', $parts);
+
+            // Append id in parentheses if we have one and it's not already mentioned
+            if ($id && stripos($summary, $id) === false) {
+                $summary .= " (#{$id})";
+            }
+
+            // Append heading if we have a comment label AND a heading that adds info
+            if ($commentLabel !== '' && $heading && stripos($summary, $heading) === false) {
+                $summary .= " — \"{$heading}\"";
+            }
+
+            $summaries[] = $summary;
+
+            // Cap at 12 sections per page
+            if (count($summaries) >= 12) {
+                break;
+            }
+        }
+
+        return $summaries;
+    }
+
+    /**
      * Full content of the page being edited.
      */
     private function buildFocusPage(string $slug): ?string
@@ -842,9 +1027,10 @@ class SiteContext
      * Scan a directory for image files and parse metadata from filenames.
      *
      * Returns an array of parsed image records derived from the filename
-     * convention:  vs-bg_{subject}_{type}_{mood}_{tone}_{contrast}.png
-     *          or: vs-gal_{subject}_{categories}_{tone}_{contrast}.png
+     * convention:  vs-bg_{subject}_{type}_{mood}_{tone}_{contrast}.ext
+     *          or: vs-gal_{subject}_{categories}_{tone}_{contrast}.ext
      *
+     * Supports: .png, .jpg, .jpeg, .webp, .svg, .gif, .avif
      * Every file is unique — no variants, no grouping.
      */
     private function scanImageDirectory(string $dir, string $prefix): array
@@ -853,21 +1039,27 @@ class SiteContext
             return [];
         }
 
-        $files = glob($dir . '/*.png');
-        if (!$files) {
+        $allowedExtensions = ['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif', 'avif'];
+        $allFiles = @scandir($dir);
+        if ($allFiles === false) {
             return [];
         }
 
         $images = [];
 
-        foreach ($files as $file) {
+        foreach ($allFiles as $file) {
+            if ($file[0] === '.') continue;
+
+            $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            if (!in_array($ext, $allowedExtensions, true)) continue;
+
             $basename = pathinfo($file, PATHINFO_FILENAME);
             $segments = explode('_', $basename);
 
             if ($prefix === 'vs-bg' && count($segments) === 6) {
                 // vs-bg_{subject}_{type}_{mood}_{tone}_{contrast}
                 $images[] = [
-                    'file'     => $basename . '.png',
+                    'file'     => $file,
                     'subject'  => str_replace('-', ' ', $segments[1]),
                     'type'     => $segments[2],
                     'mood'     => $segments[3],
@@ -877,7 +1069,7 @@ class SiteContext
             } elseif ($prefix === 'vs-gal' && count($segments) === 5) {
                 // vs-gal_{subject}_{categories}_{tone}_{contrast}
                 $images[] = [
-                    'file'       => $basename . '.png',
+                    'file'       => $file,
                     'subject'    => str_replace('-', ' ', $segments[1]),
                     'categories' => explode('-', $segments[2]),
                     'tone'       => $segments[3],
@@ -890,10 +1082,15 @@ class SiteContext
     }
 
     /**
-     * Load the built-in image library by scanning the filesystem.
+     * Load the built-in image library by scanning the filesystem
+     * and optionally reading a library.json manifest (VoxelSwarm).
      *
-     * Cached after first read — the library is static and ships with the product.
-     * Parses metadata directly from the underscore-delimited filenames.
+     * Cached after first read. Merges two sources:
+     * 1. Local filesystem scan (tenant additions — takes priority)
+     * 2. Remote library.json manifest (VoxelSwarm centralized images)
+     *
+     * Local images appear first in the list so tenant-added images
+     * are preferred by the AI.
      */
     private function getImageLibrary(): array
     {
@@ -903,9 +1100,54 @@ class SiteContext
             $bgDir  = $this->assetsPath . '/library/backgrounds';
             $galDir = $this->assetsPath . '/library/gallery';
 
+            // 1. Scan local filesystem (existing behavior — tenant additions)
+            $localBackgrounds = $this->scanImageDirectory($bgDir, 'vs-bg');
+            $localGallery     = $this->scanImageDirectory($galDir, 'vs-gal');
+
+            // 2. Check for library.json (VoxelSwarm remote library)
+            $remoteBackgrounds = [];
+            $remoteGallery     = [];
+            $jsonPath = $this->assetsPath . '/library.json';
+
+            if (file_exists($jsonPath)) {
+                $raw = @file_get_contents($jsonPath);
+                $manifest = $raw !== false ? json_decode($raw, true) : null;
+
+                if ($manifest && !empty($manifest['images'])) {
+                    $baseUrl = rtrim($manifest['base_url'] ?? '', '/');
+
+                    foreach ($manifest['images'] as $relativePath) {
+                        $filename = pathinfo($relativePath, PATHINFO_FILENAME);
+                        $segments = explode('_', $filename);
+
+                        if (str_starts_with($relativePath, 'backgrounds/') && count($segments) === 6) {
+                            $remoteBackgrounds[] = [
+                                'file'     => $baseUrl . '/' . $relativePath,
+                                'subject'  => str_replace('-', ' ', $segments[1]),
+                                'type'     => $segments[2],
+                                'mood'     => $segments[3],
+                                'tone'     => $segments[4],
+                                'contrast' => $segments[5],
+                                'remote'   => true,
+                            ];
+                        } elseif (str_starts_with($relativePath, 'gallery/') && count($segments) === 5) {
+                            $remoteGallery[] = [
+                                'file'       => $baseUrl . '/' . $relativePath,
+                                'subject'    => str_replace('-', ' ', $segments[1]),
+                                'categories' => explode('-', $segments[2]),
+                                'tone'       => $segments[3],
+                                'contrast'   => $segments[4],
+                                'remote'     => true,
+                            ];
+                        }
+                    }
+                }
+            }
+
+            // 3. Merge: local first (takes priority), remote appended
             $library = [
-                'backgrounds' => $this->scanImageDirectory($bgDir, 'vs-bg'),
-                'gallery'     => $this->scanImageDirectory($galDir, 'vs-gal'),
+                'backgrounds' => array_merge($localBackgrounds, $remoteBackgrounds),
+                'gallery'     => array_merge($localGallery, $remoteGallery),
             ];
         }
 
@@ -962,7 +1204,9 @@ class SiteContext
                 $lines[] = $label . ':';
 
                 foreach ($images as $img) {
-                    $path    = '/assets/library/backgrounds/' . $img['file'];
+                    $path    = ($img['remote'] ?? false)
+                        ? $img['file']
+                        : '/assets/library/backgrounds/' . $img['file'];
                     $pathCol = str_pad($path, 85);
                     $toneCol = str_pad("[{$img['tone']}, {$img['contrast']}]", 22);
                     $lines[] = "  {$pathCol}{$toneCol}{$img['mood']}, {$img['subject']}";
@@ -999,7 +1243,9 @@ class SiteContext
                 $lines[] = "  {$catLabel}";
 
                 foreach ($images as $img) {
-                    $path    = '/assets/library/gallery/' . $img['file'];
+                    $path    = ($img['remote'] ?? false)
+                        ? $img['file']
+                        : '/assets/library/gallery/' . $img['file'];
                     $cats    = implode(', ', $img['categories'] ?? []);
                     $pathCol = str_pad($path, 85);
                     $toneCol = str_pad("[{$img['tone']}, {$img['contrast']}]", 22);

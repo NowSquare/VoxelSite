@@ -28,6 +28,7 @@ Full documentation: **[voxelsite.com/docs](https://voxelsite.com/docs)**
 - **Snapshots** — save/restore entire site states
 - **Asset Manager** — upload images, files, and fonts
 - **Forms** — submission handling with email notifications
+- **Team** — invite editors and viewers with role-based access
 - **AEO** — built-in AI discoverability (`llms.txt`, schema, MCP endpoint)
 
 ## Supported AI Providers

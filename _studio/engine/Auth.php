@@ -177,7 +177,7 @@ class Auth
      *
      * @return int The new user's ID
      */
-    public function createUser(string $name, string $email, string $password, string $role = 'admin'): int
+    public function createUser(string $name, string $email, string $password, string $role = 'editor'): int
     {
         $email = strtolower(trim($email));
         $now = now();
@@ -226,6 +226,131 @@ class Auth
             'email'      => strtolower(trim($email)),
             'updated_at' => now(),
         ], 'id = ?', [$userId]);
+    }
+
+    // ═══════════════════════════════════════════
+    //  Team Management
+    // ═══════════════════════════════════════════
+
+    /**
+     * List all users. Returns id, name, email, role, last_login_at, created_at.
+     * Password hash is never included.
+     *
+     * @return array<int, array{id: int, name: string, email: string, role: string, last_login_at: ?string, created_at: string}>
+     */
+    public function listUsers(): array
+    {
+        return $this->db->query(
+            'SELECT id, name, email, role, last_login_at, created_at FROM users ORDER BY created_at ASC'
+        );
+    }
+
+    /**
+     * Get a single user by ID. Returns null if not found.
+     * Password hash is never included.
+     *
+     * @return array{id: int, name: string, email: string, role: string, last_login_at: ?string, created_at: string}|null
+     */
+    public function getUser(int $userId): ?array
+    {
+        return $this->db->queryOne(
+            'SELECT id, name, email, role, last_login_at, created_at FROM users WHERE id = ?',
+            [$userId]
+        );
+    }
+
+    /**
+     * Update a team member's name, email, and/or role.
+     *
+     * Protected: cannot change the owner's role, and cannot
+     * have more than one owner.
+     *
+     * @return array{ok: bool, error?: string}
+     */
+    public function updateUser(int $userId, array $data): array
+    {
+        $user = $this->db->queryOne('SELECT id, role FROM users WHERE id = ?', [$userId]);
+        if ($user === null) {
+            return ['ok' => false, 'error' => 'User not found.'];
+        }
+
+        // Cannot change the owner's role
+        if ($user['role'] === 'owner' && isset($data['role']) && $data['role'] !== 'owner') {
+            return ['ok' => false, 'error' => 'Cannot change the owner\'s role.'];
+        }
+
+        // Cannot promote anyone to owner
+        if (isset($data['role']) && $data['role'] === 'owner') {
+            return ['ok' => false, 'error' => 'Cannot assign the owner role.'];
+        }
+
+        $updates = ['updated_at' => now()];
+
+        if (isset($data['name'])) {
+            $updates['name'] = trim($data['name']);
+        }
+        if (isset($data['email'])) {
+            $email = strtolower(trim($data['email']));
+            // Check for email uniqueness
+            $existing = $this->db->queryOne(
+                'SELECT id FROM users WHERE email = ? AND id != ?',
+                [$email, $userId]
+            );
+            if ($existing) {
+                return ['ok' => false, 'error' => 'That email is already in use.'];
+            }
+            $updates['email'] = $email;
+        }
+        if (isset($data['role']) && in_array($data['role'], ['editor', 'viewer'], true)) {
+            $updates['role'] = $data['role'];
+        }
+
+        $this->db->update('users', $updates, 'id = ?', [$userId]);
+        return ['ok' => true];
+    }
+
+    /**
+     * Delete a team member. Cannot delete the owner.
+     * Destroys all their sessions.
+     *
+     * @return array{ok: bool, error?: string}
+     */
+    public function deleteUser(int $userId): array
+    {
+        $user = $this->db->queryOne('SELECT id, role FROM users WHERE id = ?', [$userId]);
+        if ($user === null) {
+            return ['ok' => false, 'error' => 'User not found.'];
+        }
+
+        if ($user['role'] === 'owner') {
+            return ['ok' => false, 'error' => 'Cannot delete the owner account.'];
+        }
+
+        // Destroy their sessions first
+        $this->db->delete('sessions', 'user_id = ?', [$userId]);
+        $this->db->delete('users', 'id = ?', [$userId]);
+
+        return ['ok' => true];
+    }
+
+    /**
+     * Set a user's password directly (owner override).
+     * Does not require the current password — used by the owner
+     * when creating or resetting a team member's password.
+     */
+    public function setPassword(int $userId, string $newPassword): bool
+    {
+        $user = $this->db->queryOne('SELECT id FROM users WHERE id = ?', [$userId]);
+        if ($user === null) {
+            return false;
+        }
+
+        $this->db->update('users', [
+            'password_hash' => password_hash($newPassword, PASSWORD_DEFAULT),
+            'updated_at'    => now(),
+        ], 'id = ?', [$userId]);
+
+        return true;
     }
 
     /**

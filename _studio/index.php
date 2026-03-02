@@ -19,6 +19,17 @@ if (!isInstalled()) {
     exit;
 }
 
+// ── Run pending migrations (auto-upgrade on first load after update) ──
+try {
+    $migrator = new \VoxelSite\Migrator();
+    $migrator->run();
+} catch (\Throwable $e) {
+    // Non-fatal: log but don't block Studio access
+    \VoxelSite\Logger::error('system', 'Auto-migration failed', [
+        'exception' => $e->getMessage(),
+    ]);
+}
+
 // ── Resolve asset paths relative to _studio ──
 $basePath = '/_studio';
 $isDemo = \VoxelSite\DemoMode::isActive();

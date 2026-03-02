@@ -164,6 +164,13 @@ $routes = [
     ['POST',   '/site/reset',            'site.php',           true],
     ['POST',   '/site/reset-install',    'site.php',           true],
 
+    // Team
+    ['GET',    '/team',                  'team.php',           true],
+    ['POST',   '/team',                  'team.php',           true],
+    ['PUT',    '/team/:id',              'team.php',           true],
+    ['DELETE', '/team/:id',              'team.php',           true],
+    ['POST',   '/team/:id/password',     'team.php',           true],
+
     // Update
     ['GET',    '/update/dist-packages',  'update.php',         true],
     ['POST',   '/update/apply-local',    'update.php',         true],
@@ -201,6 +208,20 @@ foreach ($routes as [$routeMethod, $routePattern, $endpointFile, $requiresAuth])
                 'code'    => 'unauthorized',
                 'message' => 'Session expired or invalid. Please sign in again.',
             ]], 401);
+            exit;
+        }
+    }
+
+    // ── Role-based authorization ──
+    // Viewers can only read — block all write operations except auth/logout and auth/profile
+    if ($requiresAuth && isset($user) && $user['role'] === 'viewer') {
+        $isWriteMethod = in_array($method, ['POST', 'PUT', 'DELETE'], true);
+        $isAllowedWrite = in_array($path, ['/auth/logout', '/auth/profile', '/auth/password'], true);
+        if ($isWriteMethod && !$isAllowedWrite) {
+            jsonResponse(['ok' => false, 'error' => [
+                'code'    => 'forbidden',
+                'message' => 'Viewers have read-only access.',
+            ]], 403);
             exit;
         }
     }

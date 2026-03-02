@@ -108,6 +108,7 @@
   --vs-bg-input: transparent;
   --vs-bg-well: var(--bg-panel);
   --vs-bg-hover: #F4F4F5;
+  --vs-bg-inset: #F4F4F5;
 
   --vs-border-subtle: var(--border-base);
   --vs-border-medium: var(--border-base);
@@ -160,6 +161,7 @@
   --vs-bg-input: rgba(24, 24, 27, 0.5);
   --vs-bg-well: #09090B;
   --vs-bg-hover: #27272A;
+  --vs-bg-inset: #1E1E22;
 
   --vs-border-subtle: var(--border-base);
   --vs-border-medium: var(--border-base);
@@ -531,6 +533,7 @@ body {
 
 .vs-input::placeholder {
   color: var(--vs-text-ghost);
+  opacity: 0.55;
 }
 
 .vs-input:hover {
@@ -2056,7 +2059,7 @@ select.vs-input {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-xl);
-  border: 1px dashed var(--vs-border-subtle);
+  border: 1px solid var(--vs-border-subtle);
   background: var(--vs-bg-surface);
   position: relative;
   overflow: hidden;
@@ -2616,6 +2619,320 @@ select.vs-input {
   font-size: 12px;
   color: var(--vs-text-tertiary);
   line-height: 1.4;
+}
+
+
+/* ═══════════════════════════════════════════ */
+/*  COMMAND PALETTE ITEMS                     */
+/* ═══════════════════════════════════════════ */
+
+.vs-cmd-item {
+  flex: 1;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.vs-cmd-item:hover,
+.vs-cmd-item-active {
+  background: var(--vs-bg-inset);
+}
+.vs-cmd-item-title {
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--vs-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+}
+.vs-cmd-item-desc {
+  font-size: 11.5px;
+  color: var(--vs-text-ghost);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 440px;
+  margin-top: 1px;
+}
+
+.vs-cmd-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  flex-shrink: 0;
+  cursor: pointer;
+  color: var(--vs-text-ghost);
+  transition: color 0.12s ease;
+}
+.vs-cmd-pin:hover {
+  color: var(--vs-text-secondary);
+}
+.vs-cmd-pin-active,
+.vs-cmd-pin-active:hover {
+  color: var(--vs-accent);
+}
+
+/* ═══════════════════════════════════════════ */
+/*  ROLE BADGES — Team Members                */
+/* ═══════════════════════════════════════════ */
+
+.vs-role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  user-select: none;
+  text-transform: capitalize;
+}
+
+.vs-role-owner {
+  color: var(--vs-accent);
+  background: color-mix(in srgb, var(--vs-accent) 12%, var(--vs-bg-surface));
+  border: 1px solid color-mix(in srgb, var(--vs-accent) 25%, transparent);
+}
+
+.vs-role-editor {
+  color: #3b82f6;
+  background: color-mix(in srgb, #3b82f6 10%, var(--vs-bg-surface));
+  border: 1px solid color-mix(in srgb, #3b82f6 20%, transparent);
+}
+
+.vs-role-viewer {
+  color: var(--vs-text-ghost);
+  background: var(--vs-bg-well);
+  border: 1px solid var(--vs-border-subtle);
+}
+
+.vs-role-badge-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.vs-role-badge-clickable:hover {
+  border-color: var(--vs-border-medium);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* ─── Team table ─── */
+.vs-team-table {
+  width: 100%;
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: var(--radius-xl);
+  background: var(--vs-bg-surface);
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.vs-team-table-header {
+  display: grid;
+  grid-template-columns: 1fr 120px 120px 100px;
+  gap: 0;
+  padding: 0 20px;
+  height: 40px;
+  align-items: center;
+  border-bottom: 1px solid var(--vs-border-subtle);
+  background: var(--vs-bg-inset);
+}
+.vs-team-table-header span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vs-text-ghost);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.vs-team-row {
+  display: grid;
+  grid-template-columns: 1fr 120px 120px 100px;
+  gap: 0;
+  padding: 16px 20px;
+  align-items: center;
+  border-bottom: 1px solid var(--vs-border-subtle);
+  transition: background 0.12s ease;
+}
+.vs-team-row:last-child {
+  border-bottom: none;
+}
+.vs-team-row:hover {
+  background: var(--vs-bg-inset);
+}
+
+.vs-team-row-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.vs-team-row-meta {
+  font-size: 11.5px;
+  color: var(--vs-text-ghost);
+}
+.vs-team-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+.vs-team-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--vs-text-ghost);
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.vs-team-action:hover {
+  color: var(--vs-text-primary);
+  background: var(--vs-bg-inset);
+}
+.vs-team-action-danger:hover {
+  color: var(--vs-error);
+}
+
+/* ─── Team member card ─── */
+.vs-team-card {
+  padding: 16px 20px;
+  transition: border-color 0.2s ease, box-shadow 0.3s var(--ease-out);
+}
+.vs-team-card:hover {
+  border-color: var(--vs-border-medium);
+  box-shadow: var(--vs-cream-hover);
+}
+
+/* ─── Team avatar — initial-letter circle ─── */
+.vs-team-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--vs-accent);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--vs-accent) 14%, var(--vs-bg-surface)) 0%,
+      color-mix(in srgb, var(--vs-accent) 6%, var(--vs-bg-surface)) 100%
+    );
+  border: 1px solid color-mix(in srgb, var(--vs-accent) 18%, transparent);
+  box-shadow:
+    var(--vs-cream-inset),
+    0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* Avatar role colors — owner is default amber, editor blue, viewer gray */
+.vs-team-avatar-owner {
+  color: var(--vs-accent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--vs-accent) 14%, var(--vs-bg-surface)) 0%, color-mix(in srgb, var(--vs-accent) 6%, var(--vs-bg-surface)) 100%);
+  border-color: color-mix(in srgb, var(--vs-accent) 18%, transparent);
+}
+.vs-team-avatar-editor {
+  color: #3b82f6;
+  background: linear-gradient(135deg, color-mix(in srgb, #3b82f6 14%, var(--vs-bg-surface)) 0%, color-mix(in srgb, #3b82f6 6%, var(--vs-bg-surface)) 100%);
+  border-color: color-mix(in srgb, #3b82f6 18%, transparent);
+}
+.vs-team-avatar-viewer {
+  color: var(--vs-text-ghost);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--vs-text-ghost) 10%, var(--vs-bg-surface)) 0%, var(--vs-bg-inset) 100%);
+  border-color: var(--vs-border-subtle);
+}
+
+/* ─── Team modals — full-screen, above everything ─── */
+.vs-team-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.vs-team-modal.hidden {
+  display: none;
+}
+.vs-team-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.vs-team-modal-card {
+  position: relative;
+  width: min(440px, calc(100vw - 2rem));
+  border-radius: var(--radius-2xl);
+  border: 1px solid var(--vs-border-subtle);
+  background: var(--vs-bg-surface);
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  animation: scale-in 200ms var(--ease-out) both;
+}
+
+/* ─── Permissions matrix ─── */
+.vs-role-matrix {
+  display: grid;
+  gap: 0;
+}
+.vs-role-matrix-header,
+.vs-role-matrix-row {
+  display: grid;
+  grid-template-columns: 1fr 64px 64px 64px;
+  align-items: center;
+}
+.vs-role-matrix-header {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--vs-border-subtle);
+  margin-bottom: 2px;
+}
+.vs-role-matrix-header .vs-role-badge {
+  justify-self: center;
+  font-size: 10px;
+  padding: 1px 7px;
+}
+.vs-role-matrix-row {
+  padding: 7px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--vs-border-subtle) 40%, transparent);
+}
+.vs-role-matrix-row:last-child {
+  border-bottom: none;
+}
+.vs-role-matrix-label {
+  font-size: var(--text-xs);
+  color: var(--vs-text-secondary);
+}
+.vs-role-matrix-cell {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vs-text-ghost);
+}
+.vs-role-matrix-cell:nth-child(2) {
+  color: var(--vs-accent);
+}
+.vs-role-matrix-cell:nth-child(3) {
+  color: #3b82f6;
 }
 
 

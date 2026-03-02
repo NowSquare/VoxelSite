@@ -573,6 +573,7 @@ async function initEditorPage() {
   // ── Delete a file ──
   const deleteFile = async (path) => {
     if (window.demoGuard?.()) return;
+    if (window.viewerGuard?.()) return;
     const filename = path.split('/').pop();
     const confirmed = await showConfirmModal({
       title: 'Delete file?',
@@ -618,6 +619,7 @@ async function initEditorPage() {
   // ── Restore a system file to its default ──
   const restoreFile = async (path) => {
     if (window.demoGuard?.()) return;
+    if (window.viewerGuard?.()) return;
     const filename = path.split('/').pop();
     const confirmed = await showConfirmModal({
       title: 'Reset system prompt?',
@@ -666,7 +668,7 @@ async function initEditorPage() {
     if (model) {
       editorState.monacoInstance.setValue(content);
       editorState.monaco.editor.setModelLanguage(model, getCodeLanguage(path));
-      editorState.monacoInstance.updateOptions({ readOnly: window.IS_DEMO || isFileReadonly(path) });
+      editorState.monacoInstance.updateOptions({ readOnly: window.IS_DEMO || !window.canWrite?.() || isFileReadonly(path) });
     }
   };
 
@@ -694,7 +696,7 @@ async function initEditorPage() {
   const updateSaveState = () => {
     if (!saveBtn) return;
     const tab = editorState.openTabs.find(t => t.path === editorState.activeTab);
-    const isReadonly = editorState.activeTab ? isFileReadonly(editorState.activeTab) : false;
+    const isReadonly = editorState.activeTab ? (isFileReadonly(editorState.activeTab) || !window.canWrite?.()) : false;
 
     if (isReadonly) {
       saveBtn.disabled = true;
@@ -739,6 +741,7 @@ async function initEditorPage() {
   // ── Save current file ──
   const saveCurrentFile = async () => {
     if (window.demoGuard?.()) return;
+    if (window.viewerGuard?.()) return;
     const tab = editorState.openTabs.find(t => t.path === editorState.activeTab);
     if (!tab || !tab.dirty || !editorState.monacoInstance) return;
 
@@ -825,6 +828,7 @@ async function initEditorPage() {
         btn.addEventListener('click', async (e) => {
           e.stopPropagation();
           if (window.demoGuard?.()) return;
+          if (window.viewerGuard?.()) return;
 
           btn.style.opacity = '0.4';
           btn.style.pointerEvents = 'none';
@@ -965,6 +969,7 @@ async function initEditorPage() {
   // ── New file button ──
   newFileBtn?.addEventListener('click', async () => {
     if (window.demoGuard?.()) return;
+    if (window.viewerGuard?.()) return;
     const filename = await showPromptModal({
       title: 'Create New File',
       description: 'Enter a filename (e.g. contact.php, assets/css/custom.css, assets/js/utils.js).',

@@ -512,6 +512,7 @@
     selectedEl.focus();
     selectedEl.style.outline = '2px solid #3b82f6';
     selectedEl.style.outlineOffset = '2px';
+    document.body.style.cursor = '';  // Reset to default text cursor during editing
     const range = document.createRange();
     range.selectNodeContents(selectedEl);
     const sel = window.getSelection();
@@ -597,6 +598,7 @@
     selectedEl.style.outline = ''; selectedEl.style.outlineOffset = '';
     selectedEl.removeEventListener('keydown', onEditKeydown);
     notifyParent({ type: 'vx-editor:editing-ended' });
+    document.body.style.cursor = 'crosshair';  // Restore selection cursor
     if (newContent !== originalContent) {
       notifyParent({ type: 'vx-editor:text-changed', filePath: getPageFilePath(), originalHTML: originalContent, newHTML: newContent });
     }
@@ -614,6 +616,7 @@
     selectedEl.style.outline = ''; selectedEl.style.outlineOffset = '';
     selectedEl.removeEventListener('keydown', onEditKeydown);
     notifyParent({ type: 'vx-editor:editing-ended' });
+    document.body.style.cursor = 'crosshair';  // Restore selection cursor
     originalContent = null;
   }
 
@@ -879,7 +882,7 @@
     return l;
   }
 
-  function isEditorElement(el) { return el.id === 'vx-overlay' || el.closest('#vx-overlay'); }
+  function isEditorElement(el) { return el.id === 'vx-overlay' || el.closest('#vx-overlay') || el.closest('[data-vx-divider]'); }
 
   function getPageFilePath() {
     try { return new URLSearchParams(window.location.search).get('path') || 'index.php'; }
@@ -900,8 +903,22 @@
     switch (e.data.type) {
       case 'vx-editor:toggle':
         active = e.data.active;
-        if (active) { createOverlay(); document.body.style.cursor = 'crosshair'; }
-        else { deselectElement(); hoveredEl = null; removeOverlay(); document.body.style.cursor = ''; clearJitCSS(); originalClasses = null; }
+        if (active) {
+          createOverlay();
+          document.body.style.cursor = 'crosshair';
+          injectDividerStyles();
+          // Delayed rebuild to let iframe content settle
+          setTimeout(rebuildSectionDividers, 100);
+        }
+        else {
+          deselectElement();
+          hoveredEl = null;
+          removeOverlay();
+          document.body.style.cursor = '';
+          clearJitCSS();
+          originalClasses = null;
+          removeSectionDividers();
+        }
         break;
       case 'vx-editor:start-edit': if (e.data.mode === 'text') startTextEditing(); break;
       case 'vx-editor:save-edit': saveEditing(); break;
@@ -915,8 +932,239 @@
       case 'vx-editor:show-ai-overlay': showAIOverlay(e.data.status); break;
       case 'vx-editor:hide-ai-overlay': hideAIOverlay(); break;
       case 'vx-editor:update-ai-status': updateAIOverlayStatus(e.data.status); break;
+      case 'vx-editor:rebuild-section-dividers': rebuildSectionDividers(); break;
+      case 'vx-editor:scroll-to-section': scrollToSection(e.data.sectionIndex); break;
     }
   });
+
+  // ═══════════════════════════════════════════
+  //  Section Picker Dividers
+  // ═══════════════════════════════════════════
+
+  let sectionDividers = [];
+  let dividerDebounceId = null;
+
+  /** Scroll the iframe to a section by index, with a brief highlight flash. */
+  function scrollToSection(index) {
+    const mainEl = document.querySelector('main') || document.body;
+    const sections = mainEl.querySelectorAll(':scope > section, :scope > div > section');
+    if (index < 0 || index >= sections.length) return;
+
+    const target = sections[index];
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Brief highlight flash so the user sees exactly what's new
+    const origOutline = target.style.outline;
+    const origTransition = target.style.transition;
+    target.style.transition = 'outline-color 600ms ease';
+    target.style.outline = '2px solid rgba(59,130,246,0.6)';
+    setTimeout(() => {
+      target.style.outline = '2px solid transparent';
+      setTimeout(() => {
+        target.style.outline = origOutline;
+        target.style.transition = origTransition;
+      }, 600);
+    }, 1500);
+  }
+
+  function rebuildSectionDividers() {
+    removeSectionDividers();
+    if (!active || isEditing || isAIGenerating) return;
+
+    // Find all direct <section> children of <main>, or top-level <section> elements
+    const mainEl = document.querySelector('main') || document.body;
+    const sections = mainEl.querySelectorAll(':scope > section, :scope > div > section');
+    if (sections.length === 0) return;
+
+    // Collect section summaries for context
+    const sectionSummaries = Array.from(sections).map((sec, i) => {
+      const id = sec.id || '';
+      const comment = sec.previousSibling?.nodeType === Node.COMMENT_NODE
+        ? sec.previousSibling.textContent.trim() : '';
+      const h = sec.querySelector('h1, h2, h3, h4, h5, h6');
+      const heading = h ? h.textContent.trim().substring(0, 80) : '';
+      return { index: i, id, comment, heading, el: sec };
+    });
+
+    // Create dividers between sections
+    for (let i = 0; i < sections.length; i++) {
+      const sec = sections[i];
+      // Divider AFTER each section (between current and next)
+      createSectionDivider(sec, sectionSummaries, i);
+    }
+
+    // Also add a divider before the first section (to add at top)
+    if (sections.length > 0) {
+      createSectionDivider(null, sectionSummaries, -1, sections[0]);
+    }
+  }
+
+  function createSectionDivider(afterSection, allSections, afterIndex, beforeSection) {
+    const divider = document.createElement('div');
+    divider.className = 'vx-section-divider';
+    divider.setAttribute('data-vx-divider', 'true');
+
+    const btn = document.createElement('button');
+    btn.className = 'vx-section-divider-btn';
+    btn.type = 'button';
+    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+    btn.setAttribute('title', 'Add section');
+
+    const label = document.createElement('span');
+    label.className = 'vx-section-divider-label';
+    label.textContent = 'section';
+
+    divider.appendChild(btn);
+    divider.appendChild(label);
+
+    // Position the divider at the boundary between sections
+    const isFirstDivider = !afterSection && !!beforeSection;
+    const positionDivider = () => {
+      let topY;
+      if (afterSection) {
+        // Place at the bottom edge of afterSection
+        const rect = afterSection.getBoundingClientRect();
+        topY = rect.bottom + window.scrollY;
+      } else if (beforeSection) {
+        // Place near the top edge of the first section, offset down so button is fully visible
+        const rect = beforeSection.getBoundingClientRect();
+        topY = rect.top + window.scrollY + 20;
+      }
+      if (topY !== undefined) {
+        divider.style.top = `${topY}px`;
+      }
+    };
+
+    // Click handler
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Build existing section summaries string
+      const existingList = allSections.map(s => {
+        let desc = `- Section ${s.index + 1}`;
+        if (s.id) desc += ` (id="${s.id}")`;
+        if (s.comment) desc += `: ${s.comment}`;
+        if (s.heading) desc += ` — "${s.heading}"`;
+        return desc;
+      }).join('\n');
+
+      // Get outerHTML of the section AFTER which we insert (for position context)
+      const anchorHtml = afterSection ? afterSection.outerHTML.substring(0, 8000) : '';
+
+      notifyParent({
+        type: 'vx-editor:add-section-request',
+        filePath: getPageFilePath(),
+        insertAfterIndex: afterIndex,
+        insertAfterHtml: anchorHtml,
+        existingSections: existingList,
+        totalSections: allSections.length,
+      });
+    });
+
+    // Append to body (never in the flow)
+    document.body.appendChild(divider);
+    positionDivider();
+
+    // Store the reposition function so we can call it on scroll
+    divider.__vxReposition = positionDivider;
+
+    sectionDividers.push(divider);
+  }
+
+  function removeSectionDividers() {
+    sectionDividers.forEach(d => d.remove());
+    sectionDividers = [];
+  }
+
+  // Inject divider styles
+  function injectDividerStyles() {
+    if (document.getElementById('vx-divider-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'vx-divider-styles';
+    style.textContent = `
+      .vx-section-divider {
+        position: absolute;
+        left: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 0;
+        z-index: 9999999;
+        pointer-events: none;
+      }
+      .vx-section-divider::before {
+        content: '';
+        position: absolute;
+        left: 8%;
+        right: 8%;
+        top: 50%;
+        height: 0;
+        border-top: 1.5px dashed rgba(59,130,246,0.2);
+        transition: all 200ms ease;
+      }
+      .vx-section-divider:hover::before {
+        border-top-style: solid;
+        border-top-color: rgba(59,130,246,0.5);
+        left: 3%;
+        right: 3%;
+      }
+      .vx-section-divider-btn {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border: none;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.92);
+        color: rgba(59,130,246,0.7);
+        cursor: pointer;
+        pointer-events: auto;
+        transition: all 180ms ease;
+        z-index: 1;
+        padding: 0;
+        outline: none;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.25), 0 2px 8px rgba(0,0,0,0.08);
+      }
+      .vx-section-divider:hover .vx-section-divider-btn,
+      .vx-section-divider-btn:focus-visible {
+        background: #3b82f6;
+        color: #fff;
+        box-shadow: 0 2px 12px rgba(59,130,246,0.45), 0 1px 4px rgba(0,0,0,0.2);
+        transform: scale(1.08);
+      }
+      .vx-section-divider-btn:hover {
+        transform: scale(1.15);
+      }
+      .vx-section-divider-btn:active {
+        transform: scale(0.96);
+      }
+      .vx-section-divider-btn svg {
+        width: 14px;
+        height: 14px;
+      }
+      .vx-section-divider-label {
+        position: relative;
+        white-space: nowrap;
+        font: 500 10px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        letter-spacing: 0.02em;
+        color: transparent;
+        padding: 4px 8px;
+        border-radius: 4px;
+        pointer-events: none;
+        transition: all 180ms ease;
+        margin-left: 6px;
+      }
+      .vx-section-divider:hover .vx-section-divider-label {
+        color: rgba(255,255,255,0.85);
+        background: rgba(0,0,0,0.5);
+      }
+    `;
+    document.head.appendChild(style);
+  }
 
   // ═══════════════════════════════════════════
   //  AI Overlay (covers selected element during generation)
@@ -925,19 +1173,26 @@
   function showAIOverlay(status) {
     hideAIOverlay();
     isAIGenerating = true;
+    removeSectionDividers();
+
     const el = selectedEl;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
+    let posStyle;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      posStyle = `left: ${r.left}px; top: ${r.top}px; width: ${r.width}px; height: ${r.height}px; border-radius: 8px;`;
+    } else {
+      // No selected element — full-page overlay (e.g. adding a new section)
+      posStyle = `left: 0; top: 0; width: 100vw; height: 100vh; border-radius: 0;`;
+    }
+
     const ov = document.createElement('div');
     ov.id = 'vx-ai-overlay';
     ov.style.cssText = `
       position: fixed; z-index: 99999;
-      left: ${r.left}px; top: ${r.top}px;
-      width: ${r.width}px; height: ${r.height}px;
+      ${posStyle}
       background: rgba(0,0,0,0.45);
       backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
       display: flex; align-items: center; justify-content: center;
-      border-radius: 8px;
       animation: vxAiFadeIn 200ms ease-out;
       pointer-events: none;
     `;

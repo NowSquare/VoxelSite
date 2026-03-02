@@ -312,6 +312,12 @@ class PromptEngine
                                     'message' => 'Removed ' . $pageName . ' page...',
                                 ]);
                             } else {
+                                // Skip virtual paths (like __section_snippet__) —
+                                // they'll be transformed during post-processing.
+                                if (str_starts_with($file['path'], '__')) {
+                                    continue;
+                                }
+
                                 // Progressive preview: write file immediately.
                                 // Wrapped in try/catch so a single file write failure
                                 // (e.g. path resolution issue on Nginx servers) does not
@@ -393,6 +399,17 @@ class PromptEngine
 
             // ── Parse the complete response ──
             $parsed = $this->parser->parse($fullResponse);
+
+            // ── add_section snippet insertion ──
+            // When the AI returns a __section_snippet__ instead of the full file,
+            // we surgically insert the snippet into the target file ourselves.
+            // This is 5-6x faster because the AI only outputs ~2K tokens instead of ~12K.
+            if ($actionType === 'add_section' && !empty($actionData['path'])) {
+                $parsed['operations'] = $this->transformSectionSnippet(
+                    $parsed['operations'],
+                    $actionData
+                );
+            }
 
             Logger::info('ai', 'Response parsed', [
                 'operation_count' => count($parsed['operations']),
@@ -968,7 +985,171 @@ class PromptEngine
     }
 
     /**
-     * Roll back files that were progressively written during streaming.
+     * Transform a __section_snippet__ operation into a real file write.
+     *
+     * When the AI returns only the new section HTML (not the full file),
+     * this method reads the target file, finds the correct insertion point
+     * by counting top-level <section> tags, and creates a proper write
+     * operation with the snippet inserted.
+     *
+     * Falls through gracefully if the AI returned a full file write instead.
+     */
+    private function transformSectionSnippet(array $operations, array $actionData): array
+    {
+        // Find the snippet operation
+        $snippetIndex = null;
+        $snippetContent = null;
+        foreach ($operations as $i => $op) {
+            if ($op['path'] === '__section_snippet__' && $op['action'] === 'write') {
+                $snippetIndex = $i;
+                $snippetContent = $op['content'];
+                break;
+            }
+        }
+
+        // No snippet found — the AI returned a full file write (backward compatible)
+        if ($snippetIndex === null) {
+            return $operations;
+        }
+
+        $targetPath = $actionData['path'];
+        $insertPosition = $actionData['insertPosition'] ?? '';
+
+        // Read the current file content
+        $currentContent = $this->fileManager->readFile($targetPath);
+        if ($currentContent === null) {
+            Logger::warning('ai', 'Cannot read target file for section insertion', [
+                'path' => $targetPath,
+            ]);
+            return $operations;
+        }
+
+        // Parse the insert position to determine the section index
+        // Formats: "After section N" or "At the very beginning..."
+        $insertAfterIndex = -1; // -1 means "before the first section"
+        if (preg_match('/After section (\d+)/', $insertPosition, $m)) {
+            $insertAfterIndex = (int) $m[1] - 1; // Convert 1-based to 0-based
+        }
+
+        // Find insertion point in the source file
+        $newContent = $this->insertSectionAtIndex($currentContent, $snippetContent, $insertAfterIndex);
+
+        if ($newContent === null) {
+            // Couldn't find insertion point — append before closing </main> or at end
+            Logger::warning('ai', 'Could not find section insertion point, appending before </main>', [
+                'insertAfterIndex' => $insertAfterIndex,
+            ]);
+            $mainClosePos = strripos($currentContent, '</main>');
+            if ($mainClosePos !== false) {
+                $newContent = substr($currentContent, 0, $mainClosePos)
+                    . "\n\n" . trim($snippetContent) . "\n\n"
+                    . substr($currentContent, $mainClosePos);
+            } else {
+                // No </main> — just append
+                $newContent = $currentContent . "\n\n" . trim($snippetContent) . "\n";
+            }
+        }
+
+        Logger::info('ai', 'Section snippet inserted', [
+            'target_path'       => $targetPath,
+            'insert_after_index' => $insertAfterIndex,
+            'snippet_length'    => strlen($snippetContent),
+            'original_length'   => strlen($currentContent),
+            'new_length'        => strlen($newContent),
+        ]);
+
+        // Replace the snippet operation with a real file write
+        $operations[$snippetIndex] = [
+            'path'    => $targetPath,
+            'action'  => 'write',
+            'content' => $newContent,
+        ];
+
+        return $operations;
+    }
+
+    /**
+     * Insert a section snippet at the correct index in the file content.
+     *
+     * Counts top-level <section> opening tags to find the Nth section,
+     * then finds its closing </section> tag and inserts the snippet after it.
+     *
+     * @return string|null The new file content, or null if insertion point not found
+     */
+    private function insertSectionAtIndex(string $content, string $snippet, int $afterIndex): ?string
+    {
+        // Find all <section positions (top-level pattern)
+        preg_match_all('/<section[\s>]/i', $content, $matches, PREG_OFFSET_CAPTURE);
+
+        if (empty($matches[0])) {
+            return null;
+        }
+
+        $sectionStarts = $matches[0]; // Array of [match, offset]
+
+        if ($afterIndex === -1) {
+            // Insert BEFORE the first section
+            $firstSectionPos = $sectionStarts[0][1];
+
+            // Walk back to include any HTML comment above the first section
+            // (e.g., <!-- HERO SECTION -->)
+            $insertPos = $firstSectionPos;
+
+            return substr($content, 0, $insertPos)
+                . trim($snippet) . "\n\n"
+                . substr($content, $insertPos);
+        }
+
+        // Insert AFTER section at $afterIndex
+        if ($afterIndex >= count($sectionStarts)) {
+            return null; // Index out of range
+        }
+
+        // Find the closing </section> for the section at $afterIndex
+        $searchFrom = $sectionStarts[$afterIndex][1];
+
+        // Count nested <section>...</section> to find the matching close
+        $depth = 0;
+        $pos = $searchFrom;
+        $contentLen = strlen($content);
+
+        while ($pos < $contentLen) {
+            // Find next <section or </section>
+            $nextOpen = stripos($content, '<section', $pos + 1);
+            $nextClose = stripos($content, '</section>', $pos + ($depth === 0 ? 0 : 1));
+
+            if ($nextClose === false) {
+                return null; // Malformed HTML
+            }
+
+            if ($nextOpen !== false && $nextOpen < $nextClose) {
+                // Another section opens before this one closes — nested
+                $depth++;
+                $pos = $nextOpen;
+            } else {
+                if ($depth === 0) {
+                    // This is our matching close tag
+                    $insertPos = $nextClose + strlen('</section>');
+
+                    // Skip any trailing whitespace/newline
+                    while ($insertPos < $contentLen && ($content[$insertPos] === "\n" || $content[$insertPos] === "\r")) {
+                        $insertPos++;
+                    }
+
+                    return substr($content, 0, $insertPos)
+                        . "\n\n" . trim($snippet) . "\n\n"
+                        . substr($content, $insertPos);
+                }
+                $depth--;
+                $pos = $nextClose + 1;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Roll back progressive file writes that occurred before an error.
      *
      * @param array<string, string|null> $beforeStateByPath
      */

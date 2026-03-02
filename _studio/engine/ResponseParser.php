@@ -100,8 +100,10 @@ class ResponseParser
         // ── Pass 1: Extract write operations ──
         // The </file> closing tag appears on its own line (system prompt
         // instructs the AI to do this). We match accordingly.
+        // Match both <file path="..." action="write"> and <file path="...">
+        // (the latter defaults to write — used by section snippet responses).
         preg_match_all(
-            '/<file\s+path="([^"]+)"\s+action="write"\s*>(.*?)\n<\/file>/s',
+            '/<file\s+path="([^"]+)"(?:\s+action="write")?\s*>(.*?)\n<\/file>/s',
             $response,
             $writeMatches,
             PREG_SET_ORDER
@@ -114,6 +116,9 @@ class ResponseParser
             // Remove leading newline if present (artifact of tag placement)
             $content = ltrim($content, "\n");
 
+            // Skip if this path was already matched as a delete or merge
+            // (action-less tags default to write, but an explicit delete takes priority)
+
             // ── Validate path ──
             $pathError = $this->validatePath($path);
             if ($pathError !== null) {
@@ -123,11 +128,13 @@ class ResponseParser
                 continue;
             }
 
-            // ── Validate content ──
-            $contentError = $this->validateContent($path, $content);
-            if ($contentError !== null) {
-                $warnings[] = "Skipped '{$path}': {$contentError}";
-                continue;
+            // ── Validate content (skip for virtual paths like __section_snippet__) ──
+            if (!str_starts_with($path, '__')) {
+                $contentError = $this->validateContent($path, $content);
+                if ($contentError !== null) {
+                    $warnings[] = "Skipped '{$path}': {$contentError}";
+                    continue;
+                }
             }
 
             // ── Handle duplicates (last wins) ──
@@ -357,6 +364,12 @@ class ResponseParser
     {
         if (empty($path)) {
             return 'Empty path.';
+        }
+
+        // Allow virtual paths used by the section snippet insertion engine.
+        // These are transformed into real file writes by PromptEngine::transformSectionSnippet().
+        if (str_starts_with($path, '__') && str_ends_with($path, '__')) {
+            return null;
         }
 
         // Silently ignore shipped infrastructure files the AI sometimes generates

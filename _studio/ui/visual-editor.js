@@ -178,6 +178,9 @@ function handlePreviewMessage(e) {
     case 'vx-editor:richtext-link-request':
       promptForLink();
       break;
+    case 'vx-editor:add-section-request':
+      openSectionPicker(e.data);
+      break;
   }
 }
 
@@ -1664,8 +1667,319 @@ function openAIEditPanel(elementData) {
 }
 
 // ═══════════════════════════════════════════
-//  Image Picker  (unchanged from v1)
+//  Section / Block Picker
 // ═══════════════════════════════════════════
+
+const SECTION_TYPES = [
+  { id: 'hero',         label: 'Hero',         description: 'Bold headline, subtitle, and call-to-action',
+    icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="7" x="3" y="3" rx="1"/><rect width="9" height="7" x="3" y="14" rx="1"/><rect width="5" height="7" x="16" y="14" rx="1"/></svg>` },
+  { id: 'features',     label: 'Features',     description: 'Feature cards with icons or images',
+    icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/></svg>` },
+  { id: 'about',        label: 'About',        description: 'Story, mission, or biography section',
+    icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>` },
+  { id: 'testimonials', label: 'Testimonials', description: 'Customer reviews and social proof',
+    icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1"/></svg>` },
+  { id: 'team',         label: 'Team',         description: 'Team member cards with photos',
+    icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>` },
+  { id: 'pricing',      label: 'Pricing',      description: 'Pricing plans, packages, or menu',
+    icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>` },
+  { id: 'faq',          label: 'FAQ',          description: 'Frequently asked questions',
+    icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>` },
+  { id: 'cta',          label: 'Call to Action', description: 'Conversion-focused banner',
+    icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>` },
+  { id: 'gallery',      label: 'Gallery',      description: 'Image or project showcase',
+    icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>` },
+  { id: 'contact',      label: 'Contact',      description: 'Contact details, map, or form',
+    icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>` },
+  { id: 'stats',        label: 'Stats',        description: 'Key figures, counters, or metrics',
+    icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>` },
+  { id: 'content',      label: 'Content',      description: 'Rich text, article, or story block',
+    icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/></svg>` },
+];
+
+function openSectionPicker(requestData) {
+  dismissToolbar();
+  closeStylePanel();
+  closeAIEditPanel();
+
+  // Detect which section types already exist on the page
+  const existingLower = (requestData.existingSections || '').toLowerCase();
+  const existingTypes = new Set();
+  for (const st of SECTION_TYPES) {
+    // Check if the section type name or id appears in the existing sections summary
+    if (existingLower.includes(st.id) || existingLower.includes(st.label.toLowerCase())) {
+      existingTypes.add(st.id);
+    }
+  }
+
+  const modal = document.createElement('div');
+  modal.className = 'vx-modal-overlay vx-section-picker-overlay';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-label', 'Add section');
+
+  const posLabel = requestData.insertAfterIndex === -1
+    ? 'at the top of the page'
+    : `after section ${requestData.insertAfterIndex + 1} of ${requestData.totalSections}`;
+
+  modal.innerHTML = `
+    <div class="vx-modal vx-section-picker">
+      <div class="vx-section-picker-header">
+        <div class="vx-section-picker-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span>Add Section</span>
+        </div>
+        <div class="vx-section-picker-meta">${escapeHtml(posLabel)}</div>
+        <button class="vx-modal-close" data-close aria-label="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="vx-section-picker-grid">
+        ${SECTION_TYPES.map(st => {
+          const exists = existingTypes.has(st.id);
+          return `
+            <button class="vx-section-card${exists ? ' vx-section-card-exists' : ''}" data-section-type="${st.id}" data-section-label="${escapeAttr(st.label)}" data-section-desc="${escapeAttr(st.description)}">
+              <div class="vx-section-card-icon">${st.icon}</div>
+              <div class="vx-section-card-label">${st.label}</div>
+              <div class="vx-section-card-desc">${st.description}</div>
+              ${exists ? '<div class="vx-section-card-badge">On page</div>' : ''}
+            </button>`;
+        }).join('')}
+      </div>
+      <div class="vx-section-picker-footer" id="vx-section-footer" hidden>
+        <div class="vx-section-footer-selected">
+          <span class="vx-section-footer-type" id="vx-section-footer-type"></span>
+          <button class="vx-section-footer-change" id="vx-section-change">Change</button>
+        </div>
+        <div class="vx-section-footer-input-row">
+          <input type="text" class="vx-section-footer-input" id="vx-section-instruction" placeholder="Optional: describe what you want…" spellcheck="false" />
+          <button class="vx-section-footer-generate" id="vx-section-generate">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            Generate
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+  requestAnimationFrame(() => modal.classList.add('vx-modal-visible'));
+
+  // Keyboard and click bindings
+  const close = () => {
+    modal.classList.remove('vx-modal-visible');
+    modal.removeEventListener('keydown', onKeydown);
+    setTimeout(() => modal.remove(), 200);
+  };
+  const onKeydown = (e) => { if (e.key === 'Escape') close(); };
+  modal.addEventListener('keydown', onKeydown);
+  modal.querySelector('[data-close]').addEventListener('click', close);
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  modal.tabIndex = -1;
+  modal.focus();
+
+  // State
+  let selectedType = null;
+  let selectedDesc = null;
+  const footer = modal.querySelector('#vx-section-footer');
+  const footerType = modal.querySelector('#vx-section-footer-type');
+  const instructionInput = modal.querySelector('#vx-section-instruction');
+  const generateBtn = modal.querySelector('#vx-section-generate');
+  const changeBtn = modal.querySelector('#vx-section-change');
+  const grid = modal.querySelector('.vx-section-picker-grid');
+
+  // Example placeholders per section type
+  const placeholders = {
+    'Hero': 'e.g. "with a background image and two CTAs"',
+    'Features': 'e.g. "3 features with icons"',
+    'About': 'e.g. "about our 20-year history in sustainable farming"',
+    'Testimonials': 'e.g. "3 customer quotes with star ratings"',
+    'Team': 'e.g. "4 team members with photos and roles"',
+    'Pricing': 'e.g. "3 tiers: starter, pro, enterprise"',
+    'FAQ': 'e.g. "5 questions about our delivery process"',
+    'Call to Action': 'e.g. "book a free consultation"',
+    'Gallery': 'e.g. "6 project photos in a masonry grid"',
+    'Contact': 'e.g. "with a contact form and office address"',
+    'Stats': 'e.g. "4 key numbers: years, clients, projects, awards"',
+    'Content': 'e.g. "about our sustainability practices"',
+  };
+
+  // Card click → show instruction footer
+  modal.querySelectorAll('.vx-section-card').forEach(card => {
+    card.addEventListener('click', () => {
+      selectedType = card.dataset.sectionLabel;
+      selectedDesc = card.dataset.sectionDesc;
+
+      // Highlight the selected card
+      modal.querySelectorAll('.vx-section-card').forEach(c => c.classList.remove('vx-section-card-selected'));
+      card.classList.add('vx-section-card-selected');
+
+      // Show the footer
+      footerType.textContent = selectedType;
+      instructionInput.placeholder = placeholders[selectedType] || 'Optional: describe what you want…';
+      instructionInput.value = '';
+      footer.hidden = false;
+      grid.classList.add('vx-section-grid-collapsed');
+
+      // Focus the instruction input
+      setTimeout(() => instructionInput.focus(), 100);
+    });
+  });
+
+  // Change button → go back to grid
+  changeBtn.addEventListener('click', () => {
+    selectedType = null;
+    selectedDesc = null;
+    footer.hidden = true;
+    grid.classList.remove('vx-section-grid-collapsed');
+    modal.querySelectorAll('.vx-section-card').forEach(c => c.classList.remove('vx-section-card-selected'));
+  });
+
+  // Generate button
+  const doGenerate = () => {
+    if (!selectedType) return;
+    const userInstruction = instructionInput.value.trim();
+    close();
+    generateSection(requestData, selectedType, selectedDesc, userInstruction);
+  };
+
+  generateBtn.addEventListener('click', doGenerate);
+
+  // Enter in instruction input → generate
+  instructionInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      doGenerate();
+    }
+  });
+}
+
+/** AI-generate a section and insert it at the specified position. */
+async function generateSection(requestData, sectionType, sectionDescription, userInstruction = '') {
+  // Show AI overlay in the iframe — use a full-page overlay since we're inserting, not editing
+  sendToPreview({ type: 'vx-editor:show-ai-overlay', status: `Adding ${sectionType}…` });
+
+  const filePath = requestData.filePath || getCurrentPreviewPath();
+  const abortController = new AbortController();
+
+  // Build the user prompt — include instruction if provided
+  let userPrompt = `Add a ${sectionType} section to this page.`;
+  if (userInstruction) {
+    userPrompt += ` ${userInstruction}`;
+  }
+
+  // Token counter — shows "Generating Content… (2,450 tokens)" to prove the AI is writing
+  const startTime = Date.now();
+  let tokenCount = 0;
+  const updateOverlayStatus = () => {
+    if (tokenCount > 0) {
+      const formatted = tokenCount.toLocaleString();
+      sendToPreview({
+        type: 'vx-editor:update-ai-status',
+        status: `Generating ${sectionType}… (${formatted} tokens)`,
+      });
+    } else {
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      if (elapsed >= 6) {
+        sendToPreview({
+          type: 'vx-editor:update-ai-status',
+          status: `Preparing ${sectionType}…`,
+        });
+      }
+    }
+  };
+  // Update every second during the "preparing" phase
+  const statusInterval = setInterval(updateOverlayStatus, 1000);
+  // Throttle token updates to avoid flooding the iframe with messages
+  let lastTokenUpdate = 0;
+
+  // The section index where the new content will appear
+  const newSectionIndex = requestData.insertAfterIndex === -1
+    ? 0
+    : requestData.insertAfterIndex + 1;
+
+  try {
+    await apiStream('/ai/prompt', {
+      user_prompt: userPrompt,
+      action_type: 'add_section',
+      page_scope: filePath,
+      action_data: {
+        path: filePath,
+        sectionType,
+        sectionDescription,
+        insertPosition: requestData.insertAfterIndex === -1
+          ? 'At the very beginning of the main content, before the first section'
+          : `After section ${requestData.insertAfterIndex + 1}`,
+        existingSections: requestData.existingSections || '',
+      },
+    }, {
+      signal: abortController.signal,
+      onStatus(message) {
+        sendToPreview({ type: 'vx-editor:update-ai-status', status: message || `Adding ${sectionType}…` });
+      },
+      onFile() {
+        sendToPreview({ type: 'vx-editor:update-ai-status', status: 'Writing files…' });
+      },
+      onToken() {
+        tokenCount++;
+        // Throttle status updates to every 500ms to avoid flooding
+        const now = Date.now();
+        if (now - lastTokenUpdate > 500) {
+          lastTokenUpdate = now;
+          updateOverlayStatus();
+        }
+      },
+      onError(err) {
+        clearInterval(statusInterval);
+        sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+        showSaveIndicator(err.message || 'Failed to add section', true);
+      },
+      onDone(res) {
+        clearInterval(statusInterval);
+        sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+
+        if (res.cancelled) {
+          showSaveIndicator('Generation cancelled', false);
+          return;
+        }
+        const filesModified = res.files_modified || [];
+        if (filesModified.length > 0) {
+          showSaveIndicator(`${sectionType} added ✓`);
+          setTimeout(() => {
+            const iframe = document.getElementById('preview-iframe');
+            if (iframe?.contentWindow) {
+              iframe.contentWindow.postMessage('voxelsite:reload', '*');
+            }
+            // After reload: re-activate the bridge, scroll to the new section, and rebuild dividers
+            setTimeout(() => {
+              // The iframe reloaded — the bridge resets to active=false.
+              // Re-send the toggle to re-activate overlay + cursor + dividers.
+              sendToPreview({ type: 'vx-editor:toggle', active: true });
+              // Give the bridge a moment to activate before scrolling/rebuilding
+              setTimeout(() => {
+                sendToPreview({
+                  type: 'vx-editor:scroll-to-section',
+                  sectionIndex: newSectionIndex,
+                });
+                sendToPreview({ type: 'vx-editor:rebuild-section-dividers' });
+              }, 200);
+            }, 800);
+          }, 400);
+        } else if (!res.partial) {
+          showSaveIndicator('No changes made', false);
+        }
+      },
+      onWarning(message) {
+        if (typeof window.showToast === 'function') window.showToast(message, 'warning');
+      },
+    });
+  } catch (err) {
+    clearInterval(statusInterval);
+    if (err.name !== 'AbortError') {
+      showSaveIndicator('Failed to add section', true);
+    }
+    sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+  }
+}
 
 function openImagePicker(elementData) {
   dismissToolbar();

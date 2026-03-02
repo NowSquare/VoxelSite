@@ -298,14 +298,18 @@ export async function apiStream(endpoint, body, callbacks = {}) {
 
     // Stream ended naturally without a 'done' event.
     // The server may still be processing (ignore_user_abort=true).
-    // Poll for completion instead of assuming success.
-    if (!receivedDone && filesCompleted > 0) {
+    // Poll for completion if we have a conversation ID —
+    // this handles connection drops by Herd/Nginx during long generations.
+    if (!receivedDone) {
       const convId = trackedConversationId;
       if (convId) {
+        onStatus('Waiting for server to finish...');
         await pollForCompletion(convId, { onDone, onError, onFile, onStatus });
-      } else {
+      } else if (filesCompleted > 0 || tokensReceived > 0) {
+        // Some progress was made but no conversation to poll — best effort
         onDone({ files_modified: [], message: '', soft_close: true });
       }
+      // else: no conversation, no tokens, no files — silent close (e.g. empty response)
     }
   } catch (err) {
     if (err.name === 'AbortError') {

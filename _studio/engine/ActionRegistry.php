@@ -161,6 +161,7 @@ class ActionRegistry
             'optimize_aeo'  => $this->buildOptimizeAeoPrompt($userPrompt),
             'inline_edit'   => $this->buildInlineEditPrompt($userPrompt, $actionData),
             'section_edit'  => $this->buildSectionEditPrompt($userPrompt, $actionData),
+            'add_section'   => $this->buildAddSectionPrompt($userPrompt, $actionData),
             default         => $userPrompt, // free_prompt passes through unchanged
         };
     }
@@ -324,6 +325,16 @@ class ActionRegistry
                 'icon'        => 'sparkles',
                 'category'    => 'general',
                 'promptFile'  => 'section_edit.md',
+                'steps'       => [],
+            ],
+
+            'add_section' => [
+                'id'          => 'add_section',
+                'label'       => 'Add Section',
+                'description' => 'Add a new section to the page via the visual editor',
+                'icon'        => 'plus-circle',
+                'category'    => 'pages',
+                'promptFile'  => 'add_section.md',
                 'steps'       => [],
             ],
 
@@ -519,6 +530,46 @@ class ActionRegistry
         $parts[] = "\n## User's Instruction\n{$userPrompt}";
 
         $parts[] = "\n## IMPORTANT\nModify ONLY this section. Do NOT change other parts of the page. Preserve existing Tailwind classes and design tokens unless explicitly asked to change them. Generate the complete rewritten file.";
+
+        return implode("\n", $parts);
+    }
+
+    /**
+     * Build the prompt for adding a new section via the visual editor picker.
+     * Includes section type, insertion position, and existing section context.
+     *
+     * The AI returns ONLY the new section HTML (not the full file).
+     * The engine handles surgical insertion via insertSectionSnippet().
+     */
+    private function buildAddSectionPrompt(string $userPrompt, array $data): string
+    {
+        $parts = ["Generate a new section for this page."];
+
+        if (!empty($data['path'])) {
+            $parts[] = "\n## Target File\n{$data['path']}";
+        }
+
+        if (!empty($data['sectionType'])) {
+            $parts[] = "\n## Section Type\n{$data['sectionType']}";
+        }
+
+        if (!empty($data['sectionDescription'])) {
+            $parts[] = "\n## Section Description\n{$data['sectionDescription']}";
+        }
+
+        if (!empty($data['insertPosition'])) {
+            $parts[] = "\n## Insert Position\n{$data['insertPosition']}";
+        }
+
+        if (!empty($data['existingSections'])) {
+            $parts[] = "\n## Existing Sections on This Page\nThese sections already exist (avoid duplicating their purpose):\n{$data['existingSections']}";
+        }
+
+        if (!empty($userPrompt) && $userPrompt !== 'Add section') {
+            $parts[] = "\n## Additional Instructions\n{$userPrompt}";
+        }
+
+        $parts[] = "\n## IMPORTANT\nGenerate the section NOW. Do NOT ask questions. Match the existing design language exactly. Generate realistic content appropriate for this business. Return ONLY the section snippet in a `<file path=\"__section_snippet__\">` tag.";
 
         return implode("\n", $parts);
     }

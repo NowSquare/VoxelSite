@@ -1009,6 +1009,11 @@ select.vs-input {
   animation: fade-in-up 300ms var(--ease-out) both;
 }
 
+/* Status line (spinner + narration + timer) during streaming */
+.vs-msg-ai [data-role="status"] {
+  margin-bottom: 8px;
+}
+
 .vs-msg-ai-bubble {
   background: transparent;
   font-size: var(--text-sm);
@@ -1987,6 +1992,10 @@ select.vs-input {
   background: var(--vs-bg-raised);
   margin-top: 24px;
   overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+[data-theme="dark"] .vs-gen-progress {
+  box-shadow: none;
 }
 .vs-gen-progress-bar {
   width: 40%;

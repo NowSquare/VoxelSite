@@ -3786,7 +3786,11 @@ function bindAppEvents() {
       e.stopPropagation();
       dropdown.classList.toggle('hidden');
     });
-    document.addEventListener('click', () => dropdown.classList.add('hidden'), { once: true });
+    document.addEventListener('click', (e) => {
+      if (!dropdown.classList.contains('hidden') && !dropdown.contains(e.target) && e.target !== userMenuBtn && !userMenuBtn.contains(e.target)) {
+        dropdown.classList.add('hidden');
+      }
+    });
   }
 
   // Edit Profile link — close dropdown on click
@@ -4714,15 +4718,18 @@ function openDownloadModal() {
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('is-visible'));
 
-  // ── Close handlers ──
-  const close = () => closeModal(overlay);
+  const onEscapeKey = (e) => {
+    if (e.key === 'Escape') close();
+  };
+  const close = () => {
+    document.removeEventListener('keydown', onEscapeKey);
+    closeModal(overlay);
+  };
   overlay.querySelector('#vs-download-close').addEventListener('click', close);
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
   });
-  overlay.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') close();
-  });
+  document.addEventListener('keydown', onEscapeKey);
 
   // ── Publish first link ──
   const publishLink = overlay.querySelector('#vs-download-publish-link');

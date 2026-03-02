@@ -5101,6 +5101,23 @@ async function handleSend() {
   chatMessages.insertAdjacentHTML('beforeend', userMsgHtml + aiMsgHtml);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 
+  // ── Smart auto-scroll: stick to bottom unless the user scrolls up ──
+  // The user must be able to scroll up during generation (e.g. to find
+  // the stop button or read earlier messages) without being yanked back.
+  let stickToBottom = true;
+  const scrollThreshold = 80; // px from bottom to count as "at bottom"
+  const onChatScroll = () => {
+    const distanceFromBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight;
+    stickToBottom = distanceFromBottom <= scrollThreshold;
+  };
+  chatMessages.addEventListener('scroll', onChatScroll);
+
+  const scrollToBottomIfSticky = () => {
+    if (stickToBottom) {
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+  };
+
   const aiBlock = chatMessages.querySelector(`.vs-msg-ai[data-stream-id="${streamId}"]`);
   if (!aiBlock) return;
 
@@ -5295,7 +5312,7 @@ async function handleSend() {
         if (statusEl) hideEl(statusEl);
       }
 
-      chatMessages.scrollTop = chatMessages.scrollHeight;
+      scrollToBottomIfSticky();
     },
 
     onFile(file) {
@@ -5340,7 +5357,7 @@ async function handleSend() {
         pendingCssOnly = true;
       }, 600);
 
-      chatMessages.scrollTop = chatMessages.scrollHeight;
+      scrollToBottomIfSticky();
     },
 
     onDone(result) {
@@ -5391,21 +5408,40 @@ async function handleSend() {
         }
       }
 
-      // Handle truncation — the AI hit its token limit mid-generation
-      if (result.truncated && contentEl) {
-        const continueBtn = document.createElement('button');
-        continueBtn.className = 'vs-btn vs-btn-primary vs-btn-sm mt-3';
-        continueBtn.innerHTML = '↻ Continue generating...';
-        continueBtn.addEventListener('click', () => {
-          continueBtn.remove();
+      // Handle truncation and missing pages — auto-continue silently.
+      // The user should never have to deal with truncation mechanics.
+      // If the AI hit its token limit or the nav references pages that
+      // don't exist, automatically fire a targeted follow-up prompt
+      // that names exactly which files to create.
+      const missingFiles = result.missing_files || [];
+      if ((result.truncated || missingFiles.length > 0) && contentEl) {
+        // Build a targeted prompt instead of the generic "continue"
+        let continuePrompt;
+        if (missingFiles.length > 0) {
+          // Specific missing files — tell the AI exactly what to create
+          const fileList = missingFiles.join(', ');
+          continuePrompt = `The following pages are linked in the navigation but were NOT created yet: ${fileList}. Please generate ONLY these missing pages. Match the existing design, layout, and style exactly. Do NOT regenerate any files that already exist.`;
+        } else {
+          // Truncated but no specific missing file list — general continue
+          continuePrompt = 'The previous response was truncated. Complete any unfinished files. Do NOT regenerate files that already exist.';
+        }
+
+        // Brief delay so the current stream finalizes visually, then auto-send
+        setTimeout(() => {
           const input = document.getElementById('prompt-input');
-          if (input) {
-            input.value = 'Continue from where you left off. Complete any unfinished files.';
+          if (input && !store.get('aiStreaming')) {
+            // Show the user a brief status so they know what's happening
+            if (filesLabelEl) filesLabelEl.textContent = 'Generating remaining files...';
+            if (filesSectionEl) {
+              filesSectionEl.classList.remove('vs-files-done');
+              showEl(filesSectionEl);
+            }
+
+            input.value = continuePrompt;
             input.dataset.actionType = actionType;
             handleSend();
           }
-        });
-        contentEl.appendChild(continueBtn);
+        }, 800);
       }
 
       // Update conversation ID for continuity
@@ -5452,10 +5488,17 @@ async function handleSend() {
 
       refreshRevisionState();
 
+      // Clean up the scroll listener now that the stream is done
+      chatMessages.removeEventListener('scroll', onChatScroll);
+      // Always scroll to bottom on completion — the user should see the final result
       chatMessages.scrollTop = chatMessages.scrollHeight;
     },
 
     onWarning(message) {
+      // Suppress truncation warnings — the system auto-continues silently.
+      // Showing "Response was truncated..." would alarm the user unnecessarily.
+      if (message.toLowerCase().includes('truncat')) return;
+
       if (filesEl) {
         filesEl.innerHTML += `
           <div class="vs-badge vs-badge-warning mt-2">${escapeHtml(message)}</div>

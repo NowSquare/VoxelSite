@@ -195,6 +195,19 @@ class PromptEngine
             // Use the model's actual context window for budget calculations,
             // not the output token limit (ai_max_tokens).
             $maxTokens = (int) $this->settings->get('ai_max_tokens', 32000);
+
+            // Boost output budget for full site generation.
+            // Creating a complete website (partials + CSS + JS + 6-10 pages +
+            // data files) routinely needs 35-45K tokens. The default 32K
+            // almost guarantees truncation, leaving pages missing.
+            // Sonnet 4/4.5 supports 64K output — use it when generating sites.
+            if ($actionType === 'free_prompt' && $maxTokens <= 32000) {
+                $maxTokens = 64000;
+                Logger::debug('ai', 'Boosted max_tokens for site generation', [
+                    'original'  => (int) $this->settings->get('ai_max_tokens', 32000),
+                    'boosted'   => $maxTokens,
+                ]);
+            }
             $configuredModelForBudget = $configuredModel !== '' ? $configuredModel : ($this->provider->getModels()[0]['id'] ?? '');
             $contextWindow = $this->provider->getContextWindow($configuredModelForBudget);
 
@@ -487,6 +500,16 @@ class PromptEngine
                 // Sync page registry
                 $this->fileManager->syncPageRegistry();
 
+                // Integrity check: verify every page linked in the nav exists.
+                // Catches broken links caused by truncation, AI oversight, or
+                // manual deletions — regardless of root cause.
+                $missingNavPages = $this->findMissingNavPages();
+                if (!empty($missingNavPages)) {
+                    Logger::warning('ai', 'Navigation references missing pages', [
+                        'missing' => $missingNavPages,
+                    ]);
+                }
+
                 // Auto-regenerate AEO files (llms.txt, robots.txt, mcp.php, schema.php)
                 // when data-layer files were modified. This keeps AEO content in sync
                 // with every AI edit — not just on publish.
@@ -553,6 +576,11 @@ class PromptEngine
             $isTruncated = !empty($parsed['warnings']) && 
                 array_filter($parsed['warnings'], fn($w) => str_contains($w, 'truncat'));
 
+            // Combine truncation + nav integrity: if the response was truncated
+            // OR the nav references pages that don't exist, include the specific
+            // missing files so the frontend can auto-continue with a targeted prompt.
+            $missingFiles = $missingNavPages ?? [];
+
             Logger::info('ai', 'AI stream completed', [
                 'files_modified'  => count($filesModified),
                 'revision_id'     => $revisionId,
@@ -562,6 +590,7 @@ class PromptEngine
                 'tokens_out'      => $usage['output_tokens'] ?? 0,
                 'cost'            => $cost['total_cost'],
                 'truncated'       => !empty($isTruncated),
+                'missing_files'   => $missingFiles,
                 'duration_ms'     => $usage['duration_ms'] ?? null,
             ]);
 
@@ -580,6 +609,7 @@ class PromptEngine
                 ],
                 'cost'            => $cost['total_cost'],
                 'truncated'       => !empty($isTruncated),
+                'missing_files'   => $missingFiles,
             ]);
 
         } catch (RuntimeException $e) {
@@ -1688,6 +1718,59 @@ Rules:
   - data files: "assets/data/*.json"
   - form schemas: "assets/forms/*.json"
 PROMPT;
+    }
+
+    /**
+     * Find pages linked in the navigation that don't exist on disk.
+     *
+     * Reads _partials/nav.php and _partials/footer.php, extracts all
+     * internal href="/page" references, and checks whether each
+     * corresponding .php file exists in the preview directory.
+     *
+     * Returns an array of missing filenames (e.g. ['shop.php']).
+     * Returns empty array if nav doesn't exist or all links resolve.
+     */
+    private function findMissingNavPages(): array
+    {
+        $previewDir = dirname(__DIR__) . '/preview';
+        $filesToScan = [
+            $previewDir . '/_partials/nav.php',
+            $previewDir . '/_partials/footer.php',
+        ];
+
+        $referencedPages = [];
+        foreach ($filesToScan as $filePath) {
+            if (!file_exists($filePath)) {
+                continue;
+            }
+            $content = file_get_contents($filePath);
+            if ($content === false) {
+                continue;
+            }
+
+            // Match href="/pagename" patterns (internal page links)
+            // Captures: /about, /shop, /contact — but not /assets/..., /#anchor,
+            // external URLs, or mailto:/tel: links.
+            if (preg_match_all('/href=["\']\/((?!assets\/|_studio\/|#|http|\/)[a-z0-9_-]+)["\']/', $content, $matches)) {
+                foreach ($matches[1] as $page) {
+                    $referencedPages[$page] = true;
+                }
+            }
+        }
+
+        if (empty($referencedPages)) {
+            return [];
+        }
+
+        $missing = [];
+        foreach (array_keys($referencedPages) as $page) {
+            $pagePath = $previewDir . '/' . $page . '.php';
+            if (!file_exists($pagePath)) {
+                $missing[] = $page . '.php';
+            }
+        }
+
+        return $missing;
     }
 
     /**

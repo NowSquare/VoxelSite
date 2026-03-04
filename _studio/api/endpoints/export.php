@@ -11,6 +11,10 @@ declare(strict_types=1);
  *   - php  → Complete PHP website with pages, partials, assets, and form handler.
  *   - html → Static HTML export with pages rendered to plain .html files.
  *
+ * Both formats include a standalone form handler (submit.php) when the
+ * site has forms. This handler is self-contained — no Composer, no SQLite,
+ * no vendor directory. Submissions are stored as JSON files in _submissions/.
+ *
  * The export reads from the PUBLISHED production state (document root),
  * NOT from the preview directory. This ensures downloads always reflect
  * what is live.
@@ -309,6 +313,25 @@ if ($includeFavicon) {
     $zip->addFile($faviconPath, $prefix . 'favicon.ico');
 }
 
+// ── Add standalone form handler (both PHP and HTML exports) ──
+// If the site has forms, include the self-contained submit.php that stores
+// submissions as JSON files. Works on any PHP host, zero dependencies.
+$formsDir = $assetsDir . '/forms';
+$hasForms = is_dir($formsDir) && !empty(glob($formsDir . '/*.json'));
+
+if ($hasForms) {
+    $standalonePath = dirname(__DIR__, 2) . '/static/submit-standalone.php';
+    if (file_exists($standalonePath)) {
+        $zip->addFile($standalonePath, $prefix . 'submit.php');
+    }
+
+    // Seed the _submissions/ directory with .htaccess protection
+    $zip->addFromString(
+        $prefix . '_submissions/.htaccess',
+        "Order deny,allow\nDeny from all\n"
+    );
+}
+
 // ── PHP-only extras: mcp.php, robots.txt, llms.txt ──
 if ($format === 'php') {
     // Include mcp.php (MCP server for AI agents)
@@ -458,7 +481,7 @@ function rewritePhpLinksToHtml(string $html): string
     );
 
     // Rewrite action attributes on forms (may point to .php)
-    // But keep submit.php references since there's no submit handler in HTML exports
+    // Keep submit.php references — the standalone handler is included in the export
     $html = preg_replace(
         '/action="(?!submit\.php)([^"]*?)\.php"/i',
         'action="$1.html"',
@@ -495,6 +518,13 @@ function rewriteAbsolutePathsToRelative(string $html, array $phpPages = []): str
     $html = preg_replace(
         '/((?:src|href)\s*=\s*["\'])\/favicon\.ico/i',
         '${1}favicon.ico',
+        $html
+    );
+
+    // Rewrite action="/submit.php" to relative path
+    $html = preg_replace(
+        '/(action\s*=\s*["\'])\/submit\.php/i',
+        '${1}submit.php',
         $html
     );
 
@@ -548,6 +578,11 @@ function generateExportHtaccess(): string
 # Enable URL rewriting
 <IfModule mod_rewrite.c>
     RewriteEngine On
+</IfModule>
+
+# Protect submission data from web access
+<IfModule mod_rewrite.c>
+    RewriteRule ^_submissions/ - [F,L]
 </IfModule>
 
 # Serve correct MIME types

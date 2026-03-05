@@ -61,6 +61,10 @@ _studio/data/promptsite.db-wal
 _studio/data/promptsite.db-shm
 _studio/data/promptsite.db-journal
 
+# Action definitions and database (instance data)
+_studio/data/actions/*
+!_studio/data/actions/.gitkeep
+
 # Collection data (items and schemas in subdirectories)
 _studio/data/collections/*
 !_studio/data/collections/_schema/
@@ -107,6 +111,10 @@ assets/fonts/*
 /_data/submissions.db-shm
 /_data/submissions.db-journal
 /_data/.reset-token
+/_data/actions.db
+/_data/actions.db-wal
+/_data/actions.db-shm
+/_data/actions.db-journal
 /_data/uploads/
 /.demo
 /sitemap.xml

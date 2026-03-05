@@ -142,6 +142,11 @@ class SiteContext
             $important[] = $formSchemas;
         }
 
+        $activeActions = $this->buildActiveActions();
+        if ($activeActions !== null) {
+            $important[] = $activeActions;
+        }
+
         // Priority 3 (nice to have) — dropped first when over budget
         $optional = [];
 
@@ -967,6 +972,76 @@ class SiteContext
         foreach ($schemas as $filename => $content) {
             $section .= "--- {$filename} ---\n{$content}\n\n";
         }
+
+        return $section;
+    }
+
+    /**
+     * Summary of active agent actions.
+     *
+     * Gives the AI awareness of what actions exist so it can:
+     * - Reference them in generated page content ("Book a table")
+     * - Add CTA buttons/links that encourage visitors to use the bar
+     * - Not create duplicate functionality via HTML forms
+     *
+     * Returns null when no active actions exist (no wasted tokens).
+     */
+    private function buildActiveActions(): ?string
+    {
+        $actionsDir = dirname(__DIR__) . '/data/actions';
+        if (!is_dir($actionsDir)) {
+            return null;
+        }
+
+        $files = @glob($actionsDir . '/*.json');
+        if ($files === false || empty($files)) {
+            return null;
+        }
+
+        $actions = [];
+        foreach ($files as $file) {
+            $content = @file_get_contents($file);
+            if ($content === false) {
+                continue;
+            }
+
+            $def = json_decode($content, true);
+            if (!is_array($def) || ($def['active'] ?? false) !== true) {
+                continue;
+            }
+
+            $fieldNames = array_map(
+                fn($f) => $f['label'] ?? $f['name'] ?? 'unknown',
+                $def['fields'] ?? []
+            );
+
+            $actions[] = [
+                'name'        => $def['name'] ?? $def['id'],
+                'id'          => $def['id'] ?? basename($file, '.json'),
+                'description' => $def['description'] ?? '',
+                'fields'      => count($def['fields'] ?? []),
+                'field_names' => $fieldNames,
+            ];
+        }
+
+        if (empty($actions)) {
+            return null;
+        }
+
+        $section = "=== ACTIVE AGENT ACTIONS ===\n";
+        $section .= "The site has " . count($actions) . " live agent action(s) accessible via the Actions Bar at the bottom of every page.\n";
+        $section .= "The Actions Bar handles the form UI. Do NOT generate HTML forms for these actions.\n\n";
+
+        foreach ($actions as $a) {
+            $desc = $a['description'] ? " - {$a['description']}" : '';
+            $fields = implode(', ', $a['field_names']);
+            $section .= "- {$a['name']} (id: {$a['id']}){$desc}\n";
+            $section .= "  Fields ({$a['fields']}): {$fields}\n";
+        }
+
+        $section .= "\nWhen generating or editing pages, add CTA buttons or sections that encourage visitors to use these actions. ";
+        $section .= "Example: '<a href=\"#\" class=\"btn\" onclick=\"return false\">Book a Table</a>' or a prominent section highlighting the capability. ";
+        $section .= "The Actions Bar appears on every page and provides the interactive form.\n";
 
         return $section;
     }

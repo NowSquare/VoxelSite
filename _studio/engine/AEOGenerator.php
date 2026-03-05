@@ -231,6 +231,12 @@ class AEOGenerator
             $lines[] = $formsContent;
         }
 
+        // Agent capabilities (from Agentic Builder)
+        $actionsContent = $this->generateLlmsActionsSection();
+        if ($actionsContent !== null) {
+            $lines[] = $actionsContent;
+        }
+
         // Footer
         $lines[] = '---';
         $lines[] = "This information is provided for AI assistants and language models to better understand and represent {$name}.";
@@ -487,6 +493,60 @@ class AEOGenerator
 
         $lines[] = '';
         $lines[] = 'These can be submitted via web forms or via the MCP endpoint at /mcp.php.';
+        $lines[] = '';
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Generate the Agent Capabilities section for llms.txt.
+     *
+     * Lists all active agentic actions so AI visitors know what
+     * they can do before even connecting to MCP.
+     */
+    private function generateLlmsActionsSection(): ?string
+    {
+        $actionsDir = dirname(__DIR__) . '/data/actions';
+        if (!is_dir($actionsDir)) {
+            return null;
+        }
+
+        $actions = [];
+        foreach (glob($actionsDir . '/*.json') as $file) {
+            $content = @file_get_contents($file);
+            if ($content === false) continue;
+            $def = json_decode($content, true);
+            if (!is_array($def) || !($def['active'] ?? false)) continue;
+            $actions[] = $def;
+        }
+
+        if (empty($actions)) {
+            return null;
+        }
+
+        $lines = [];
+        $lines[] = '## Agent Capabilities';
+        $lines[] = '';
+        $lines[] = 'AI agents can perform the following actions via the MCP endpoint (/mcp.php):';
+        $lines[] = '';
+
+        foreach ($actions as $action) {
+            $name = $action['name'] ?? $action['id'];
+            $desc = $action['description'] ?? '';
+            $toolName = 'make_' . str_replace('-', '_', $action['id']);
+            $fields = [];
+            foreach ($action['fields'] ?? [] as $field) {
+                $req = ($field['required'] ?? false) ? '' : ' (optional)';
+                $fields[] = $field['name'] . $req;
+            }
+            $fieldsStr = !empty($fields) ? implode(', ', $fields) : '';
+
+            $lines[] = "- **{$name}** (`{$toolName}`): {$desc}";
+            if (!empty($fieldsStr)) {
+                $lines[] = "  Fields: {$fieldsStr}";
+            }
+        }
+
         $lines[] = '';
 
         return implode("\n", $lines);
@@ -1100,6 +1160,16 @@ switch ($method) {
             ];
         }
 
+        // Action-based tools (from Agentic Builder)
+        $actionsDir = dirname($_SERVER['DOCUMENT_ROOT'] . '/_studio/data/actions/');
+        $studioDir = $_SERVER['DOCUMENT_ROOT'] . '/_studio';
+        if (is_dir($studioDir . '/data/actions')) {
+            require_once $studioDir . '/engine/bootstrap.php';
+            $actionManager = new \VoxelSite\ActionManager();
+            $actionTools = $actionManager->listTools();
+            $tools = array_merge($tools, $actionTools);
+        }
+
         echo json_encode([
             'jsonrpc' => '2.0',
             'result' => ['tools' => $tools],
@@ -1346,6 +1416,25 @@ switch ($method) {
                 break;
 
             default:
+                // Delegate to ActionManager for action tools
+                $studioDir = $_SERVER['DOCUMENT_ROOT'] . '/_studio';
+                if (is_dir($studioDir . '/data/actions')) {
+                    require_once $studioDir . '/engine/bootstrap.php';
+                    $actionManager = new \VoxelSite\ActionManager();
+                    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+                    $result = $actionManager->execute($toolName, $args, $ip);
+
+                    if (!isset($result['error']) || $result['error'] !== 'Unknown action tool: ' . $toolName) {
+                        // ActionManager handled it (success or constraint error)
+                        echo json_encode([
+                            'jsonrpc' => '2.0',
+                            'result' => ['content' => [['type' => 'text', 'text' => json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)]]],
+                            'id' => $id,
+                        ]);
+                        break;
+                    }
+                }
+
                 echo json_encode([
                     'jsonrpc' => '2.0',
                     'error' => ['code' => -32601, 'message' => "Unknown tool: {$toolName}"],

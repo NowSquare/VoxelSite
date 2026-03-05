@@ -163,6 +163,9 @@ if ($method === 'GET' && $path === '/preview') {
         // Inject visual editor bridge
         $content = injectVisualEditorBridge($content);
 
+        // Inject Actions Bar for preview (if active actions exist)
+        $content = injectActionsBar($content);
+
         echo $content;
     } elseif (isTextType($extension)) {
         $content = file_get_contents($realPath);
@@ -687,4 +690,56 @@ function getEmptyPreviewHtml(): string
 </body>
 </html>
 HTML;
+}
+
+/**
+ * Inject the Actions Bar (CSS + JS) into the preview HTML.
+ *
+ * Only injects when active actions exist. The JS detects preview mode
+ * and fetches the manifest from the Studio API instead of /actions/manifest.json.
+ */
+function injectActionsBar(string $html): string
+{
+    // Quick check: do active actions exist?
+    $actionsDir = dirname(__DIR__, 2) . '/data/actions';
+    if (!is_dir($actionsDir)) {
+        return $html;
+    }
+
+    $hasActive = false;
+    foreach (glob($actionsDir . '/*.json') as $file) {
+        $content = file_get_contents($file);
+        if ($content !== false) {
+            $def = json_decode($content, true);
+            if (is_array($def) && ($def['active'] ?? false)) {
+                $hasActive = true;
+                break;
+            }
+        }
+    }
+
+    if (!$hasActive) {
+        return $html;
+    }
+
+    // Read shipped CSS and JS
+    $staticDir = dirname(__DIR__, 2) . '/static';
+    $css = @file_get_contents($staticDir . '/actions-bar.css');
+    $js = @file_get_contents($staticDir . '/actions-bar.js');
+
+    if (empty($css) || empty($js)) {
+        return $html;
+    }
+
+    $injection = "\n<!-- VoxelSite Actions Bar (Preview) -->\n"
+        . "<style>\n{$css}\n</style>\n"
+        . "<script>\n{$js}\n</script>\n";
+
+    if (stripos($html, '</body>') !== false) {
+        $html = str_ireplace('</body>', $injection . '</body>', $html);
+    } else {
+        $html .= $injection;
+    }
+
+    return $html;
 }

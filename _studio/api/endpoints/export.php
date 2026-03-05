@@ -153,6 +153,13 @@ foreach (['css', 'js'] as $alwaysDir) {
     collectDirectoryFiles($dir, $assetsDir, $assetFiles);
 }
 
+// Remove agentic files from assets (not included in exports)
+foreach (array_keys($assetFiles) as $key) {
+    if (str_contains($key, 'actions-bar.')) {
+        unset($assetFiles[$key]);
+    }
+}
+
 // Selectively include assets from all other directories.
 // Only files whose path or filename appears in the combined content
 // of PHP pages, partials, CSS, or JS will be bundled.

@@ -480,6 +480,91 @@ CSS;
     }
 
     /**
+     * Check whether any active action definitions exist.
+     */
+    public function hasActiveActions(): bool
+    {
+        $actionsDir = dirname(__DIR__) . '/data/actions';
+        if (!is_dir($actionsDir)) {
+            return false;
+        }
+
+        foreach (glob($actionsDir . '/*.json') as $file) {
+            $content = @file_get_contents($file);
+            if ($content !== false) {
+                $def = json_decode($content, true);
+                if (is_array($def) && ($def['active'] ?? false)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Copy the shipped actions-bar.js and actions-bar.css into the project root.
+     *
+     * Unlike form-handler.js (which goes to assets/js/), the Actions Bar assets
+     * are deployed to the document root during publish because they need to be
+     * self-contained alongside the manifest and submit handler.
+     */
+    public function ensureShippedActionsBar(string $docRoot): void
+    {
+        $staticDir = dirname(__DIR__) . '/static';
+
+        foreach (['actions-bar.js', 'actions-bar.css'] as $file) {
+            $source = $staticDir . '/' . $file;
+            $dest = $docRoot . '/' . $file;
+
+            if (!file_exists($source)) {
+                continue;
+            }
+
+            // Skip if identical
+            if (file_exists($dest) && filesize($dest) === filesize($source) && md5_file($dest) === md5_file($source)) {
+                continue;
+            }
+
+            @copy($source, $dest);
+        }
+    }
+
+    /**
+     * Inject actions-bar.js + CSS into the footer partial.
+     *
+     * Mirrors injectFormHandlerIntoFooter() — for partial-based sites.
+     *
+     * @param string|null $docRoot When provided, injects into the production
+     *   footer at $docRoot/_partials/footer.php (used during publish).
+     *   When null, injects into the preview footer (default).
+     */
+    public function injectActionsBarIntoFooter(?string $docRoot = null): void
+    {
+        if ($docRoot !== null) {
+            $footerPath = rtrim($docRoot, '/') . '/_partials/footer.php';
+        } else {
+            $footerPath = $this->resolvePath('_partials/footer.php', true);
+        }
+
+        if (!file_exists($footerPath)) {
+            return;
+        }
+
+        $footer = file_get_contents($footerPath);
+        if (str_contains($footer, 'actions-bar.js')) {
+            return; // Already injected
+        }
+
+        if (str_contains($footer, '</body>')) {
+            $injection = '<link rel="stylesheet" href="/actions-bar.css">' . "\n"
+                . '<script src="/actions-bar.js" defer></script>' . "\n";
+            $footer = str_replace('</body>', $injection . '</body>', $footer);
+            file_put_contents($footerPath, $footer);
+        }
+    }
+
+    /**
      * Fix unescaped apostrophes in PHP single-quoted strings.
      *
      * AI models write English contractions inside single-quoted PHP strings:
@@ -1147,12 +1232,13 @@ CSS;
             }
         }
 
-        // 4. Delete AI-generated JS files (skip shipped form-handler.js)
+        // 4. Delete AI-generated JS files (skip shipped handlers)
         $jsDir = $this->assetsPath . '/js';
         if (is_dir($jsDir)) {
+            $skipJs = ['form-handler.js', 'actions-bar.js'];
             $jsFiles = glob($jsDir . '/*.js') ?: [];
             foreach ($jsFiles as $file) {
-                if (is_file($file) && basename($file) !== 'form-handler.js') {
+                if (is_file($file) && !in_array(basename($file), $skipJs, true)) {
                     unlink($file);
                     $filesDeleted++;
                 }
@@ -1209,6 +1295,38 @@ CSS;
                 @unlink($aeoPath);
                 $filesDeleted++;
             }
+        }
+
+        // ── Agentic files ──
+        // Published actions files at root
+        $actionsPublished = $rootDir . '/actions';
+        if (is_dir($actionsPublished)) {
+            $filesDeleted += $this->removeDirectoryContents($actionsPublished);
+            @rmdir($actionsPublished);
+        }
+
+        // Published actions-bar assets at root
+        foreach (['actions-bar.js', 'actions-bar.css'] as $barFile) {
+            $barPath = $rootDir . '/' . $barFile;
+            if (file_exists($barPath)) {
+                @unlink($barPath);
+                $filesDeleted++;
+            }
+        }
+
+        // Actions database
+        $actionsDb = $rootDir . '/_data/actions.db';
+        foreach ([$actionsDb, $actionsDb . '-journal', $actionsDb . '-wal', $actionsDb . '-shm'] as $dbFile) {
+            if (file_exists($dbFile)) {
+                @unlink($dbFile);
+                $filesDeleted++;
+            }
+        }
+
+        // Action definitions (user-created data in _studio/data/actions/)
+        $actionsDataDir = dirname(__DIR__) . '/data/actions';
+        if (is_dir($actionsDataDir)) {
+            $filesDeleted += $this->removeDirectoryContents($actionsDataDir);
         }
 
         // Published _partials/ at root

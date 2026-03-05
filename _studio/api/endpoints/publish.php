@@ -205,11 +205,68 @@ if ($method === 'POST' && $path === '/publish') {
         $errors[] = 'AEO generation: ' . $e->getMessage();
     }
 
+    // ── Step 4b: Deploy Actions Bar (if active actions exist) ──
+    $agenticFiles = [];
+    try {
+        if ($fileManager->hasActiveActions()) {
+            // Deploy actions-bar.js + actions-bar.css to docroot
+            $fileManager->ensureShippedActionsBar($docRoot);
+            $agenticFiles[] = 'actions-bar.js';
+            $agenticFiles[] = 'actions-bar.css';
+
+            // Generate and deploy manifest
+            $actionManager = new \VoxelSite\ActionManager();
+            $manifest = $actionManager->generateManifest();
+            if ($manifest !== null) {
+                $actionsDir = $docRoot . '/actions';
+                if (!is_dir($actionsDir)) {
+                    mkdir($actionsDir, 0755, true);
+                }
+                file_put_contents(
+                    $actionsDir . '/manifest.json',
+                    json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                );
+                $agenticFiles[] = 'actions/manifest.json';
+            }
+
+            // Deploy submit handler
+            $submitSource = dirname(__DIR__) . '/static/actions-submit.php';
+            if (file_exists($submitSource)) {
+                $actionsDir = $docRoot . '/actions';
+                if (!is_dir($actionsDir)) {
+                    mkdir($actionsDir, 0755, true);
+                }
+                copy($submitSource, $actionsDir . '/submit.php');
+                $agenticFiles[] = 'actions/submit.php';
+            }
+
+            // Deploy i18n translation files
+            $i18nSource = dirname(__DIR__) . '/static/actions-i18n';
+            if (is_dir($i18nSource)) {
+                $i18nDest = $docRoot . '/actions/i18n';
+                if (!is_dir($i18nDest)) {
+                    mkdir($i18nDest, 0755, true);
+                }
+                foreach (glob($i18nSource . '/*.json') as $langFile) {
+                    $filename = basename($langFile);
+                    copy($langFile, $i18nDest . '/' . $filename);
+                    $agenticFiles[] = 'actions/i18n/' . $filename;
+                }
+            }
+
+            // Inject bar references into published pages
+            $fileManager->injectActionsBarIntoFooter($docRoot);
+        }
+    } catch (\Throwable $e) {
+        $errors[] = 'Actions Bar deployment: ' . $e->getMessage();
+    }
+
     Logger::info('system', 'Publish completed', [
         'published_count' => count($published),
         'removed_count'   => count($removed),
         'error_count'     => count($errors),
         'aeo_files'       => $aeoFiles,
+        'agentic_files'   => $agenticFiles,
         'snapshot_id'     => $snapshot['id'] ?? null,
         'published'       => $published,
     ]);
@@ -220,6 +277,7 @@ if ($method === 'POST' && $path === '/publish') {
         'removed'      => $removed,
         'snapshot_id'  => $snapshot['id'] ?? null,
         'aeo_files'    => $aeoFiles,
+        'agentic_files' => $agenticFiles,
         'errors'       => $errors,
     ]]);
     return;
@@ -382,6 +440,24 @@ if ($method === 'POST' && $path === '/publish/unpublish') {
         }
     }
 
+    // ── Step 3b: Remove agentic files ──
+    foreach (['actions-bar.js', 'actions-bar.css'] as $file) {
+        $fullPath = $docRoot . '/' . $file;
+        if (is_file($fullPath) && @unlink($fullPath)) {
+            $removed[] = $file;
+        }
+    }
+    $actionsDir = $docRoot . '/actions';
+    if (is_dir($actionsDir)) {
+        foreach (['manifest.json', 'submit.php'] as $file) {
+            $fullPath = $actionsDir . '/' . $file;
+            if (is_file($fullPath) && @unlink($fullPath)) {
+                $removed[] = 'actions/' . $file;
+            }
+        }
+        @rmdir($actionsDir);
+    }
+
     // ── Step 4: Restore the unpublish placeholder ──
     $unpublishIndex = dirname(__DIR__, 2) . '/data/default-unpublish-index.php';
     if (file_exists($unpublishIndex)) {
@@ -490,13 +566,20 @@ function createPrePublishSnapshot(
     }
 
     // Add publish/aeo root files that may change during publish.
-    $prodExtraFiles = ['.htaccess', 'llms.txt', 'robots.txt', 'sitemap.xml', 'mcp.php'];
+    $prodExtraFiles = ['.htaccess', 'llms.txt', 'robots.txt', 'sitemap.xml', 'mcp.php',
+                       'actions-bar.js', 'actions-bar.css'];
     foreach ($prodExtraFiles as $filename) {
         $fullPath = $docRoot . '/' . $filename;
         if (is_file($fullPath)) {
             $zip->addFile($fullPath, 'production/' . $filename);
             $fileCount++;
         }
+    }
+
+    // Add published actions/ directory
+    $actionsDir = $docRoot . '/actions';
+    if (is_dir($actionsDir)) {
+        $fileCount += addDirToZip($zip, $actionsDir, 'production/actions');
     }
 
     $zip->close();
@@ -771,11 +854,21 @@ function clearProductionManagedFiles(string $docRoot): void
         }
     }
 
-    foreach (['.htaccess', 'llms.txt', 'robots.txt', 'sitemap.xml', 'mcp.php'] as $file) {
+    foreach (['.htaccess', 'llms.txt', 'robots.txt', 'sitemap.xml', 'mcp.php',
+              'actions-bar.js', 'actions-bar.css'] as $file) {
         $fullPath = $docRoot . '/' . $file;
         if (is_file($fullPath)) {
             @unlink($fullPath);
         }
+    }
+
+    // Remove published actions/ directory
+    $actionsDir = $docRoot . '/actions';
+    if (is_dir($actionsDir)) {
+        foreach (['manifest.json', 'submit.php'] as $file) {
+            @unlink($actionsDir . '/' . $file);
+        }
+        @rmdir($actionsDir);
     }
 }
 

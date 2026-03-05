@@ -27,7 +27,8 @@ Full documentation: **[voxelsite.com/docs](https://voxelsite.com/docs)**
 - **Undo/Redo** — full revision history with safe editing workflow
 - **Snapshots** — save/restore entire site states
 - **Asset Manager** — upload images, files, and fonts
-- **Forms** — submission handling with email notifications
+- **Actions** — define interactions (reservations, signups, inquiries) that serve both human visitors (beautiful form bar) and AI agents (MCP tools) simultaneously
+- **Forms** — submission handling with validation, spam protection, and email notifications
 - **Team** — invite editors and viewers with role-based access
 - **AEO** — built-in AI discoverability (`llms.txt`, schema, MCP endpoint)
 

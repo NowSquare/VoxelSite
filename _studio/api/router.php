@@ -142,6 +142,28 @@ $routes = [
     ['PUT',    '/forms/:formId/submissions/:id',              'forms.php',       true],
     ['DELETE', '/forms/:formId/submissions/:id',              'forms.php',       true],
 
+    // Agentic Actions
+    ['GET',    '/agentic/actions',                                 'agentic-actions.php', true],
+    ['POST',   '/agentic/actions',                                 'agentic-actions.php', true],
+    ['POST',   '/agentic/actions/from-template',                   'agentic-actions.php', true],
+    ['POST',   '/agentic/actions/reorder',                         'agentic-actions.php', true],
+    ['GET',    '/agentic/actions/bar-settings',                    'agentic-actions.php', true],
+    ['PUT',    '/agentic/actions/bar-settings',                    'agentic-actions.php', true],
+    ['GET',    '/agentic/actions/templates',                       'agentic-actions.php', true],
+    ['POST',   '/agentic/actions/manifest',                        'agentic-actions.php', true],
+    ['GET',    '/agentic/actions/:id',                             'agentic-actions.php', true],
+    ['PUT',    '/agentic/actions/:id',                             'agentic-actions.php', true],
+    ['DELETE', '/agentic/actions/:id',                             'agentic-actions.php', true],
+    ['POST',   '/agentic/actions/:id/duplicate',                   'agentic-actions.php', true],
+    ['POST',   '/agentic/actions/:id/test',                        'agentic-actions.php', true],
+    ['GET',    '/agentic/actions/:id/records',                     'agentic-actions.php', true],
+    ['GET',    '/agentic/actions/:id/records/export',              'agentic-actions.php', true],
+    ['PUT',    '/agentic/actions/:id/records/:rid',                'agentic-actions.php', true],
+    ['DELETE', '/agentic/actions/:id/records/:rid',                'agentic-actions.php', true],
+    ['POST',   '/agentic/actions/:id/records/bulk',                'agentic-actions.php', true],
+    ['POST',   '/agentic/actions/:id/records/purge',               'agentic-actions.php', true],
+    // Legacy aliases (removed — routes moved above parametric :id)
+
     // Settings
     ['GET',    '/settings',              'settings.php',       true],
     ['PUT',    '/settings',              'settings.php',       true],

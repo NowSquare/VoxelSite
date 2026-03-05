@@ -1,0 +1,99 @@
+{
+  "id": "event-registration",
+  "name": "Event Registration",
+  "description": "Register for an event",
+  "icon": "ticket",
+  "category": "events",
+  "active": false,
+  "version": 1,
+  "bar_button_label": "Register",
+  "fields": [
+    {
+      "name": "name",
+      "type": "text",
+      "label": "Full Name",
+      "placeholder": "Your full name",
+      "required": true,
+      "max_length": 100
+    },
+    {
+      "name": "email",
+      "type": "email",
+      "label": "Email",
+      "placeholder": "you@example.com",
+      "required": true
+    },
+    {
+      "name": "event",
+      "type": "select",
+      "label": "Event",
+      "required": true,
+      "options": ["Workshop", "Seminar", "Conference"]
+    },
+    {
+      "name": "tickets",
+      "type": "number",
+      "label": "Number of Tickets",
+      "required": true,
+      "min": 1,
+      "max": 10
+    },
+    {
+      "name": "dietary",
+      "type": "select",
+      "label": "Dietary Requirements",
+      "required": false,
+      "options": ["None", "Vegetarian", "Vegan", "Gluten-free", "Other"]
+    },
+    {
+      "name": "notes",
+      "type": "textarea",
+      "label": "Additional Notes",
+      "required": false,
+      "max_length": 500
+    }
+  ],
+  "constraints": {
+    "capacity": {
+      "enabled": true,
+      "max_per_slot": 50,
+      "slot_fields": ["event"],
+      "count_statuses": ["confirmed", "pending"]
+    },
+    "uniqueness": {
+      "enabled": true,
+      "fields": ["email", "event"],
+      "scope_statuses": ["confirmed", "pending"]
+    },
+    "operating_hours": {
+      "enabled": false
+    }
+  },
+  "confirmation": {
+    "auto_confirm": true,
+    "default_status": "confirmed",
+    "code_length": 8,
+    "code_alphabet": "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+  },
+  "responses": {
+    "success": "You're registered for {event}! Confirmation: {confirmation_code}. Details will be sent to {email}.",
+    "capacity_full": "Sorry, {event} is fully booked.",
+    "duplicate": "You're already registered for {event}.",
+    "cancelled": "Registration {confirmation_code} has been cancelled."
+  },
+  "companion_tools": {
+    "check_availability": true,
+    "cancel_by_code": true
+  },
+  "notifications": {
+    "guest_email_field": "email",
+    "owner_notify": true,
+    "guest_notify": true
+  },
+  "rate_limit": {
+    "max_per_ip_per_hour": 10,
+    "burst_max": 3,
+    "burst_window_seconds": 60
+  },
+  "keep_days": 365
+}

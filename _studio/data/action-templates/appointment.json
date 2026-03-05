@@ -1,0 +1,111 @@
+{
+  "id": "appointment",
+  "name": "Book Appointment",
+  "description": "Schedule an appointment",
+  "icon": "calendar",
+  "category": "services",
+  "active": false,
+  "version": 1,
+  "bar_button_label": "Book",
+  "fields": [
+    {
+      "name": "name",
+      "type": "text",
+      "label": "Full Name",
+      "placeholder": "Your full name",
+      "required": true,
+      "max_length": 100
+    },
+    {
+      "name": "email",
+      "type": "email",
+      "label": "Email",
+      "placeholder": "you@example.com",
+      "required": true
+    },
+    {
+      "name": "phone",
+      "type": "tel",
+      "label": "Phone",
+      "placeholder": "+1 (555) 000-0000",
+      "required": false
+    },
+    {
+      "name": "service",
+      "type": "select",
+      "label": "Service",
+      "required": true,
+      "options": ["Consultation", "Follow-up", "Assessment"]
+    },
+    {
+      "name": "date",
+      "type": "date",
+      "label": "Preferred Date",
+      "required": true,
+      "min": "today",
+      "max": "+60 days"
+    },
+    {
+      "name": "time",
+      "type": "select",
+      "label": "Preferred Time",
+      "required": true,
+      "options": [
+        "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
+        "13:00", "13:30", "14:00", "14:30", "15:00", "15:30",
+        "16:00", "16:30"
+      ]
+    },
+    {
+      "name": "notes",
+      "type": "textarea",
+      "label": "Additional Notes",
+      "placeholder": "Anything we should know beforehand?",
+      "required": false,
+      "max_length": 500
+    }
+  ],
+  "constraints": {
+    "capacity": {
+      "enabled": true,
+      "max_per_slot": 1,
+      "slot_fields": ["date", "time"],
+      "count_statuses": ["confirmed", "pending"]
+    },
+    "uniqueness": {
+      "enabled": true,
+      "fields": ["email", "date"],
+      "scope_statuses": ["confirmed", "pending"]
+    },
+    "operating_hours": {
+      "enabled": false
+    }
+  },
+  "confirmation": {
+    "auto_confirm": true,
+    "default_status": "confirmed",
+    "code_length": 8,
+    "code_alphabet": "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+  },
+  "responses": {
+    "success": "Appointment confirmed for {date} at {time}. Your confirmation code: {confirmation_code}",
+    "capacity_full": "That time slot is no longer available. Please choose another time.",
+    "duplicate": "You already have an appointment on {date}.",
+    "cancelled": "Appointment {confirmation_code} has been cancelled."
+  },
+  "companion_tools": {
+    "check_availability": true,
+    "cancel_by_code": true
+  },
+  "notifications": {
+    "guest_email_field": "email",
+    "owner_notify": true,
+    "guest_notify": true
+  },
+  "rate_limit": {
+    "max_per_ip_per_hour": 10,
+    "burst_max": 3,
+    "burst_window_seconds": 60
+  },
+  "keep_days": 90
+}

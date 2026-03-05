@@ -1,0 +1,101 @@
+{
+  "id": "order",
+  "name": "Place Order",
+  "description": "Place a product order",
+  "icon": "shopping-bag",
+  "category": "commerce",
+  "active": false,
+  "version": 1,
+  "bar_button_label": "Order",
+  "fields": [
+    {
+      "name": "name",
+      "type": "text",
+      "label": "Your Name",
+      "placeholder": "Full name",
+      "required": true,
+      "max_length": 100
+    },
+    {
+      "name": "email",
+      "type": "email",
+      "label": "Email",
+      "placeholder": "you@example.com",
+      "required": true
+    },
+    {
+      "name": "phone",
+      "type": "tel",
+      "label": "Phone",
+      "placeholder": "+1 (555) 000-0000",
+      "required": true
+    },
+    {
+      "name": "product",
+      "type": "select",
+      "label": "Product",
+      "required": true,
+      "options": ["Product A", "Product B", "Product C"]
+    },
+    {
+      "name": "quantity",
+      "type": "number",
+      "label": "Quantity",
+      "required": true,
+      "min": 1,
+      "max": 100
+    },
+    {
+      "name": "delivery_address",
+      "type": "textarea",
+      "label": "Delivery Address",
+      "placeholder": "Full delivery address",
+      "required": true,
+      "max_length": 500
+    },
+    {
+      "name": "notes",
+      "type": "textarea",
+      "label": "Order Notes",
+      "placeholder": "Special instructions...",
+      "required": false,
+      "max_length": 500
+    }
+  ],
+  "constraints": {
+    "capacity": {
+      "enabled": false
+    },
+    "uniqueness": {
+      "enabled": false
+    },
+    "operating_hours": {
+      "enabled": false
+    }
+  },
+  "confirmation": {
+    "auto_confirm": false,
+    "default_status": "pending",
+    "code_length": 8,
+    "code_alphabet": "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+  },
+  "responses": {
+    "success": "Order placed! Your order number: {confirmation_code}. We'll confirm your order shortly.",
+    "cancelled": "Order {confirmation_code} has been cancelled."
+  },
+  "companion_tools": {
+    "check_availability": false,
+    "cancel_by_code": true
+  },
+  "notifications": {
+    "guest_email_field": "email",
+    "owner_notify": true,
+    "guest_notify": true
+  },
+  "rate_limit": {
+    "max_per_ip_per_hour": 5,
+    "burst_max": 2,
+    "burst_window_seconds": 60
+  },
+  "keep_days": 365
+}

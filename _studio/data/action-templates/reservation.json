@@ -1,0 +1,105 @@
+{
+  "id": "reservation",
+  "name": "Table Reservation",
+  "description": "Reserve a table at the restaurant",
+  "icon": "utensils",
+  "category": "hospitality",
+  "active": false,
+  "version": 1,
+  "bar_button_label": "Reserve",
+  "fields": [
+    {
+      "name": "name",
+      "type": "text",
+      "label": "Guest Name",
+      "placeholder": "Your full name",
+      "required": true,
+      "max_length": 100
+    },
+    {
+      "name": "email",
+      "type": "email",
+      "label": "Email",
+      "placeholder": "you@example.com",
+      "required": true
+    },
+    {
+      "name": "date",
+      "type": "date",
+      "label": "Date",
+      "required": true,
+      "min": "today",
+      "max": "+90 days"
+    },
+    {
+      "name": "time",
+      "type": "select",
+      "label": "Time",
+      "required": true,
+      "options": [
+        "17:00", "17:30", "18:00", "18:30", "19:00",
+        "19:30", "20:00", "20:30", "21:00", "21:30"
+      ]
+    },
+    {
+      "name": "guests",
+      "type": "number",
+      "label": "Number of Guests",
+      "required": true,
+      "min": 1,
+      "max": 12
+    },
+    {
+      "name": "notes",
+      "type": "textarea",
+      "label": "Special Requests",
+      "placeholder": "Allergies, occasion, seating preference...",
+      "required": false,
+      "max_length": 500
+    }
+  ],
+  "constraints": {
+    "capacity": {
+      "enabled": true,
+      "max_per_slot": 4,
+      "slot_fields": ["date", "time"],
+      "count_statuses": ["confirmed", "pending"]
+    },
+    "uniqueness": {
+      "enabled": false,
+      "fields": [],
+      "scope_statuses": ["confirmed", "pending"]
+    },
+    "operating_hours": {
+      "enabled": false
+    }
+  },
+  "confirmation": {
+    "auto_confirm": true,
+    "default_status": "confirmed",
+    "code_length": 6,
+    "code_alphabet": "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+  },
+  "responses": {
+    "success": "Table reserved! Your confirmation code is {confirmation_code}. We look forward to seeing you on {date} at {time}.",
+    "capacity_full": "Sorry, all tables are taken for {time} on {date}. Please try a different time.",
+    "duplicate": "A reservation already exists for this slot.",
+    "cancelled": "Reservation {confirmation_code} has been cancelled.",
+    "outside_hours": "The restaurant is closed at this time."
+  },
+  "companion_tools": {
+    "check_availability": true,
+    "cancel_by_code": true
+  },
+  "notifications": {
+    "guest_email_field": "email",
+    "owner_notify": true,
+    "guest_notify": true
+  },
+  "rate_limit": {
+    "max_per_ip_per_hour": 10,
+    "burst_max": 3,
+    "burst_window_seconds": 60
+  },
+  "keep_days": 90
+}

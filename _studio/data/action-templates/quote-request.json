@@ -1,0 +1,92 @@
+{
+  "id": "quote-request",
+  "name": "Request a Quote",
+  "description": "Submit a request for a price quote",
+  "icon": "file-text",
+  "category": "sales",
+  "active": false,
+  "version": 1,
+  "bar_button_label": "Get Quote",
+  "fields": [
+    {
+      "name": "name",
+      "type": "text",
+      "label": "Your Name",
+      "placeholder": "Full name",
+      "required": true,
+      "max_length": 100
+    },
+    {
+      "name": "email",
+      "type": "email",
+      "label": "Email",
+      "placeholder": "you@example.com",
+      "required": true
+    },
+    {
+      "name": "phone",
+      "type": "tel",
+      "label": "Phone",
+      "placeholder": "+1 (555) 000-0000",
+      "required": false
+    },
+    {
+      "name": "service",
+      "type": "select",
+      "label": "Service Needed",
+      "required": true,
+      "options": ["Web Design", "Branding", "Consulting", "Other"]
+    },
+    {
+      "name": "budget",
+      "type": "select",
+      "label": "Budget Range",
+      "required": false,
+      "options": ["Under $1,000", "$1,000 – $5,000", "$5,000 – $10,000", "$10,000+"]
+    },
+    {
+      "name": "description",
+      "type": "textarea",
+      "label": "Project Description",
+      "placeholder": "Tell us about your project...",
+      "required": true,
+      "max_length": 2000
+    }
+  ],
+  "constraints": {
+    "capacity": {
+      "enabled": false
+    },
+    "uniqueness": {
+      "enabled": false
+    },
+    "operating_hours": {
+      "enabled": false
+    }
+  },
+  "confirmation": {
+    "auto_confirm": false,
+    "default_status": "pending",
+    "code_length": 8,
+    "code_alphabet": "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+  },
+  "responses": {
+    "success": "Quote request received! Your reference: {confirmation_code}. We'll get back to you within 24 hours.",
+    "cancelled": "Quote request {confirmation_code} cancelled."
+  },
+  "companion_tools": {
+    "check_availability": false,
+    "cancel_by_code": true
+  },
+  "notifications": {
+    "guest_email_field": "email",
+    "owner_notify": true,
+    "guest_notify": false
+  },
+  "rate_limit": {
+    "max_per_ip_per_hour": 5,
+    "burst_max": 2,
+    "burst_window_seconds": 120
+  },
+  "keep_days": 180
+}

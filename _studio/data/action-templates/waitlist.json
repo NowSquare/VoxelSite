@@ -1,0 +1,73 @@
+{
+  "id": "waitlist",
+  "name": "Join Waitlist",
+  "description": "Sign up for the waitlist",
+  "icon": "list",
+  "category": "engagement",
+  "active": false,
+  "version": 1,
+  "bar_button_label": "Waitlist",
+  "fields": [
+    {
+      "name": "name",
+      "type": "text",
+      "label": "Name",
+      "placeholder": "Your name",
+      "required": true,
+      "max_length": 100
+    },
+    {
+      "name": "email",
+      "type": "email",
+      "label": "Email",
+      "placeholder": "you@example.com",
+      "required": true
+    },
+    {
+      "name": "interest",
+      "type": "select",
+      "label": "Interest",
+      "required": false,
+      "options": ["Early Access", "Updates Only", "Beta Testing"]
+    }
+  ],
+  "constraints": {
+    "capacity": {
+      "enabled": false
+    },
+    "uniqueness": {
+      "enabled": true,
+      "fields": ["email"],
+      "scope_statuses": ["confirmed", "pending"]
+    },
+    "operating_hours": {
+      "enabled": false
+    }
+  },
+  "confirmation": {
+    "auto_confirm": true,
+    "default_status": "confirmed",
+    "code_length": 6,
+    "code_alphabet": "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+  },
+  "responses": {
+    "success": "You're on the list! Reference: {confirmation_code}. We'll notify you at {email}.",
+    "duplicate": "This email is already on the waitlist.",
+    "cancelled": "You've been removed from the waitlist."
+  },
+  "companion_tools": {
+    "check_availability": false,
+    "cancel_by_code": true
+  },
+  "notifications": {
+    "guest_email_field": "email",
+    "owner_notify": false,
+    "guest_notify": true
+  },
+  "rate_limit": {
+    "max_per_ip_per_hour": 5,
+    "burst_max": 2,
+    "burst_window_seconds": 60
+  },
+  "keep_days": 365
+}

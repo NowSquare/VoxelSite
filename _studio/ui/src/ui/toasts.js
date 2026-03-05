@@ -29,7 +29,7 @@ export function showToast(message, type = 'success', timeout = 3200) {
 
   setTimeout(() => {
     toast.style.opacity = '0';
-    toast.style.transform = 'translateY(6px)';
+    toast.style.transform = 'translateY(-6px)';
     setTimeout(() => toast.remove(), 220);
   }, timeout);
 }
@@ -74,7 +74,7 @@ export function showToastWithAction(message, actionLabel, onAction, type = 'succ
   // Longer timeout since user may need time to read and click
   setTimeout(() => {
     toast.style.opacity = '0';
-    toast.style.transform = 'translateY(6px)';
+    toast.style.transform = 'translateY(-6px)';
     setTimeout(() => toast.remove(), 220);
   }, 8000);
 }

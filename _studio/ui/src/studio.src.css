@@ -387,6 +387,11 @@ body {
 @keyframes entrance-stagger-2 { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes entrance-stagger-3 { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
+@keyframes vsSlideUp {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 
 /* ═══════════════════════════════════════════ */
 /*  UTILITY CLASSES                           */
@@ -2126,7 +2131,7 @@ select.vs-input {
 
 .vs-toast-container {
   position: fixed;
-  bottom: 48px;
+  top: 16px;
   right: 16px;
   z-index: 10002;
   display: flex;
@@ -3150,6 +3155,17 @@ select.vs-input {
 }
 .vs-spin {
   animation: vs-spin 0.6s linear infinite;
+}
+
+@keyframes vs-skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes vs-skeleton-pulse {
+    0%, 100% { opacity: 0.6; }
+  }
 }
 
 /* System info grid */
@@ -5004,7 +5020,7 @@ select.vs-input {
 }
 
 .vs-modal-header {
-  padding: 24px 24px 0;
+  padding: 24px 24px 16px;
 }
 
 .vs-modal-icon {

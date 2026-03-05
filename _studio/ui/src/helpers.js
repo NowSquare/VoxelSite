@@ -17,6 +17,14 @@ export function escapeHtml(str) {
 }
 
 /**
+ * Escape a string for safe insertion into an HTML attribute value.
+ */
+export function escapeAttr(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
  * Map a file path to a Monaco editor language identifier.
  */
 const EXTENSION_MAP = {

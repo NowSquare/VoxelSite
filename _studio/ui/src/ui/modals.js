@@ -81,6 +81,8 @@ export function showPromptModal({
   initialValue = '',
   confirmLabel = 'Continue',
   inputType = 'text',
+  helpText = '',
+  inputPattern = '',
 }) {
   return new Promise((resolve) => {
     const existing = document.getElementById('vs-prompt-overlay');
@@ -90,9 +92,10 @@ export function showPromptModal({
     overlay.id = 'vs-prompt-overlay';
     overlay.className = 'vs-modal-overlay';
 
+    const patternAttr = inputPattern ? ` pattern="${escapeHtml(inputPattern)}"` : '';
     const inputHtml = inputType === 'textarea'
       ? `<textarea id="vs-prompt-input" class="vs-input w-full" rows="4" placeholder="${escapeHtml(placeholder)}" style="resize: vertical;">${escapeHtml(initialValue)}</textarea>`
-      : `<input id="vs-prompt-input" type="text" class="vs-input w-full" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(initialValue)}">`;
+      : `<input id="vs-prompt-input" type="text" class="vs-input w-full" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(initialValue)}"${patternAttr}>`;
 
     overlay.innerHTML = `
       <div class="vs-modal" style="max-width: 560px;">
@@ -103,6 +106,7 @@ export function showPromptModal({
         <div class="vs-modal-body">
           ${label ? `<label class="block text-sm text-vs-text-secondary mb-1">${escapeHtml(label)}</label>` : ''}
           ${inputHtml}
+          ${helpText ? `<p class="text-xs text-vs-text-ghost" style="margin-top: 6px;">${escapeHtml(helpText)}</p>` : ''}
         </div>
         <div class="vs-modal-footer">
           <button id="vs-prompt-cancel" class="vs-btn vs-btn-secondary vs-btn-sm" type="button">Cancel</button>

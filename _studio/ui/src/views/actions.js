@@ -266,6 +266,7 @@ async function loadActions() {
         if (ok) {
           btn.style.boxShadow = '0 0 0 3px var(--vs-accent-dim)';
           setTimeout(() => btn.style.boxShadow = '', 400);
+          showToast('Bar style updated', 'success');
         }
       });
     });

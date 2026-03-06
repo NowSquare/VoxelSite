@@ -11,7 +11,7 @@
     {
       "name": "name",
       "type": "text",
-      "label": "Guest Name",
+      "label": "Name",
       "placeholder": "Your full name",
       "required": true,
       "max_length": 100
@@ -44,7 +44,7 @@
     {
       "name": "guests",
       "type": "number",
-      "label": "Number of Guests",
+      "label": "Guests",
       "required": true,
       "min": 1,
       "max": 12
@@ -52,7 +52,7 @@
     {
       "name": "notes",
       "type": "textarea",
-      "label": "Special Requests",
+      "label": "Notes",
       "placeholder": "Allergies, occasion, seating preference...",
       "required": false,
       "max_length": 500

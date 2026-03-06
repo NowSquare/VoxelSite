@@ -1,0 +1,78 @@
+{
+  "id": "callback",
+  "name": "Request Callback",
+  "description": "We'll call you back",
+  "icon": "message-square",
+  "category": "service",
+  "active": false,
+  "version": 1,
+  "bar_button_label": "Call Me",
+  "fields": [
+    {
+      "name": "name",
+      "type": "text",
+      "label": "Name",
+      "placeholder": "Your name",
+      "required": true,
+      "max_length": 100
+    },
+    {
+      "name": "phone",
+      "type": "tel",
+      "label": "Phone",
+      "placeholder": "+1 (555) 000-0000",
+      "required": true
+    },
+    {
+      "name": "preferred_time",
+      "type": "select",
+      "label": "Preferred Time",
+      "required": false,
+      "options": ["Morning", "Afternoon", "Evening"]
+    },
+    {
+      "name": "reason",
+      "type": "textarea",
+      "label": "Reason",
+      "placeholder": "Brief description (optional)",
+      "required": false,
+      "max_length": 500
+    }
+  ],
+  "constraints": {
+    "capacity": {
+      "enabled": false
+    },
+    "uniqueness": {
+      "enabled": false
+    },
+    "operating_hours": {
+      "enabled": false
+    }
+  },
+  "confirmation": {
+    "auto_confirm": true,
+    "default_status": "confirmed",
+    "code_length": 6,
+    "code_alphabet": "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+  },
+  "responses": {
+    "success": "Callback requested! Reference: {confirmation_code}. We'll call you soon.",
+    "cancelled": "Callback request {confirmation_code} has been cancelled."
+  },
+  "companion_tools": {
+    "check_availability": false,
+    "cancel_by_code": true
+  },
+  "notifications": {
+    "guest_email_field": null,
+    "owner_notify": true,
+    "guest_notify": false
+  },
+  "rate_limit": {
+    "max_per_ip_per_hour": 3,
+    "burst_max": 1,
+    "burst_window_seconds": 60
+  },
+  "keep_days": 90
+}

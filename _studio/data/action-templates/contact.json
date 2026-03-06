@@ -1,0 +1,79 @@
+{
+  "id": "contact",
+  "name": "Contact Us",
+  "description": "Send us a message",
+  "icon": "mail",
+  "category": "general",
+  "active": false,
+  "version": 1,
+  "bar_button_label": "Contact",
+  "fields": [
+    {
+      "name": "name",
+      "type": "text",
+      "label": "Name",
+      "placeholder": "Your name",
+      "required": true,
+      "max_length": 100
+    },
+    {
+      "name": "email",
+      "type": "email",
+      "label": "Email",
+      "placeholder": "you@example.com",
+      "required": true
+    },
+    {
+      "name": "subject",
+      "type": "text",
+      "label": "Subject",
+      "placeholder": "What is this about?",
+      "required": false,
+      "max_length": 200
+    },
+    {
+      "name": "message",
+      "type": "textarea",
+      "label": "Message",
+      "placeholder": "Your message...",
+      "required": true,
+      "max_length": 2000
+    }
+  ],
+  "constraints": {
+    "capacity": {
+      "enabled": false
+    },
+    "uniqueness": {
+      "enabled": false
+    },
+    "operating_hours": {
+      "enabled": false
+    }
+  },
+  "confirmation": {
+    "auto_confirm": true,
+    "default_status": "confirmed",
+    "code_length": 6,
+    "code_alphabet": "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+  },
+  "responses": {
+    "success": "Message sent! Reference: {confirmation_code}. We'll get back to you soon.",
+    "cancelled": "Message {confirmation_code} has been withdrawn."
+  },
+  "companion_tools": {
+    "check_availability": false,
+    "cancel_by_code": false
+  },
+  "notifications": {
+    "guest_email_field": "email",
+    "owner_notify": true,
+    "guest_notify": false
+  },
+  "rate_limit": {
+    "max_per_ip_per_hour": 5,
+    "burst_max": 2,
+    "burst_window_seconds": 60
+  },
+  "keep_days": 365
+}

@@ -11,7 +11,7 @@
     {
       "name": "name",
       "type": "text",
-      "label": "Full Name",
+      "label": "Name",
       "placeholder": "Your full name",
       "required": true,
       "max_length": 100
@@ -33,7 +33,7 @@
     {
       "name": "tickets",
       "type": "number",
-      "label": "Number of Tickets",
+      "label": "Tickets",
       "required": true,
       "min": 1,
       "max": 10
@@ -41,14 +41,14 @@
     {
       "name": "dietary",
       "type": "select",
-      "label": "Dietary Requirements",
+      "label": "Dietary",
       "required": false,
       "options": ["None", "Vegetarian", "Vegan", "Gluten-free", "Other"]
     },
     {
       "name": "notes",
       "type": "textarea",
-      "label": "Additional Notes",
+      "label": "Notes",
       "required": false,
       "max_length": 500
     }

@@ -1,0 +1,66 @@
+{
+  "id": "newsletter",
+  "name": "Subscribe",
+  "description": "Subscribe to our newsletter",
+  "icon": "mail",
+  "category": "engagement",
+  "active": false,
+  "version": 1,
+  "bar_button_label": "Subscribe",
+  "fields": [
+    {
+      "name": "email",
+      "type": "email",
+      "label": "Email",
+      "placeholder": "you@example.com",
+      "required": true
+    },
+    {
+      "name": "name",
+      "type": "text",
+      "label": "Name",
+      "placeholder": "Your name (optional)",
+      "required": false,
+      "max_length": 100
+    }
+  ],
+  "constraints": {
+    "capacity": {
+      "enabled": false
+    },
+    "uniqueness": {
+      "enabled": true,
+      "fields": ["email"],
+      "scope_statuses": ["confirmed", "pending"]
+    },
+    "operating_hours": {
+      "enabled": false
+    }
+  },
+  "confirmation": {
+    "auto_confirm": true,
+    "default_status": "confirmed",
+    "code_length": 6,
+    "code_alphabet": "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+  },
+  "responses": {
+    "success": "You're subscribed! Reference: {confirmation_code}.",
+    "duplicate": "This email is already subscribed.",
+    "cancelled": "You've been unsubscribed."
+  },
+  "companion_tools": {
+    "check_availability": false,
+    "cancel_by_code": true
+  },
+  "notifications": {
+    "guest_email_field": "email",
+    "owner_notify": false,
+    "guest_notify": false
+  },
+  "rate_limit": {
+    "max_per_ip_per_hour": 5,
+    "burst_max": 2,
+    "burst_window_seconds": 60
+  },
+  "keep_days": 365
+}

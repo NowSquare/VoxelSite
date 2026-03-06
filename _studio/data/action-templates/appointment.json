@@ -11,7 +11,7 @@
     {
       "name": "name",
       "type": "text",
-      "label": "Full Name",
+      "label": "Name",
       "placeholder": "Your full name",
       "required": true,
       "max_length": 100
@@ -40,7 +40,7 @@
     {
       "name": "date",
       "type": "date",
-      "label": "Preferred Date",
+      "label": "Date",
       "required": true,
       "min": "today",
       "max": "+60 days"
@@ -48,7 +48,7 @@
     {
       "name": "time",
       "type": "select",
-      "label": "Preferred Time",
+      "label": "Time",
       "required": true,
       "options": [
         "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
@@ -59,7 +59,7 @@
     {
       "name": "notes",
       "type": "textarea",
-      "label": "Additional Notes",
+      "label": "Notes",
       "placeholder": "Anything we should know beforehand?",
       "required": false,
       "max_length": 500

@@ -2845,7 +2845,7 @@ function formatRelativeTime(dateStr) {
 }
 
 // ═══════════════════════════════════════════
-//  Actions View — Agentic Builder
+//  Actions View
 // ═══════════════════════════════════════════
 
 /**
@@ -2863,12 +2863,15 @@ const ACTION_STATUS_COLORS = {
 
 /** Template icons — emoji for each template id */
 const TEMPLATE_ICONS = {
-  'reservation':        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  'contact':            '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>',
+  'newsletter':         '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+  'reservation':        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>',
   'appointment':        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
-  'quote-request':      '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
-  'waitlist':           '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
-  'order':              '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>',
   'event-registration': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/></svg>',
+  'callback':           '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+  'quote-request':      '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  'feedback':           '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+  'waitlist':           '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
 };
 
 /**
@@ -3548,6 +3551,80 @@ async function loadActionDetail(actionId) {
 
   // Render body — identity + fields summary
   if (bodyEl) {
+    // ── Build Agent Preview HTML (before template literal to avoid nesting) ──
+    const agentToolName = 'make_' + actionId.replace(/-/g, '_');
+    const agentFieldTypeMap = { number: 'number', checkbox: 'boolean', multiselect: 'array' };
+    const agentProperties = {};
+    const agentRequired = [];
+
+    (action.fields || []).forEach(f => {
+      const schemaType = agentFieldTypeMap[f.type] || 'string';
+      const prop = { type: schemaType };
+
+      const desc = f.label || f.name;
+      if (f.require_future) {
+        prop.description = desc + ' (must be in the future)';
+      } else if (desc) {
+        prop.description = desc;
+      }
+
+      if (f.min !== undefined && f.min !== '') prop.minimum = f.min;
+      if (f.max !== undefined && f.max !== '') prop.maximum = f.max;
+      if (f.min_length) prop.minLength = f.min_length;
+      if (f.max_length) prop.maxLength = f.max_length;
+
+      if (f.options && f.options.length > 0) {
+        if (f.type === 'multiselect') {
+          prop.items = { type: 'string', enum: f.options };
+        } else {
+          prop.enum = f.options;
+        }
+      }
+
+      agentProperties[f.name] = prop;
+      if (f.required) agentRequired.push(f.name);
+    });
+
+    const agentSchema = {
+      name: agentToolName,
+      description: action.description || action.name,
+      inputSchema: { type: 'object', properties: agentProperties, required: agentRequired },
+    };
+
+    const agentSchemaJson = JSON.stringify(agentSchema, null, 2);
+    const agentSchemaEscaped = escapeHtml(agentSchemaJson);
+    const agentStatusPill = isActive
+      ? '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:4px;color:var(--vs-success);background:rgba(34,197,94,0.06);">● Discoverable by agents</span>'
+      : '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:4px;color:var(--vs-text-ghost);background:var(--vs-bg-raised);">○ Draft — not visible to agents</span>';
+
+    const agentPreviewHtml = [
+      '<div style="margin-bottom: 16px;">',
+        '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">',
+          '<span style="font-size: 12px; color: var(--vs-text-ghost);">Tool name</span>',
+          '<code style="font-size:13px;font-weight:600;font-family:\'SF Mono\',\'Fira Code\',\'Cascadia Code\',monospace;color:var(--vs-accent);background:var(--vs-bg-raised);padding:3px 10px;border-radius:var(--radius-sm);letter-spacing:-0.01em;">' + escapeHtml(agentToolName) + '</code>',
+        '</div>',
+        '<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">',
+          '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--vs-text-ghost);background:var(--vs-bg-raised);padding:3px 8px;border-radius:4px;">',
+            '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+            ' /mcp.php',
+          '</span>',
+          '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--vs-text-ghost);background:var(--vs-bg-raised);padding:3px 8px;border-radius:4px;">',
+            '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+            ' /actions/manifest.json',
+          '</span>',
+          agentStatusPill,
+        '</div>',
+      '</div>',
+      '<div style="position: relative;">',
+        '<pre style="margin:0;padding:16px;border-radius:var(--radius-md);background:var(--vs-bg-surface);border:1px solid var(--vs-border-subtle);font-size:12px;line-height:1.6;overflow-x:auto;font-family:\'SF Mono\',\'Fira Code\',\'Cascadia Code\',monospace;color:var(--vs-text-secondary);-webkit-overflow-scrolling:touch;"><code id="agent-schema-json">' + agentSchemaEscaped + '</code></pre>',
+        '<button id="btn-copy-schema" title="Copy schema" style="position:absolute;top:8px;right:8px;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--vs-border-subtle);background:var(--vs-bg-floating);color:var(--vs-text-ghost);cursor:pointer;transition:all 0.15s ease;" onmouseenter="this.style.borderColor=\'var(--vs-border)\';this.style.color=\'var(--vs-text-secondary)\';" onmouseleave="this.style.borderColor=\'var(--vs-border-subtle)\';this.style.color=\'var(--vs-text-ghost)\';">' + icons.copy + '</button>',
+      '</div>',
+      '<p style="margin:12px 0 0;font-size:11px;color:var(--vs-text-ghost);line-height:1.5;">',
+        'This schema is generated from your fields above. AI agents receive it when they call <code style="font-size:10px;background:var(--vs-bg-raised);padding:1px 5px;border-radius:3px;">tools/list</code> on your site\'s MCP endpoint.<br>',
+        'Open <code style="font-size:10px;background:var(--vs-bg-raised);padding:1px 5px;border-radius:3px;">/actions/manifest.json</code> in a browser to see the full manifest.',
+      '</p>',
+    ].join('');
+
     bodyEl.innerHTML = `
       <div class="vs-settings-card" style="margin-top: 16px;">
         <h2 class="vs-settings-card-title">Identity &amp; Config</h2>
@@ -3694,6 +3771,24 @@ async function loadActionDetail(actionId) {
           <button id="btn-save-fields" class="vs-btn vs-btn-primary vs-btn-sm">Save Fields</button>
         </div>
       </div>
+
+      <details id="agent-preview-section" style="margin-top: 16px;">
+        <summary class="vs-settings-card" style="cursor: pointer; user-select: none; list-style: none; display: flex; align-items: center; justify-content: space-between; padding: 16px 20px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--vs-text-ghost); flex-shrink: 0;">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/>
+            </svg>
+            <div>
+              <h2 class="vs-settings-card-title" style="margin: 0; font-size: 14px;">Agent Preview</h2>
+              <p style="margin: 2px 0 0; font-size: 12px; color: var(--vs-text-ghost);">MCP tool schema — what AI agents see when they discover this action</p>
+            </div>
+          </div>
+          <svg class="agent-preview-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--vs-text-ghost); transition: transform 0.2s ease; flex-shrink: 0;"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div class="vs-settings-card" style="margin-top: -1px; border-top-left-radius: 0; border-top-right-radius: 0;">
+          ${agentPreviewHtml}
+        </div>
+      </details>
     `;
 
     // ── Toggle switch behavior for existing checkboxes ──
@@ -3779,11 +3874,9 @@ async function loadActionDetail(actionId) {
         const type = row.querySelector('.field-type')?.value || 'text';
         const required = row.querySelector('.field-required')?.checked || false;
 
-        // Name: use existing saved name, or derive from label
-        let name = row.dataset.fieldName || '';
-        if (!name && label) {
-          name = slugifyFieldName(label);
-        }
+        // Name: always derived from current label to stay in sync.
+        // (Field names are hidden from users — they must match the label.)
+        let name = label ? slugifyFieldName(label) : '';
         // Deduplicate
         if (usedNames.has(name)) {
           let i = 2;
@@ -4146,6 +4239,33 @@ async function loadActionDetail(actionId) {
         showToast('Field settings updated', 'success');
       });
     }
+
+    // Bind copy schema
+    document.getElementById('btn-copy-schema')?.addEventListener('click', () => {
+      const json = document.getElementById('agent-schema-json')?.textContent || '';
+      navigator.clipboard.writeText(json).then(() => {
+        showToast('Schema copied', 'success');
+      }).catch(() => {
+        // Fallback for older browsers
+        const ta = document.createElement('textarea');
+        ta.value = json;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        showToast('Schema copied', 'success');
+      });
+    });
+
+    // Bind chevron rotation for Agent Preview <details>
+    document.getElementById('agent-preview-section')?.addEventListener('toggle', (e) => {
+      const chevron = e.target.querySelector('.agent-preview-chevron');
+      if (chevron) {
+        chevron.style.transform = e.target.open ? 'rotate(180deg)' : 'rotate(0)';
+      }
+    });
 
     // Bind toggle active
     document.getElementById('btn-toggle-active')?.addEventListener('click', async () => {

@@ -170,6 +170,15 @@
   // ── Render Bar ──
   function renderBar(manifest) {
     var barSettings = manifest.bar_settings || {};
+    var visibility = barSettings.visibility || 'all-pages';
+
+    // Respect visibility setting
+    if (visibility === 'hidden') return;
+    if (visibility === 'homepage-only') {
+      var path = window.location.pathname.replace(/\/+$/, '') || '/';
+      if (path !== '/' && path !== '/index.php' && path !== '/index.html') return;
+    }
+
     var variant = barSettings.theme || barSettings.position || 'bottom-bar';
     var colorScheme = barSettings.color_scheme || 'light';
     var brandColor = barSettings.brand_color || '';

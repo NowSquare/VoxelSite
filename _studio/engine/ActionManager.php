@@ -38,7 +38,7 @@ class ActionManager
         $studioDir = dirname(__DIR__);
         $root = dirname($studioDir);
         $this->actionsDir    = $actionsDir   ?? $studioDir . '/data/actions';
-        $this->templatesDir  = $studioDir . '/data/action-templates';
+        $this->templatesDir  = $studioDir . '/action-templates';
         $this->dbPath        = $dbPath       ?? $root . '/_data/actions.db';
         $this->siteDataPath  = $siteDataPath ?? $studioDir . '/assets/data/site.json';
     }

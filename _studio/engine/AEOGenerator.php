@@ -231,7 +231,7 @@ class AEOGenerator
             $lines[] = $formsContent;
         }
 
-        // Agent capabilities (from Agentic Builder)
+        // Agent capabilities (from Action Engine)
         $actionsContent = $this->generateLlmsActionsSection();
         if ($actionsContent !== null) {
             $lines[] = $actionsContent;
@@ -1160,7 +1160,7 @@ switch ($method) {
             ];
         }
 
-        // Action-based tools (from Agentic Builder)
+        // Action-based tools (from Action Engine)
         $actionsDir = dirname($_SERVER['DOCUMENT_ROOT'] . '/_studio/data/actions/');
         $studioDir = $_SERVER['DOCUMENT_ROOT'] . '/_studio';
         if (is_dir($studioDir . '/data/actions')) {

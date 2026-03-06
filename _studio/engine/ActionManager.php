@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace VoxelSite;
 
 /**
- * Agentic Builder Engine.
+ * Action Engine.
  *
  * Manages user-defined business actions (reservations, appointments,
  * quotes) that are exposed as MCP tools and human-accessible via the

@@ -72,6 +72,26 @@ let pendingImages = [];
 /** Demo mode flag — read once from the server-rendered data attribute */
 const IS_DEMO = document.documentElement.dataset.demo === 'true';
 
+/** Mobile breakpoint — matches CSS @media (max-width: 767px) */
+const MOBILE_MQ = window.matchMedia('(max-width: 767px)');
+
+/** Check if we're currently on mobile viewport */
+function isMobile() {
+  return MOBILE_MQ.matches;
+}
+
+/** Mobile nav items — content management views that work on mobile */
+const MOBILE_NAV_ITEMS = [
+  { route: 'assets',     label: 'Assets',     icon: 'image' },
+  { route: 'forms',      label: 'Forms',      icon: 'inbox' },
+  { route: 'actions',    label: 'Actions',    icon: 'zap' },
+  { route: 'snapshots',  label: 'Snapshots',  icon: 'camera',  roles: ['owner', 'editor'] },
+  { route: 'more',       label: 'More',       icon: 'ellipsis' },
+];
+
+/** Routes that require desktop/tablet — too complex for mobile */
+const DESKTOP_ONLY_ROUTES = ['chat', 'editor'];
+
 /**
  * Block a write action in demo mode.
  * Shows a warning toast and returns true (blocked), or false (allowed).
@@ -209,7 +229,19 @@ async function init() {
   // suggestions on first render (design actions vs enhancement actions).
   prefetchPagesForContext();
 
+  // Re-render when viewport crosses mobile breakpoint (resize / device rotation)
+  MOBILE_MQ.addEventListener('change', () => {
+    renderApp();
+  });
 
+  // On mobile, redirect default route (chat) to a mobile-friendly page
+  if (isMobile()) {
+    const hash = window.location.hash || '';
+    const path = hash.replace(/^#\/?/, '');
+    if (!path || DESKTOP_ONLY_ROUTES.includes(path)) {
+      window.location.hash = '#/assets';
+    }
+  }
 
   // Start routing
   router.start();
@@ -258,8 +290,13 @@ function renderApp() {
     window.__vsEditorPage = null;
   }
 
+  // On mobile, redirect desktop-only routes to a notice instead of the complex layout
+  const isDesktopOnly = isMobile() && DESKTOP_ONLY_ROUTES.includes(route);
+
   let mainContent;
-  if (route === 'editor') {
+  if (isDesktopOnly) {
+    mainContent = renderDesktopOnlyNotice(route);
+  } else if (route === 'editor') {
     mainContent = renderEditorLayout();
   } else if (isDashboard) {
     mainContent = renderDashboardLayout();
@@ -273,15 +310,18 @@ function renderApp() {
       ${mainContent}
     </div>
     ${renderStatusBar()}
+    ${renderMobileNav()}
+    ${renderMobileMoreSheet()}
     ${renderCommandPalette()}
     ${renderTeamModals()}
     ${renderOnboardingModal()}
   `;
 
   bindAppEvents();
+  bindMobileEvents();
 
   // Initialize editor page after DOM is ready
-  if (route === 'editor') {
+  if (route === 'editor' && !isDesktopOnly) {
     initEditorPage();
   }
 }
@@ -470,7 +510,7 @@ function renderDashboardLayout() {
       </div>
 
       <!-- Preview Panel -->
-      <div class="flex-1 h-full bg-vs-bg-well flex flex-col">
+      <div class="vs-preview-panel-wrapper flex-1 h-full bg-vs-bg-well flex flex-col">
         <!-- Preview Toolbar (aligned with chat header) -->
         <div class="vs-panel-header vs-preview-toolbar">
           <div class="vs-device-toggle">
@@ -502,6 +542,34 @@ function renderDashboardLayout() {
             data-voxelsite-preview
             title="Website preview"></iframe>
         </div>
+      </div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════
+//  Desktop-Only Notice (Mobile fallback)
+// ═══════════════════════════════════════════
+
+function renderDesktopOnlyNotice(route) {
+  const featureName = route === 'editor' ? 'Code Editor' : 'AI Chat';
+  const description = route === 'editor'
+    ? 'The code editor needs a wider screen for the file tree, editor pane, and preview.'
+    : 'The AI conversation and live preview work side-by-side. That needs a wider screen.';
+
+  return `
+    <div class="h-full overflow-y-auto">
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 70vh; text-align: center; padding: 40px 24px;">
+        <div style="width: 64px; height: 64px; border-radius: 18px; background: var(--vs-bg-inset); border: 1px solid var(--vs-border-subtle); display: flex; align-items: center; justify-content: center; margin-bottom: 24px; color: var(--vs-text-ghost);">
+          ${icons.monitor}
+        </div>
+        <h1 style="font-size: 18px; font-weight: 600; color: var(--vs-text-primary); letter-spacing: -0.02em; margin: 0 0 10px;">${featureName}</h1>
+        <p style="font-size: 13px; color: var(--vs-text-tertiary); margin: 0 0 6px; max-width: 280px; line-height: 1.6;">${description}</p>
+        <p style="font-size: 13px; color: var(--vs-text-tertiary); margin: 0 0 28px; max-width: 280px; line-height: 1.6;">Open Studio on a desktop or tablet to use this feature.</p>
+        <a href="#/assets" style="font-size: 13px; font-weight: 500; color: var(--vs-accent); text-decoration: none; padding: 8px 16px; border: 1px solid var(--vs-border-subtle); border-radius: var(--radius-lg); transition: all 150ms ease;"
+           onmouseover="this.style.borderColor='var(--vs-accent)'" onmouseout="this.style.borderColor='var(--vs-border-subtle)'">
+          Browse Assets
+        </a>
       </div>
     </div>
   `;
@@ -5393,6 +5461,185 @@ function renderStatusBar() {
       </div>
     </footer>
   `;
+}
+
+// ═══════════════════════════════════════════
+//  Mobile Navigation (Bottom Nav)
+// ═══════════════════════════════════════════
+
+function renderMobileNav() {
+  const route = store.get('route');
+  const user = store.get('user');
+  const role = user?.role;
+
+  const navHtml = MOBILE_NAV_ITEMS
+    .filter(item => {
+      // Role-based visibility
+      if (item.roles && !item.roles.includes(role)) return false;
+      return true;
+    })
+    .map(item => {
+    // "More" is a special handler, not a route link
+    if (item.route === 'more') {
+      return `
+        <button class="vs-mobile-nav-item" id="btn-mobile-more" aria-label="More">
+          ${icons[item.icon] || icons.layoutGrid}
+          <span>${item.label}</span>
+        </button>
+      `;
+    }
+
+    const isActive = route === item.route || route.startsWith(item.route + '/');
+    return `
+      <a href="#/${item.route}"
+         class="vs-mobile-nav-item ${isActive ? 'vs-mobile-nav-item-active' : ''}"
+         aria-label="${item.label}">
+        ${icons[item.icon] || icons.layoutGrid}
+        <span>${item.label}</span>
+      </a>
+    `;
+  }).join('');
+
+  return `
+    <nav class="vs-mobile-nav" aria-label="Mobile navigation">
+      ${navHtml}
+    </nav>
+  `;
+}
+
+function renderMobileMoreSheet() {
+  const user = store.get('user');
+  const role = user?.role;
+  const theme = store.get('theme');
+
+  // Items not in the bottom nav
+  let overflowHtml = '';
+
+  if (role === 'owner') {
+    overflowHtml += `
+      <a href="#/settings" class="vs-mobile-more-item" data-mobile-more-nav>
+        ${icons.settings} Settings
+      </a>
+    `;
+  }
+
+  overflowHtml += `
+    <a href="#/profile" class="vs-mobile-more-item" data-mobile-more-nav>
+      ${icons.pencil} Edit Profile
+    </a>
+  `;
+
+  if (role === 'owner') {
+    overflowHtml += `
+      <a href="#/team" class="vs-mobile-more-item" data-mobile-more-nav>
+        ${icons.users} Team Members
+      </a>
+    `;
+  }
+
+  overflowHtml += `
+    <div class="vs-mobile-more-divider"></div>
+    <button id="btn-mobile-theme" class="vs-mobile-more-item">
+      ${theme === 'dark' ? icons.sun : icons.moon}
+      ${theme === 'dark' ? 'Light mode' : 'Dark mode'}
+    </button>
+    <div class="vs-mobile-more-divider"></div>
+    <button id="btn-mobile-publish" class="vs-mobile-more-item" style="color: var(--vs-accent); font-weight: 600;">
+      ${icons.publish} Publish
+    </button>
+    <button id="btn-mobile-download" class="vs-mobile-more-item">
+      ${icons.download} Download
+    </button>
+    <div class="vs-mobile-more-divider"></div>
+    <button id="btn-mobile-logout" class="vs-mobile-more-item" style="color: var(--vs-error);">
+      ${icons.logOut} Sign Out
+    </button>
+  `;
+
+  return `
+    <div id="mobile-more-sheet" class="vs-mobile-more-sheet">
+      <div class="vs-mobile-more-backdrop" id="mobile-more-backdrop"></div>
+      <div class="vs-mobile-more-content">
+        <div class="vs-mobile-more-header">
+          <span class="vs-mobile-more-title">${escapeHtml(user?.name || 'Menu')}</span>
+          <button id="btn-mobile-more-close" class="vs-mobile-more-close">${icons.x}</button>
+        </div>
+        ${overflowHtml}
+      </div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════
+//  Mobile Event Bindings
+// ═══════════════════════════════════════════
+
+function bindMobileEvents() {
+  if (!isMobile()) return;
+
+  // ── More Sheet: Open / Close ──
+  const moreBtn = document.getElementById('btn-mobile-more');
+  const moreSheet = document.getElementById('mobile-more-sheet');
+  const moreBackdrop = document.getElementById('mobile-more-backdrop');
+  const moreClose = document.getElementById('btn-mobile-more-close');
+
+  function openMoreSheet() {
+    moreSheet?.classList.add('vs-sheet-open');
+  }
+  function closeMoreSheet() {
+    moreSheet?.classList.remove('vs-sheet-open');
+  }
+
+  if (moreBtn) moreBtn.addEventListener('click', openMoreSheet);
+  if (moreBackdrop) moreBackdrop.addEventListener('click', closeMoreSheet);
+  if (moreClose) moreClose.addEventListener('click', closeMoreSheet);
+
+  // Close sheet when a nav link is clicked
+  document.querySelectorAll('[data-mobile-more-nav]').forEach(link => {
+    link.addEventListener('click', closeMoreSheet);
+  });
+
+  // ── More Sheet: Theme Toggle ──
+  const mobileThemeBtn = document.getElementById('btn-mobile-theme');
+  if (mobileThemeBtn) {
+    mobileThemeBtn.addEventListener('click', () => {
+      toggleTheme();
+      closeMoreSheet();
+      renderApp(); // Re-render to update icons
+    });
+  }
+
+  // ── More Sheet: Publish ──
+  const mobilePublishBtn = document.getElementById('btn-mobile-publish');
+  if (mobilePublishBtn) {
+    mobilePublishBtn.addEventListener('click', () => {
+      closeMoreSheet();
+      if (demoGuard()) return;
+      // Trigger the publish button (it's in the status bar DOM, just hidden on mobile)
+      document.getElementById('btn-publish')?.click();
+    });
+  }
+
+  // ── More Sheet: Download ──
+  const mobileDownloadBtn = document.getElementById('btn-mobile-download');
+  if (mobileDownloadBtn) {
+    mobileDownloadBtn.addEventListener('click', () => {
+      closeMoreSheet();
+      if (demoGuard()) return;
+      openDownloadModal();
+    });
+  }
+
+  // ── More Sheet: Sign Out ──
+  const mobileLogoutBtn = document.getElementById('btn-mobile-logout');
+  if (mobileLogoutBtn) {
+    mobileLogoutBtn.addEventListener('click', async () => {
+      closeMoreSheet();
+      await api.post('/auth/logout');
+      store.set('user', null);
+      window.location.reload();
+    });
+  }
 }
 
 // ═══════════════════════════════════════════

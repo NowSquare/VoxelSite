@@ -6963,3 +6963,431 @@ select.vs-input {
   animation: voxel-lift 1.5s ease-in-out infinite;
   transform-origin: center;
 }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE — Phase 1-4
+   Breakpoints:
+     ≤ 767px  → Mobile (single-panel, bottom nav)
+     768–1023 → Tablet (narrower panels, condensed controls)
+     ≥ 1024   → Desktop (no changes)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Mobile Bottom Navigation ── */
+
+.vs-mobile-nav {
+  display: none; /* hidden on desktop */
+}
+
+@keyframes vs-mobile-slide-up {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Mobile More Menu (bottom sheet) ── */
+
+.vs-mobile-more-sheet {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+
+.vs-mobile-more-sheet.vs-sheet-open {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.vs-mobile-more-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  animation: fade-in 200ms ease both;
+}
+
+.vs-mobile-more-content {
+  position: relative;
+  z-index: 1;
+  background: var(--vs-bg-surface);
+  border-top: 1px solid var(--vs-border-subtle);
+  border-radius: 16px 16px 0 0;
+  padding: 8px 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  max-height: 70vh;
+  overflow-y: auto;
+  animation: vs-mobile-slide-up 250ms var(--ease-out) both;
+}
+
+.vs-mobile-more-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px 8px;
+  border-bottom: 1px solid var(--vs-border-subtle);
+  margin-bottom: 4px;
+}
+
+.vs-mobile-more-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vs-text-primary);
+  letter-spacing: -0.01em;
+}
+
+.vs-mobile-more-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--vs-text-tertiary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.vs-mobile-more-close:hover {
+  background: var(--vs-bg-hover);
+  color: var(--vs-text-primary);
+}
+
+.vs-mobile-more-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--vs-text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: left;
+  transition: background 150ms ease;
+  min-height: 48px;
+}
+
+.vs-mobile-more-item:hover,
+.vs-mobile-more-item:active {
+  background: var(--vs-bg-hover);
+  color: var(--vs-text-primary);
+}
+
+.vs-mobile-more-item svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.vs-mobile-more-divider {
+  height: 1px;
+  background: var(--vs-border-subtle);
+  margin: 4px 16px;
+}
+
+
+/* ═══════════════════════════════════════════
+   MOBILE BREAKPOINT — ≤ 767px
+   ═══════════════════════════════════════════ */
+
+@media (max-width: 767px) {
+
+  /* ── Top Bar: Slim down ── */
+  .vs-topbar {
+    height: 44px;
+  }
+
+  .vs-topbar-inner {
+    padding: 0 12px;
+  }
+
+  /* Hide desktop nav items — they move to bottom nav */
+  .vs-topbar-inner nav[aria-label="Studio navigation"] {
+    display: none;
+  }
+
+  /* Demo badge: compact */
+  .vs-demo-badge {
+    font-size: 9px;
+    padding: 2px 6px;
+  }
+
+  /* Hide Prompts button on mobile */
+  #btn-command-palette {
+    display: none !important;
+  }
+
+  /* Logo: icon only, no text */
+  .vs-logo {
+    margin-right: 8px;
+  }
+
+  .vs-logo-text {
+    display: none !important;
+  }
+
+  /* ── Status Bar: Hide on mobile ── */
+  .vs-statusbar {
+    display: none;
+  }
+
+  /* ── Bottom Navigation: Show ── */
+  .vs-mobile-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    z-index: 100;
+    background: var(--vs-bg-surface);
+    border-top: 1px solid var(--vs-border-subtle);
+    align-items: stretch;
+    padding: 0 4px;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .vs-mobile-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+    padding: 6px 2px;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--vs-text-ghost);
+    text-decoration: none;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    transition: color 150ms ease;
+    -webkit-tap-highlight-color: transparent;
+    position: relative;
+  }
+
+  .vs-mobile-nav-item svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
+  .vs-mobile-nav-item span {
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .vs-mobile-nav-item-active {
+    color: var(--vs-accent);
+  }
+
+  .vs-mobile-nav-item-active::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 24px;
+    height: 2px;
+    background: var(--vs-accent);
+    border-radius: 0 0 2px 2px;
+  }
+
+  /* ── Main Content Area: Adjust for mobile nav ── */
+  /* Override the fixed positioning to account for slim topbar + bottom nav instead of status bar */
+  #app > .fixed {
+    top: 44px !important;
+    bottom: 60px !important;
+    /* Add safe area bottom */
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* ── Content Layout: Full-width on mobile ── */
+  .mx-auto.px-6.py-8 {
+    padding: 16px 14px !important;
+  }
+
+  /* ── Empty State: Compact ── */
+  .vs-empty-state {
+    padding: 32px 18px;
+  }
+
+  .vs-empty-title {
+    font-size: 16px;
+  }
+
+  .vs-empty-description {
+    font-size: 12px;
+  }
+
+  /* ── Settings Cards: Full-width ── */
+  .vs-settings-card {
+    margin-left: -4px;
+    margin-right: -4px;
+  }
+
+  /* ── Modals: Full-width on mobile ── */
+  .vs-modal-card,
+  .vs-publish-confirm-card {
+    width: calc(100vw - 24px) !important;
+    max-width: none !important;
+    border-radius: 16px;
+  }
+
+  /* Code editor modal: near full-screen */
+  #vs-code-editor-overlay > div:last-child {
+    width: calc(100vw - 16px) !important;
+    height: calc(100vh - 60px) !important;
+    max-width: none !important;
+    margin: 8px;
+  }
+
+  /* ── Dropdowns: Larger touch targets ── */
+  .vs-dropdown-item {
+    min-height: 44px;
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+
+  /* ── Scope Selector Modal: Full-width ── */
+  #scope-modal {
+    width: calc(100vw - 24px) !important;
+  }
+
+  /* ── Conversation History: Compact ── */
+  #conversation-history-panel {
+    max-height: 240px !important;
+  }
+
+  /* ── Image Attachments: Always show remove buttons (no hover on touch) ── */
+  .vs-image-thumb-remove {
+    opacity: 1;
+  }
+
+  /* ── Assets Grid: 2 columns ── */
+  .vs-assets-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  /* ── Timeline (Snapshots): Tighter ── */
+  .vs-timeline-rail {
+    width: 32px;
+  }
+
+  .vs-timeline::before {
+    left: 15px;
+  }
+
+  .vs-timeline-card {
+    padding: 12px 14px;
+    margin-left: 6px;
+  }
+
+  .vs-timeline-card::before {
+    left: -19px;
+    width: 19px;
+  }
+
+  /* ── Tables: Horizontal scroll ── */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ── KBD: Hide keyboard shortcuts on mobile ── */
+  .vs-kbd {
+    display: none;
+  }
+
+  /* ── Command Palette: Full-width ── */
+  #command-palette > div:nth-child(2) {
+    width: calc(100vw - 16px) !important;
+    top: 8vh !important;
+  }
+
+  /* ── Download modal: full-width ── */
+  .vs-download-modal {
+    width: calc(100vw - 24px) !important;
+    max-width: none !important;
+  }
+
+  /* ── Forms Detail: Stack ── */
+  .vs-form-detail-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Code blocks in chat: smaller text ── */
+  .vs-code-block pre {
+    font-size: 11px;
+  }
+
+}
+
+
+/* ═══════════════════════════════════════════
+   TABLET BREAKPOINT — 768–1023px
+   ═══════════════════════════════════════════ */
+
+@media (min-width: 768px) and (max-width: 1023px) {
+
+  /* ── Conversation Panel: Narrower default ── */
+  #conversation-panel {
+    min-width: 300px !important;
+    max-width: 400px !important;
+  }
+
+  /* ── Status Bar: Compact ── */
+  .vs-statusbar {
+    padding: 0 12px;
+    font-size: 10px;
+  }
+
+  /* Hide text labels in status bar buttons */
+  .vs-statusbar .vs-btn-xs {
+    font-size: 0;
+    gap: 0;
+    padding: 4px 6px;
+  }
+
+  .vs-statusbar .vs-btn-xs svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* Keep Publish text visible */
+  #btn-publish {
+    font-size: var(--text-2xs) !important;
+  }
+
+  /* ── Preview Toolbar: Icon-only for device buttons ── */
+  .vs-device-btn {
+    padding: 5px 8px;
+  }
+
+  /* ── Nav Items: Tighter spacing ── */
+  .vs-nav-item {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  /* ── Content Layout: Tighter padding ── */
+  .mx-auto.px-6.py-8 {
+    padding: 20px 16px !important;
+  }
+
+  /* ── Preview Frame: Less margin ── */
+  .vs-preview-frame {
+    margin: 10px 12px 12px 12px !important;
+  }
+}

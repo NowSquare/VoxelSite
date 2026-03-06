@@ -65,6 +65,9 @@ _studio/data/promptsite.db-journal
 _studio/data/actions/*
 !_studio/data/actions/.gitkeep
 
+# Actions Bar site-specific config (generated at runtime)
+_studio/assets/
+
 # Collection data (items and schemas in subdirectories)
 _studio/data/collections/*
 !_studio/data/collections/_schema/

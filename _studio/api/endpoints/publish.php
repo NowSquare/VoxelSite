@@ -133,10 +133,15 @@ if ($method === 'POST' && $path === '/publish') {
         }
     }
 
+    // Snapshot current asset file hashes so the diff endpoint can detect
+    // unpublished CSS/JS/JSON changes (assets are shared, not staged).
+    $assetHashes = collectAssetHashes($assetsDir);
+
     // Persist manifest of files under publish management.
     saveJsonFile($manifestPath, [
-        'files'      => $previewFiles,
-        'updated_at' => now(),
+        'files'        => $previewFiles,
+        'asset_hashes' => $assetHashes,
+        'updated_at'   => now(),
     ]);
 
     if (empty($published) && empty($removed)) {
@@ -388,8 +393,9 @@ if ($method === 'POST' && $path === '/publish/rollback') {
 
     // Refresh publish manifest to match restored preview state.
     saveJsonFile($manifestPath, [
-        'files'      => collectPreviewPublishFiles($previewDir),
-        'updated_at' => now(),
+        'files'        => collectPreviewPublishFiles($previewDir),
+        'asset_hashes' => collectAssetHashes($assetsDir),
+        'updated_at'   => now(),
     ]);
 
     jsonResponse(['ok' => true, 'data' => [
@@ -475,7 +481,7 @@ if ($method === 'POST' && $path === '/publish/unpublish') {
 
     // ── Step 5: Clear publish state ──
     $settings->set('last_published_at', '');
-    saveJsonFile($manifestPath, ['files' => [], 'updated_at' => now()]);
+    saveJsonFile($manifestPath, ['files' => [], 'asset_hashes' => [], 'updated_at' => now()]);
 
     Logger::info('system', 'Site unpublished', [
         'removed'  => $removed,
@@ -652,6 +658,64 @@ function collectPreviewPublishFiles(string $previewDir): array
     sort($files);
 
     return $files;
+}
+
+/**
+ * Collect SHA-256 hashes of editable asset files (CSS, JS, JSON).
+ *
+ * Assets are shared between preview and production — there is no staging
+ * copy. To detect "unpublished" asset changes, we snapshot hashes at
+ * publish time and compare against current hashes in the diff endpoint.
+ *
+ * @return array<string, string>  Relative path => SHA-256 hash
+ */
+function collectAssetHashes(string $assetsDir): array
+{
+    $hashes = [];
+    $subdirs = ['css', 'js', 'data'];
+
+    foreach ($subdirs as $subdir) {
+        $dir = $assetsDir . '/' . $subdir;
+        if (!is_dir($dir)) {
+            continue;
+        }
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::LEAVES_ONLY
+        );
+
+        foreach ($iterator as $file) {
+            if (!$file->isFile()) {
+                continue;
+            }
+
+            $name = $file->getFilename();
+            // Skip dotfiles (.gitkeep, .DS_Store, etc.)
+            if (str_starts_with($name, '.')) {
+                continue;
+            }
+
+            // Only include editable asset types
+            $ext = strtolower($file->getExtension());
+            if (!in_array($ext, ['css', 'js', 'json'], true)) {
+                continue;
+            }
+
+            $relativePath = 'assets/' . $subdir . '/' . ltrim(
+                str_replace('\\', '/', substr($file->getPathname(), strlen($dir))),
+                '/'
+            );
+
+            $hash = @hash_file('sha256', $file->getPathname());
+            if ($hash !== false) {
+                $hashes[$relativePath] = $hash;
+            }
+        }
+    }
+
+    ksort($hashes);
+    return $hashes;
 }
 
 function copyFileAtomic(string $sourcePath, string $targetPath): bool

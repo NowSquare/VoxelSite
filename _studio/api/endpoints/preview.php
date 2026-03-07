@@ -187,6 +187,7 @@ if ($method === 'GET' && $path === '/preview/diff') {
     $studioDir = dirname(__DIR__, 2);
     $previewDir = $studioDir . '/preview';
     $docRoot = dirname($studioDir);
+    $assetsDir = $docRoot . '/assets';
     $manifestPath = $studioDir . '/data/published-manifest.json';
 
     $previewFiles = collectManagedPreviewFiles($previewDir);
@@ -234,6 +235,53 @@ if ($method === 'GET' && $path === '/preview/diff') {
                     'type' => 'modified',
                     'preview_size' => filesize($previewPath) ?: 0,
                     'production_size' => filesize($productionPath) ?: 0,
+                ];
+            }
+        }
+    }
+
+    // ── Asset file diff (CSS/JS/JSON) ──
+    // Assets are shared — no preview/production separation. Compare
+    // current file hashes against hashes stored at the last publish.
+    $publishedAssetHashes = is_array($manifest['asset_hashes'] ?? null)
+        ? $manifest['asset_hashes']
+        : [];
+
+    if (!empty($publishedAssetHashes)) {
+        $currentAssetHashes = collectCurrentAssetHashes($assetsDir);
+
+        // Files modified or added since last publish
+        foreach ($currentAssetHashes as $assetPath => $currentHash) {
+            if (isset($publishedAssetHashes[$assetPath])) {
+                if ($currentHash !== $publishedAssetHashes[$assetPath]) {
+                    $fullPath = $docRoot . '/' . $assetPath;
+                    $changes[] = [
+                        'path' => $assetPath,
+                        'type' => 'modified',
+                        'preview_size' => file_exists($fullPath) ? (filesize($fullPath) ?: 0) : 0,
+                        'production_size' => file_exists($fullPath) ? (filesize($fullPath) ?: 0) : 0,
+                    ];
+                }
+            } else {
+                // New asset file not present at last publish
+                $fullPath = $docRoot . '/' . $assetPath;
+                $changes[] = [
+                    'path' => $assetPath,
+                    'type' => 'added',
+                    'preview_size' => file_exists($fullPath) ? (filesize($fullPath) ?: 0) : 0,
+                    'production_size' => 0,
+                ];
+            }
+        }
+
+        // Files that existed at publish but have been deleted
+        foreach ($publishedAssetHashes as $assetPath => $publishedHash) {
+            if (!isset($currentAssetHashes[$assetPath])) {
+                $changes[] = [
+                    'path' => $assetPath,
+                    'type' => 'deleted',
+                    'preview_size' => 0,
+                    'production_size' => 0,
                 ];
             }
         }
@@ -387,6 +435,60 @@ function loadJsonSafe(string $path, array $fallback): array
 
     $decoded = json_decode($raw, true);
     return is_array($decoded) ? $decoded : $fallback;
+}
+
+/**
+ * Collect SHA-256 hashes of current editable asset files (CSS, JS, JSON).
+ *
+ * Used by the diff endpoint to compare against hashes stored at publish time.
+ *
+ * @return array<string, string>  Relative path => SHA-256 hash
+ */
+function collectCurrentAssetHashes(string $assetsDir): array
+{
+    $hashes = [];
+    $subdirs = ['css', 'js', 'data'];
+
+    foreach ($subdirs as $subdir) {
+        $dir = $assetsDir . '/' . $subdir;
+        if (!is_dir($dir)) {
+            continue;
+        }
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::LEAVES_ONLY
+        );
+
+        foreach ($iterator as $file) {
+            if (!$file->isFile()) {
+                continue;
+            }
+
+            $name = $file->getFilename();
+            if (str_starts_with($name, '.')) {
+                continue;
+            }
+
+            $ext = strtolower($file->getExtension());
+            if (!in_array($ext, ['css', 'js', 'json'], true)) {
+                continue;
+            }
+
+            $relativePath = 'assets/' . $subdir . '/' . ltrim(
+                str_replace('\\', '/', substr($file->getPathname(), strlen($dir))),
+                '/'
+            );
+
+            $hash = @hash_file('sha256', $file->getPathname());
+            if ($hash !== false) {
+                $hashes[$relativePath] = $hash;
+            }
+        }
+    }
+
+    ksort($hashes);
+    return $hashes;
 }
 
 /**

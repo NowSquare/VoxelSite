@@ -25,6 +25,7 @@ class ActionManager
     private string $templatesDir;
     private string $dbPath;
     private string $siteDataPath;
+    private string $uploadsDir;
     private ?\PDO $db = null;
 
     /** @var array<string, array> Cache of loaded action definitions */
@@ -41,6 +42,7 @@ class ActionManager
         $this->templatesDir  = $studioDir . '/action-templates';
         $this->dbPath        = $dbPath       ?? $root . '/_data/actions.db';
         $this->siteDataPath  = $siteDataPath ?? $studioDir . '/assets/data/site.json';
+        $this->uploadsDir    = $root . '/_data/uploads/actions';
     }
 
     // ══════════════════════════════════════════════
@@ -68,6 +70,11 @@ class ActionManager
             $properties = [];
             $required = [];
             foreach ($action['fields'] ?? [] as $field) {
+                // File fields are not supported via MCP — skip entirely
+                if (($field['type'] ?? 'text') === 'file') {
+                    continue;
+                }
+
                 $prop = ['type' => $this->fieldTypeToJsonSchemaType($field['type'])];
                 if (!empty($field['description'])) {
                     $prop['description'] = $field['description'];
@@ -228,6 +235,17 @@ class ActionManager
         $data = [];
         foreach ($action['fields'] ?? [] as $field) {
             $name = $field['name'];
+            $type = $field['type'] ?? 'text';
+
+            // File fields: process upload from $_FILES, not from $input
+            if ($type === 'file') {
+                $fileResult = $this->processFileUpload($field, $action['id']);
+                if ($fileResult !== null) {
+                    $data[$name] = $fileResult;
+                }
+                continue;
+            }
+
             if (array_key_exists($name, $input)) {
                 $data[$name] = $input[$name];
             }
@@ -713,6 +731,19 @@ class ActionManager
                         $errors[] = "{$label} must be checked.";
                     }
                     break;
+
+                case 'file':
+                    // File validation happens in processFileUpload() during data extraction.
+                    // Here we only check the required constraint against $_FILES.
+                    if (($field['required'] ?? false)) {
+                        $filePresent = isset($_FILES[$name])
+                            && $_FILES[$name]['error'] !== UPLOAD_ERR_NO_FILE
+                            && $_FILES[$name]['error'] === UPLOAD_ERR_OK;
+                        if (!$filePresent) {
+                            $errors[] = "{$label} is required.";
+                        }
+                    }
+                    break;
             }
 
             // Min length
@@ -727,6 +758,272 @@ class ActionManager
         }
 
         return $errors;
+    }
+
+    // ══════════════════════════════════════════════
+    //  File Upload Processing
+    // ══════════════════════════════════════════════
+
+    /** @var string[] Default allowed extensions when none configured */
+    private const DEFAULT_ALLOWED_EXTENSIONS = [
+        'pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp',
+        'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'zip',
+    ];
+
+    /** @var int Maximum allowed file size in bytes (50 MB hard cap) */
+    private const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+
+    /**
+     * Known magic bytes for common file types.
+     * Maps binary prefix → list of allowed extensions.
+     * Used to reject files whose content doesn't match their extension.
+     */
+    private const MAGIC_BYTES = [
+        "\xFF\xD8\xFF"          => ['jpg', 'jpeg'],       // JPEG
+        "\x89PNG\r\n\x1A\n"    => ['png'],               // PNG
+        "GIF87a"               => ['gif'],               // GIF87
+        "GIF89a"               => ['gif'],               // GIF89
+        "RIFF"                 => ['webp'],              // WebP (RIFF container)
+        "%PDF"                 => ['pdf'],               // PDF
+        "PK\x03\x04"           => ['zip', 'docx', 'xlsx', 'pptx'],  // ZIP / Office Open XML
+        // RAR signature
+        "Rar!\x1A\x07"        => ['rar'],
+    ];
+
+    /**
+     * Extensions that are always blocked, regardless of configuration.
+     * These are executable or script types that should never be uploaded
+     * to a shared hosting environment.
+     */
+    private const BLOCKED_EXTENSIONS = [
+        'php', 'php3', 'php4', 'php5', 'php7', 'php8', 'phtml', 'phar',
+        'exe', 'bat', 'cmd', 'com', 'msi', 'scr', 'pif',
+        'sh', 'bash', 'csh', 'ksh', 'zsh',
+        'pl', 'py', 'rb', 'cgi',
+        'asp', 'aspx', 'jsp', 'jspx',
+        'htaccess', 'htpasswd',
+        'svg',  // SVG can contain JavaScript — block by default
+    ];
+
+    /**
+     * Process a file upload for a file-type field.
+     *
+     * Validates extension, size, and magic bytes. Moves the file to
+     * _data/uploads/actions/{action_id}/ with a safe random filename.
+     *
+     * @return array|null Structured file data on success, null if no file provided
+     */
+    private function processFileUpload(array $field, string $actionId): ?array
+    {
+        $name = $field['name'];
+
+        // No file uploaded for this field
+        if (!isset($_FILES[$name]) || $_FILES[$name]['error'] === UPLOAD_ERR_NO_FILE) {
+            return null;
+        }
+
+        $file = $_FILES[$name];
+
+        // PHP upload error
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            Logger::warning('actions', 'File upload PHP error', [
+                'field' => $name,
+                'error_code' => $file['error'],
+                'action_id' => $actionId,
+            ]);
+            return null;
+        }
+
+        $originalName = basename($file['name']);
+        $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+
+        // Block dangerous extensions (hard block, not configurable)
+        if (in_array($ext, self::BLOCKED_EXTENSIONS, true)) {
+            Logger::warning('actions', 'Blocked dangerous file extension', [
+                'field' => $name,
+                'extension' => $ext,
+                'original_name' => $originalName,
+                'action_id' => $actionId,
+            ]);
+            return null;
+        }
+
+        // Extension whitelist check
+        $allowed = $field['allowed_extensions'] ?? self::DEFAULT_ALLOWED_EXTENSIONS;
+        $allowed = array_map('strtolower', $allowed);
+        if (!in_array($ext, $allowed, true)) {
+            Logger::warning('actions', 'File extension not in allowed list', [
+                'field' => $name,
+                'extension' => $ext,
+                'allowed' => $allowed,
+                'action_id' => $actionId,
+            ]);
+            return null;
+        }
+
+        // Size check
+        $maxMb = $field['max_size_mb'] ?? 10;
+        $maxBytes = min($maxMb * 1024 * 1024, self::MAX_FILE_SIZE_BYTES);
+        if ($file['size'] > $maxBytes) {
+            Logger::warning('actions', 'File too large', [
+                'field' => $name,
+                'size' => $file['size'],
+                'max_bytes' => $maxBytes,
+                'action_id' => $actionId,
+            ]);
+            return null;
+        }
+
+        // Magic bytes validation — reject content/extension mismatches
+        if (!$this->validateFileMagicBytes($file['tmp_name'], $ext)) {
+            Logger::warning('actions', 'File magic bytes mismatch', [
+                'field' => $name,
+                'extension' => $ext,
+                'original_name' => $originalName,
+                'action_id' => $actionId,
+            ]);
+            return null;
+        }
+
+        // Ensure upload directory exists with .htaccess protection
+        $actionUploadsDir = $this->uploadsDir . '/' . preg_replace('/[^a-z0-9_-]/', '', $actionId);
+        if (!is_dir($actionUploadsDir)) {
+            mkdir($actionUploadsDir, 0755, true);
+        }
+        $htaccess = $this->uploadsDir . '/.htaccess';
+        if (!file_exists($htaccess)) {
+            file_put_contents($htaccess, "Order deny,allow\nDeny from all\n");
+        }
+
+        // Generate safe filename
+        $safeFilename = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+        $destPath = $actionUploadsDir . '/' . $safeFilename;
+
+        if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+            Logger::error('actions', 'Failed to move uploaded file', [
+                'field' => $name,
+                'dest' => $destPath,
+                'action_id' => $actionId,
+            ]);
+            return null;
+        }
+
+        Logger::info('actions', 'File uploaded', [
+            'field' => $name,
+            'path' => $destPath,
+            'original_name' => $originalName,
+            'size' => $file['size'],
+            'action_id' => $actionId,
+        ]);
+
+        // Determine MIME type from extension (don't trust browser-reported type)
+        $mimeType = $this->extensionToMimeType($ext);
+
+        return [
+            'path' => '_data/uploads/actions/' . preg_replace('/[^a-z0-9_-]/', '', $actionId) . '/' . $safeFilename,
+            'original_name' => $originalName,
+            'size' => $file['size'],
+            'mime_type' => $mimeType,
+        ];
+    }
+
+    /**
+     * Validate that a file's magic bytes match its declared extension.
+     *
+     * For known file types (JPEG, PNG, GIF, PDF, ZIP/Office, WebP, RAR),
+     * reads the first 8 bytes and checks against known signatures.
+     * Unknown types pass through — we only block mismatches, not unknowns.
+     */
+    private function validateFileMagicBytes(string $filePath, string $extension): bool
+    {
+        $header = @file_get_contents($filePath, false, null, 0, 8);
+        if ($header === false || strlen($header) < 4) {
+            return false; // Cannot read file — reject
+        }
+
+        // Check each known signature
+        foreach (self::MAGIC_BYTES as $signature => $validExtensions) {
+            if (str_starts_with($header, $signature)) {
+                // We found a match for the binary content.
+                // The extension must be in the valid list for this signature.
+                return in_array($extension, $validExtensions, true);
+            }
+        }
+
+        // No known signature matched — allow the file through.
+        // We only block KNOWN mismatches (e.g., PHP script pretending to be JPEG).
+        // Unknown types (TXT, CSV, DOC binary) pass through.
+        //
+        // Extra safety: check for PHP/script markers in text-like files
+        $textExtensions = ['txt', 'csv', 'json', 'xml', 'html', 'htm', 'css', 'js'];
+        if (in_array($extension, $textExtensions, true)) {
+            $content = @file_get_contents($filePath, false, null, 0, 4096);
+            if ($content !== false) {
+                // Block files containing PHP open tags or shebangs
+                if (str_contains($content, '<?php') || str_contains($content, '<?=') || str_starts_with(trim($content), '#!/')) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Map file extension to MIME type.
+     * Used instead of trusting browser-reported Content-Type.
+     */
+    private function extensionToMimeType(string $ext): string
+    {
+        return match ($ext) {
+            'pdf'  => 'application/pdf',
+            'jpg', 'jpeg' => 'image/jpeg',
+            'png'  => 'image/png',
+            'gif'  => 'image/gif',
+            'webp' => 'image/webp',
+            'doc'  => 'application/msword',
+            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'xls'  => 'application/vnd.ms-excel',
+            'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'csv'  => 'text/csv',
+            'txt'  => 'text/plain',
+            'zip'  => 'application/zip',
+            'rar'  => 'application/x-rar-compressed',
+            default => 'application/octet-stream',
+        };
+    }
+
+    /**
+     * Get the absolute filesystem path for a stored upload.
+     * Returns null if the path looks suspicious or file doesn't exist.
+     */
+    public function getUploadAbsolutePath(string $relativePath): ?string
+    {
+        // Prevent directory traversal
+        if (str_contains($relativePath, '..') || str_starts_with($relativePath, '/')) {
+            return null;
+        }
+
+        // Must be within _data/uploads/actions/
+        if (!str_starts_with($relativePath, '_data/uploads/actions/')) {
+            return null;
+        }
+
+        $root = dirname(dirname(__DIR__));
+        $absPath = $root . '/' . $relativePath;
+
+        if (!file_exists($absPath) || !is_file($absPath)) {
+            return null;
+        }
+
+        // Verify the resolved path is actually within our uploads directory
+        $realPath = realpath($absPath);
+        $realUploadsDir = realpath($this->uploadsDir);
+        if ($realPath === false || $realUploadsDir === false || !str_starts_with($realPath, $realUploadsDir)) {
+            return null;
+        }
+
+        return $realPath;
     }
 
     // ══════════════════════════════════════════════
@@ -982,10 +1279,15 @@ class ActionManager
 
         foreach ($records as $record) {
             $row = [$record['confirmation_code']];
-            foreach ($fieldNames as $name) {
+            foreach ($fieldNames as $idx => $name) {
                 $value = $record['data'][$name] ?? '';
                 if (is_array($value)) {
-                    $value = implode(', ', $value);
+                    // File fields store structured data — show original filename
+                    if (isset($value['original_name'])) {
+                        $value = $value['original_name'];
+                    } else {
+                        $value = implode(', ', $value);
+                    }
                 }
                 $row[] = $value;
             }
@@ -1009,17 +1311,44 @@ class ActionManager
 
     /**
      * Purge records older than N days.
+     * Also deletes any associated uploaded files from disk.
      */
     public function purgeOldRecords(string $actionId, int $olderThanDays): int
     {
         $cutoff = date('c', time() - ($olderThanDays * 86400));
+        $db = $this->db();
 
-        $stmt = $this->db()->prepare(
+        // Collect file paths from records about to be deleted
+        $selectStmt = $db->prepare(
+            'SELECT data FROM action_records WHERE action_id = ? AND created_at < ?'
+        );
+        $selectStmt->execute([$actionId, $cutoff]);
+        $rows = $selectStmt->fetchAll(\PDO::FETCH_COLUMN);
+
+        // Delete the records
+        $deleteStmt = $db->prepare(
             'DELETE FROM action_records WHERE action_id = ? AND created_at < ?'
         );
-        $stmt->execute([$actionId, $cutoff]);
+        $deleteStmt->execute([$actionId, $cutoff]);
+        $deletedCount = $deleteStmt->rowCount();
 
-        return $stmt->rowCount();
+        // Clean up uploaded files from purged records
+        $root = dirname(dirname(__DIR__));
+        foreach ($rows as $dataJson) {
+            $data = json_decode($dataJson, true);
+            if (!is_array($data)) continue;
+
+            foreach ($data as $value) {
+                if (is_array($value) && isset($value['path']) && str_starts_with($value['path'], '_data/uploads/actions/')) {
+                    $filePath = $root . '/' . $value['path'];
+                    if (file_exists($filePath) && is_file($filePath)) {
+                        @unlink($filePath);
+                    }
+                }
+            }
+        }
+
+        return $deletedCount;
     }
 
     // ══════════════════════════════════════════════
@@ -1261,7 +1590,7 @@ class ActionManager
         if (empty($definition['fields']) || !is_array($definition['fields'])) {
             $errors[] = 'At least one field is required.';
         } else {
-            $allowedTypes = ['text', 'email', 'number', 'select', 'date', 'textarea', 'tel', 'url', 'checkbox', 'radio', 'multiselect', 'time', 'hidden'];
+            $allowedTypes = ['text', 'email', 'number', 'select', 'date', 'textarea', 'tel', 'url', 'checkbox', 'radio', 'multiselect', 'time', 'hidden', 'file'];
             $fieldNames = [];
 
             foreach ($definition['fields'] as $i => $field) {
@@ -1420,6 +1749,11 @@ class ActionManager
                 if (!empty($field['require_future'])) $publicField['require_future'] = true;
                 if (isset($field['label_i18n'])) $publicField['label_i18n'] = $field['label_i18n'];
                 if (isset($field['placeholder_i18n'])) $publicField['placeholder_i18n'] = $field['placeholder_i18n'];
+                // File field config — pass through so Actions Bar can set accept attribute and validate
+                if (!empty($field['allowed_extensions'])) $publicField['allowed_extensions'] = $field['allowed_extensions'];
+                if (isset($field['max_size_mb'])) $publicField['max_size_mb'] = $field['max_size_mb'];
+                // Checkbox "selected by default"
+                if (!empty($field['checked_default'])) $publicField['checked_default'] = true;
 
                 $publicAction['fields'][] = $publicField;
             }

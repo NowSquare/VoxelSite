@@ -491,6 +491,58 @@ if ($method === 'PUT' && isset($params['id']) && isset($params['rid'])) {
 }
 
 // ═══════════════════════════════════════════
+//  GET /agentic/actions/:id/records/:rid/files/:field — Download file
+// ═══════════════════════════════════════════
+
+if ($method === 'GET' && isset($params['id']) && isset($params['rid']) && isset($params['field'])) {
+    $id = $params['id'];
+    $rid = (int) $params['rid'];
+    $fieldName = $params['field'];
+
+    // Load the record
+    $result = $manager->listRecords($id, ['per_page' => 10000]);
+    $record = null;
+    foreach ($result['records'] as $r) {
+        if ((int) $r['id'] === $rid) {
+            $record = $r;
+            break;
+        }
+    }
+
+    if (!$record) {
+        jsonResponse(['ok' => false, 'error' => ['code' => 'not_found', 'message' => 'Record not found.']], 404);
+        return;
+    }
+
+    // Extract file data from the record's data blob
+    $fileData = $record['data'][$fieldName] ?? null;
+    if (!is_array($fileData) || empty($fileData['path'])) {
+        jsonResponse(['ok' => false, 'error' => ['code' => 'no_file', 'message' => 'No file found for this field.']], 404);
+        return;
+    }
+
+    // Resolve absolute path (validates against directory traversal)
+    $absPath = $manager->getUploadAbsolutePath($fileData['path']);
+    if ($absPath === null) {
+        jsonResponse(['ok' => false, 'error' => ['code' => 'file_missing', 'message' => 'File no longer exists.']], 404);
+        return;
+    }
+
+    // Stream the file
+    $mimeType = $fileData['mime_type'] ?? 'application/octet-stream';
+    $originalName = $fileData['original_name'] ?? basename($absPath);
+
+    header('Content-Type: ' . $mimeType);
+    header('Content-Disposition: attachment; filename="' . str_replace('"', "'", $originalName) . '"');
+    header('Content-Length: ' . filesize($absPath));
+    header('Cache-Control: private, no-cache');
+    header('X-Content-Type-Options: nosniff');
+
+    readfile($absPath);
+    exit;
+}
+
+// ═══════════════════════════════════════════
 //  DELETE /agentic/actions/:id/records/:rid — Delete record
 // ═══════════════════════════════════════════
 

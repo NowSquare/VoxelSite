@@ -583,6 +583,97 @@ select.vs-actions-input {
   box-shadow: 0 0 0 2px var(--vs-actions-primary);
 }
 
+/* ── File Upload Drop Zone ── */
+.vs-actions-file-drop {
+  border: 2px dashed var(--vs-actions-border);
+  border-radius: var(--vs-actions-radius);
+  padding: 20px 16px;
+  position: relative;
+  transition: all 200ms ease-out;
+}
+
+.vs-actions-file-drop.is-dragover {
+  border-color: var(--vs-actions-primary);
+  background: color-mix(in srgb, var(--vs-actions-primary) 6%, transparent);
+}
+
+.vs-actions-file-drop.has-error {
+  border-color: var(--vs-actions-error);
+}
+
+.vs-actions-file-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.vs-actions-file-drop-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--vs-actions-text-muted);
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.vs-actions-file-drop-label svg {
+  width: 24px;
+  height: 24px;
+  opacity: 0.5;
+}
+
+.vs-actions-file-drop:hover .vs-actions-file-drop-label svg {
+  opacity: 0.7;
+}
+
+.vs-actions-file-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.vs-actions-file-preview-name {
+  font-size: 13px;
+  color: var(--vs-actions-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.vs-actions-file-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--vs-actions-text-muted);
+  border-radius: 4px;
+  flex-shrink: 0;
+  padding: 0;
+  transition: all 150ms ease-out;
+}
+
+.vs-actions-file-remove:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--vs-actions-error);
+}
+
+.vs-actions-file-remove svg {
+  width: 14px;
+  height: 14px;
+}
+
 /* ── Field Description / Help Text ── */
 .vs-actions-field-desc {
   font-size: 12px;

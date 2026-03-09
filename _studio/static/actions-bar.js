@@ -71,7 +71,14 @@
     'result.network_error': 'Network error. Please try again.',
     'result.generic_error': 'Something went wrong.',
     'stepper.increase': 'Increase',
-    'stepper.decrease': 'Decrease'
+    'stepper.decrease': 'Decrease',
+    'file.drop_zone': 'Drop file here or click to browse',
+    'file.browse': 'Browse',
+    'file.selected': 'Selected',
+    'file.remove': 'Remove file',
+    'file.too_large': 'File too large (max {max} MB).',
+    'file.invalid_type': 'This file type is not allowed.',
+    'file.max_size': 'Maximum file size: {max} MB'
   };
 
   /**
@@ -568,7 +575,8 @@
       checkbox.className = 'vs-actions-checkbox';
       checkbox.id = id;
       checkbox.name = field.name;
-      checkbox.value = '1';
+      checkbox.value = field.default_value || field.name;
+      if (field.checked_default) checkbox.checked = true;
 
       var checkBox = document.createElement('span');
       checkBox.className = 'vs-actions-checkbox-box';
@@ -578,6 +586,107 @@
       checkLabel.appendChild(document.createTextNode(' ' + (field.label || field.name)));
 
       return checkLabel;
+    }
+
+    if (field.type === 'file') {
+      var fileWrap = document.createElement('div');
+      fileWrap.className = 'vs-actions-file-drop';
+      fileWrap.id = id + '-wrap';
+
+      var fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.className = 'vs-actions-file-input';
+      fileInput.id = id;
+      fileInput.name = field.name;
+      if (field.required) { fileInput.required = true; fileInput.setAttribute('aria-required', 'true'); }
+
+      // Build accept attribute from allowed_extensions
+      var allowedExts = field.allowed_extensions || ['pdf','jpg','jpeg','png','gif','doc','docx','xls','xlsx','csv','txt','zip'];
+      fileInput.accept = allowedExts.map(function(e) { return '.' + e; }).join(',');
+
+      var dropLabel = document.createElement('div');
+      dropLabel.className = 'vs-actions-file-drop-label';
+      dropLabel.innerHTML =
+        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>' +
+        '<span>' + t('file.drop_zone') + '</span>';
+
+      var filePreview = document.createElement('div');
+      filePreview.className = 'vs-actions-file-preview';
+      filePreview.style.display = 'none';
+
+      var maxMb = field.max_size_mb || 10;
+
+      fileInput.addEventListener('change', function() {
+        if (fileInput.files && fileInput.files.length > 0) {
+          var f = fileInput.files[0];
+          var ext = f.name.split('.').pop().toLowerCase();
+
+          // Validate extension
+          if (allowedExts.indexOf(ext) === -1) {
+            fileInput.value = '';
+            filePreview.style.display = 'none';
+            dropLabel.style.display = '';
+            var errEl = document.getElementById('vs-action-err-' + actionId + '-' + field.name);
+            if (errEl) errEl.textContent = t('file.invalid_type');
+            return;
+          }
+
+          // Validate size
+          if (f.size > maxMb * 1024 * 1024) {
+            fileInput.value = '';
+            filePreview.style.display = 'none';
+            dropLabel.style.display = '';
+            var errEl2 = document.getElementById('vs-action-err-' + actionId + '-' + field.name);
+            if (errEl2) errEl2.textContent = t('file.too_large', { max: maxMb });
+            return;
+          }
+
+          // Clear any previous errors
+          var errEl3 = document.getElementById('vs-action-err-' + actionId + '-' + field.name);
+          if (errEl3) errEl3.textContent = '';
+
+          var sizeText = f.size < 1024 ? f.size + ' B' : (f.size < 1048576 ? Math.round(f.size / 1024) + ' KB' : (f.size / 1048576).toFixed(1) + ' MB');
+          filePreview.innerHTML =
+            '<span class="vs-actions-file-preview-name">📎 ' + escapeHtml(f.name) + ' (' + sizeText + ')</span>' +
+            '<button type="button" class="vs-actions-file-remove" aria-label="' + t('file.remove') + '">' + getIcon('x') + '</button>';
+          filePreview.style.display = 'flex';
+          dropLabel.style.display = 'none';
+
+          filePreview.querySelector('.vs-actions-file-remove').addEventListener('click', function() {
+            fileInput.value = '';
+            filePreview.style.display = 'none';
+            dropLabel.style.display = '';
+          });
+        }
+      });
+
+      // Drag and drop
+      fileWrap.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        fileWrap.classList.add('is-dragover');
+      });
+      fileWrap.addEventListener('dragleave', function() {
+        fileWrap.classList.remove('is-dragover');
+      });
+      fileWrap.addEventListener('drop', function(e) {
+        e.preventDefault();
+        fileWrap.classList.remove('is-dragover');
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          fileInput.files = e.dataTransfer.files;
+          fileInput.dispatchEvent(new Event('change'));
+        }
+      });
+
+      // Click drop zone to open file picker
+      dropLabel.addEventListener('click', function() {
+        fileInput.click();
+      });
+
+      fileWrap.appendChild(fileInput);
+      fileWrap.appendChild(dropLabel);
+      fileWrap.appendChild(filePreview);
+
+      return fileWrap;
     }
 
     if (field.type === 'number') {
@@ -664,6 +773,27 @@
       var input = document.getElementById('vs-action-' + action.id + '-' + field.name);
       var errEl = document.getElementById('vs-action-err-' + action.id + '-' + field.name);
       var label = field.label || field.name;
+
+      // File required check
+      if (field.type === 'file') {
+        if (field.required && input && (!input.files || input.files.length === 0)) {
+          if (errEl) errEl.textContent = t('validation.field_required', { field: label });
+          hasErrors = true;
+        } else if (input && input.files && input.files.length > 0) {
+          var f = input.files[0];
+          var ext = f.name.split('.').pop().toLowerCase();
+          var allowedExts = field.allowed_extensions || ['pdf','jpg','jpeg','png','gif','doc','docx','xls','xlsx','csv','txt','zip'];
+          var maxMb = field.max_size_mb || 10;
+          if (allowedExts.indexOf(ext) === -1) {
+            if (errEl) errEl.textContent = t('file.invalid_type');
+            hasErrors = true;
+          } else if (f.size > maxMb * 1024 * 1024) {
+            if (errEl) errEl.textContent = t('file.too_large', { max: maxMb });
+            hasErrors = true;
+          }
+        }
+        return;
+      }
 
       // Checkbox required — special case (value is always '1', check .checked)
       if (field.type === 'checkbox') {
@@ -786,22 +916,45 @@
       return;
     }
 
-    // Collect form data
-    var data = {};
-    var formData = new FormData(form);
-    formData.forEach(function (value, key) {
-      data[key] = value;
+    // Collect form data as FormData (supports file uploads)
+    var formData = new FormData();
+    formData.append('action_id', action.id);
+
+    // Add text fields
+    var rawFormData = new FormData(form);
+    rawFormData.forEach(function (value, key) {
+      if (key !== 'action_id') {
+        formData.append(key, value);
+      }
     });
 
-    // Convert multiselect fields from comma strings to arrays
+    // Convert multiselect fields from comma strings to JSON arrays
     (action.fields || []).forEach(function (field) {
-      if (field.type === 'multiselect' && typeof data[field.name] === 'string') {
-        data[field.name] = data[field.name] ? data[field.name].split(',') : [];
+      if (field.type === 'multiselect') {
+        var hiddenInput = document.getElementById('vs-action-' + action.id + '-' + field.name);
+        if (hiddenInput && hiddenInput.value) {
+          // Replace the comma string with a JSON array so the backend can parse it
+          formData.set(field.name, JSON.stringify(hiddenInput.value.split(',')));
+        } else {
+          formData.set(field.name, '[]');
+        }
+      }
+    });
+
+    // Add file fields (FormData already handles them from the form, but we need to
+    // ensure the file input name is included even if FormData() didn't pick it up
+    // from inputs inside custom wrappers)
+    (action.fields || []).forEach(function (field) {
+      if (field.type === 'file') {
+        var fileInput = document.getElementById('vs-action-' + action.id + '-' + field.name);
+        if (fileInput && fileInput.files && fileInput.files.length > 0) {
+          formData.set(field.name, fileInput.files[0]);
+        }
       }
     });
 
     // Source marker
-    data._source = 'web';
+    formData.append('_source', 'web');
 
     // Show loading state
     var btn = form.querySelector('.vs-actions-submit');
@@ -811,11 +964,11 @@
     btnText.style.display = 'none';
     btnLoader.style.display = 'inline-flex';
 
-    // Submit via fetch
+    // Submit via FormData (supports file uploads)
     var url = SUBMIT_URL;
     var xhr = new XMLHttpRequest();
     xhr.open('POST', url, true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
+    // Do NOT set Content-Type — browser sets it automatically with boundary for FormData
     xhr.setRequestHeader('Accept', 'application/json');
 
     xhr.onreadystatechange = function () {
@@ -845,7 +998,7 @@
       }
     };
 
-    xhr.send(JSON.stringify({ action_id: action.id, data: data }));
+    xhr.send(formData);
   }
 
   function showResult(resultEl, form, success, message, code, errors) {

@@ -158,6 +158,7 @@ $routes = [
     ['POST',   '/agentic/actions/:id/test',                        'agentic-actions.php', true],
     ['GET',    '/agentic/actions/:id/records',                     'agentic-actions.php', true],
     ['GET',    '/agentic/actions/:id/records/export',              'agentic-actions.php', true],
+    ['GET',    '/agentic/actions/:id/records/:rid/files/:field',   'agentic-actions.php', true],
     ['PUT',    '/agentic/actions/:id/records/:rid',                'agentic-actions.php', true],
     ['DELETE', '/agentic/actions/:id/records/:rid',                'agentic-actions.php', true],
     ['POST',   '/agentic/actions/:id/records/bulk',                'agentic-actions.php', true],

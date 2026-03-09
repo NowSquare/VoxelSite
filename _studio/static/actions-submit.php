@@ -9,10 +9,15 @@
  * Deployed to /actions/submit.php during publish.
  * Also used at runtime in preview via the preview environment.
  *
- * Request format:
+ * Request format (JSON — MCP/API callers):
  *   POST /actions/submit.php
  *   Content-Type: application/json
  *   Body: { "action_id": "reservation", "data": { ...fields... } }
+ *
+ * Request format (FormData — Actions Bar with file uploads):
+ *   POST /actions/submit.php
+ *   Content-Type: multipart/form-data
+ *   Fields: action_id, field values, file uploads
  *
  * Response format:
  *   { "ok": true, "message": "...", "confirmation_code": "XYZA1234" }
@@ -39,18 +44,39 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Read JSON body
-$raw = file_get_contents('php://input');
-$body = json_decode($raw ?: '', true);
+// Detect content type — support both JSON and FormData
+$contentType = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? '';
+$isJson = str_contains($contentType, 'application/json');
 
-if (!is_array($body)) {
-    http_response_code(400);
-    echo json_encode(['ok' => false, 'error' => 'invalid_json', 'message' => 'Invalid request body.']);
-    exit;
+if ($isJson) {
+    // JSON body (MCP/API callers — no file upload support)
+    $raw = file_get_contents('php://input');
+    $body = json_decode($raw ?: '', true);
+
+    if (!is_array($body)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'invalid_json', 'message' => 'Invalid request body.']);
+        exit;
+    }
+
+    $actionId = $body['action_id'] ?? '';
+    $data = $body['data'] ?? $body;
+} else {
+    // FormData (Actions Bar — supports file uploads via $_FILES)
+    $actionId = $_POST['action_id'] ?? '';
+    $data = $_POST;
+    unset($data['action_id']); // Don't pass action_id as a field value
+
+    // Parse JSON-encoded array values (multiselect sends as JSON strings from FormData)
+    foreach ($data as $key => $value) {
+        if (is_string($value) && str_starts_with($value, '[') && str_ends_with($value, ']')) {
+            $decoded = json_decode($value, true);
+            if (is_array($decoded)) {
+                $data[$key] = $decoded;
+            }
+        }
+    }
 }
-
-$actionId = $body['action_id'] ?? '';
-$data = $body['data'] ?? $body;
 
 if (empty($actionId)) {
     http_response_code(422);
@@ -100,3 +126,4 @@ if (!$result['ok']) {
 
 http_response_code($httpStatus);
 echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+

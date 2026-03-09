@@ -27,7 +27,7 @@ Full documentation: **[voxelsite.com/docs](https://voxelsite.com/docs)**
 - **Undo/Redo** — full revision history with safe editing workflow
 - **Snapshots** — save/restore entire site states
 - **Asset Manager** — upload images, files, and fonts
-- **Actions** — define interactions (reservations, signups, inquiries) that serve both human visitors (beautiful form bar) and AI agents (MCP tools) simultaneously
+- **Actions** — define interactions (reservations, signups, inquiries) that serve both human visitors (beautiful form bar with file uploads) and AI agents (MCP tools) simultaneously
 - **Forms** — submission handling with validation, spam protection, and email notifications
 - **Team** — invite editors and viewers with role-based access
 - **AEO** — built-in AI discoverability (`llms.txt`, schema, MCP endpoint)
@@ -78,7 +78,7 @@ Your content, settings, and data are preserved automatically.
 - Studio is protected by login, session tokens, and CSRF checks
 - Use HTTPS in production
 - Keep regular backups of `_studio/data/`, `assets/`, and `_data/`
-- Do not remove the shipped `.htaccess` files
+- Do not remove the shipped `.htaccess` files — they protect the Studio, data, and uploaded files
 
 ## Support
 

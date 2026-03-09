@@ -595,7 +595,7 @@ async function showNewActionModal() {
             category: 'general',
             active: false,
             fields: [
-              { name: 'name', type: 'text', label: 'Full Name', required: true },
+              { name: 'email', type: 'email', label: 'Email', placeholder: 'you@example.com', required: true },
             ],
             responses: {
               success: 'Submission received. Your confirmation code is {confirmation_code}.',
@@ -791,54 +791,87 @@ async function loadActionDetail(actionId) {
 
     bodyEl.innerHTML = `
       <div class="vs-settings-card" style="margin-top: 16px;">
-        <h2 class="vs-settings-card-title">Identity &amp; Config</h2>
+        <h2 class="vs-settings-card-title">Action</h2>
         <div class="flex flex-col gap-4">
           <div>
             <label for="action-name" class="block text-sm font-medium text-vs-text-secondary mb-1">Name</label>
             <input type="text" id="action-name" class="vs-input" value="${escapeHtml(action.name || '')}" />
           </div>
           <div>
-            <label for="action-button-label" class="block text-sm font-medium text-vs-text-secondary mb-1">Bar Button Label <span style="font-weight: 400; color: var(--vs-text-ghost);">(short name for the actions bar)</span></label>
-            <input type="text" id="action-button-label" class="vs-input" value="${escapeHtml(action.bar_button_label || '')}" placeholder="${escapeAttr(action.name || 'e.g. Register')}" />
-          </div>
-          <div>
-            <label for="action-description" class="block text-sm font-medium text-vs-text-secondary mb-1">Description</label>
-            <input type="text" id="action-description" class="vs-input" value="${escapeHtml(action.description || '')}" placeholder="What does this action do?" />
+            <label for="action-description" class="block text-sm font-medium text-vs-text-secondary mb-1">Description <span style="font-weight: 400; color: var(--vs-text-ghost);">— for your reference and AI agents, not shown to visitors</span></label>
+            <input type="text" id="action-description" class="vs-input" value="${escapeHtml(action.description || '')}" placeholder="e.g. Register for our quarterly workshops" />
           </div>
 
-          <div>
-            <label class="block text-sm font-medium text-vs-text-secondary mb-1">Bar Icon</label>
-            <p class="text-xs text-vs-text-ghost" style="margin-bottom: 8px;">Choose the icon shown in the Actions Bar on your website.</p>
-            <div id="icon-picker-grid" style="display: flex; flex-wrap: wrap; gap: 8px;">
-              ${[
-                ['calendar', 'Calendar'], ['clock', 'Clock'], ['utensils', 'Utensils'], ['file-text', 'Document'],
-                ['list', 'List'], ['shopping-bag', 'Shop'], ['ticket', 'Ticket'], ['message-square', 'Message'],
-                ['users', 'People'], ['mail', 'Mail'], ['star', 'Star'], ['circle', 'Default'],
-              ].map(([key, label]) => `
-                <button type="button" class="vs-icon-pick" data-icon="${key}" title="${label}" style="
-                  display: flex; align-items: center; justify-content: center;
-                  width: 42px; height: 42px; border-radius: var(--radius-md);
-                  border: 1.5px solid ${(action.icon || 'circle') === key ? 'var(--vs-accent)' : 'var(--vs-border)'};
-                  background: ${(action.icon || 'circle') === key ? 'var(--vs-accent-dim, rgba(var(--vs-accent-rgb, 200,80,40), 0.08))' : 'var(--vs-bg-floating)'};
-                  color: ${(action.icon || 'circle') === key ? 'var(--vs-accent)' : 'var(--vs-text-ghost)'};
-                  cursor: pointer; transition: all 0.15s ease;
-                "><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${{
-                  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
-                  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
-                  utensils: '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
-                  'file-text': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
-                  list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
-                  'shopping-bag': '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>',
-                  ticket: '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/>',
-                  'message-square': '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
-                  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
-                  mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
-                  star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
-                  circle: '<circle cx="12" cy="12" r="10"/>',
-                }[key]}</svg></button>
-              `).join('')}
+          <div style="border-top: 1px solid var(--vs-border-subtle); padding-top: 16px; margin-top: 4px;">
+            <label style="font-size: 13px; font-weight: 600; color: var(--vs-text-primary); margin-bottom: 4px; display: block;">Actions Bar</label>
+            <p style="font-size: 12px; color: var(--vs-text-ghost); margin: 0 0 12px 0;">How this action appears on your website.</p>
+            <div style="margin-bottom: 12px;">
+              <label for="action-button-label" class="block text-sm font-medium text-vs-text-secondary mb-1">Button Label</label>
+              <input type="text" id="action-button-label" class="vs-input" value="${escapeHtml(action.bar_button_label || '')}" placeholder="${escapeAttr(action.name || 'e.g. Register')}" />
+              <div style="font-size: 11px; color: var(--vs-text-ghost); margin-top: 4px;">Short label for the bar button. Defaults to the action name.</div>
             </div>
-            <input type="hidden" id="action-icon" value="${escapeHtml(action.icon || 'circle')}" />
+            <div>
+              <label class="block text-sm font-medium text-vs-text-secondary mb-1">Icon</label>
+              <div id="icon-picker-grid" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                ${[
+                  ['calendar', 'Calendar'], ['clock', 'Clock'], ['utensils', 'Utensils'], ['file-text', 'Document'],
+                  ['list', 'List'], ['shopping-bag', 'Shop'], ['ticket', 'Ticket'], ['message-square', 'Message'],
+                  ['users', 'People'], ['mail', 'Mail'], ['star', 'Star'], ['circle', 'Default'],
+                ].map(([key, label]) => `
+                  <button type="button" class="vs-icon-pick" data-icon="${key}" title="${label}" style="
+                    display: flex; align-items: center; justify-content: center;
+                    width: 42px; height: 42px; border-radius: var(--radius-md);
+                    border: 1.5px solid ${(action.icon || 'circle') === key ? 'var(--vs-accent)' : 'var(--vs-border)'};
+                    background: ${(action.icon || 'circle') === key ? 'var(--vs-accent-dim, rgba(var(--vs-accent-rgb, 200,80,40), 0.08))' : 'var(--vs-bg-floating)'};
+                    color: ${(action.icon || 'circle') === key ? 'var(--vs-accent)' : 'var(--vs-text-ghost)'};
+                    cursor: pointer; transition: all 0.15s ease;
+                  "><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${{
+                    calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+                    clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+                    utensils: '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
+                    'file-text': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+                    list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
+                    'shopping-bag': '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+                    ticket: '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/>',
+                    'message-square': '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+                    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+                    mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+                    star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+                    circle: '<circle cx="12" cy="12" r="10"/>',
+                  }[key]}</svg></button>
+                `).join('')}
+              </div>
+              <input type="hidden" id="action-icon" value="${escapeHtml(action.icon || 'circle')}" />
+            </div>
+          </div>
+
+          <div style="border-top: 1px solid var(--vs-border-subtle); padding-top: 16px; margin-top: 4px;">
+            <label style="font-size: 13px; font-weight: 600; color: var(--vs-text-primary); margin-bottom: 4px; display: block;">Submission Rules</label>
+            <p style="font-size: 12px; color: var(--vs-text-ghost); margin: 0 0 12px 0;">Control how submissions are handled.</p>
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+              <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <span style="position: relative; display: inline-flex; align-items: center; width: 36px; height: 20px; flex-shrink: 0;">
+                  <input type="checkbox" id="action-allow-duplicates" ${!(action.constraints?.uniqueness?.enabled) ? 'checked' : ''} style="position: absolute; opacity: 0; width: 0; height: 0;" />
+                  <span class="vs-toggle-track" style="
+                    position: absolute; inset: 0; border-radius: 10px;
+                    background: ${!(action.constraints?.uniqueness?.enabled) ? 'var(--vs-accent)' : 'var(--vs-border-medium, #ccc)'};
+                    transition: background 0.2s ease;
+                  "></span>
+                  <span class="vs-toggle-thumb" style="
+                    position: absolute; left: ${!(action.constraints?.uniqueness?.enabled) ? '18px' : '2px'}; top: 2px;
+                    width: 16px; height: 16px; border-radius: 50%;
+                    background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                    transition: left 0.2s ease;
+                  "></span>
+                </span>
+                <span style="font-size: 13px; color: var(--vs-text-secondary);">Same email can submit multiple times</span>
+              </label>
+            </div>
+            <div id="action-duplicate-msg-wrap" style="${!(action.constraints?.uniqueness?.enabled) ? 'display: none;' : ''}">
+              <label for="action-duplicate-msg" class="block text-sm font-medium text-vs-text-secondary mb-1">Rejection message</label>
+              <input type="text" id="action-duplicate-msg" class="vs-input" value="${escapeHtml(action.responses?.duplicate || '')}"
+                placeholder="You have already submitted this form." />
+            </div>
           </div>
         </div>
         <div class="vs-settings-card-footer">
@@ -863,6 +896,9 @@ async function loadActionDetail(actionId) {
               data-minlength="${field.min_length || ''}"
               data-options="${escapeAttr(JSON.stringify(field.options || []))}"
               data-description="${escapeAttr(field.description || '')}"
+              ${field.allowed_extensions ? `data-allowed-extensions="${escapeAttr(JSON.stringify(field.allowed_extensions))}"` : ''}
+              ${field.max_size_mb ? `data-max-size-mb="${field.max_size_mb}"` : ''}
+              ${field.checked_default ? 'data-checked-default="true"' : ''}
               style="
               display: grid; grid-template-columns: 44px 1.5fr 100px 44px 32px 32px; gap: 6px; align-items: center;
               padding: 8px 10px; border-radius: var(--radius-md);
@@ -891,7 +927,7 @@ async function loadActionDetail(actionId) {
               </div>
               <input type="text" class="vs-input field-label" value="${escapeHtml(field.label || '')}" placeholder="Label (e.g. Guest Name)" style="font-size: 13px; height: 32px; padding: 4px 10px;" />
               <select class="vs-input field-type" style="font-size: 12px; height: 32px; padding: 4px 6px;">
-                ${['text','email','tel','number','date','time','select','multiselect','textarea','url','checkbox','radio','hidden'].map(t =>
+                ${['text','email','tel','number','date','time','select','multiselect','textarea','url','checkbox','radio','file','hidden'].map(t =>
                   `<option value="${t}" ${field.type === t ? 'selected' : ''}>${t === 'multiselect' ? 'multi-select' : t}</option>`
                 ).join('')}
               </select>
@@ -971,8 +1007,19 @@ async function loadActionDetail(actionId) {
       bindToggleSwitch(cb.closest('label'));
     });
 
-
-
+    // Bind duplicates toggle
+    const dupToggle = document.getElementById('action-allow-duplicates');
+    if (dupToggle) {
+      const dupLabel = dupToggle.closest('label');
+      const dupTrack = dupLabel?.querySelector('.vs-toggle-track');
+      const dupThumb = dupLabel?.querySelector('.vs-toggle-thumb');
+      dupToggle.addEventListener('change', () => {
+        if (dupTrack) dupTrack.style.background = dupToggle.checked ? 'var(--vs-accent)' : 'var(--vs-border-medium, #ccc)';
+        if (dupThumb) dupThumb.style.left = dupToggle.checked ? '18px' : '2px';
+        const msgWrap = document.getElementById('action-duplicate-msg-wrap');
+        if (msgWrap) msgWrap.style.display = dupToggle.checked ? 'none' : '';
+      });
+    }
 
     // Bind icon picker
     document.querySelectorAll('.vs-icon-pick').forEach(btn => {
@@ -1009,6 +1056,33 @@ async function loadActionDetail(actionId) {
       updated.description = document.getElementById('action-description')?.value || '';
 
       updated.icon = document.getElementById('action-icon')?.value || 'circle';
+
+      // Duplicate submissions
+      const allowDuplicates = document.getElementById('action-allow-duplicates')?.checked ?? true;
+      if (!allowDuplicates) {
+        // Find email fields to use for uniqueness
+        const emailFields = (action.fields || []).filter(f => f.type === 'email').map(f => f.name);
+        const uniqueFields = emailFields.length > 0 ? emailFields : ['email'];
+        updated.constraints = {
+          ...(updated.constraints || {}),
+          uniqueness: {
+            enabled: true,
+            fields: uniqueFields,
+            scope_statuses: ['confirmed', 'pending'],
+          },
+        };
+      } else {
+        // Disable uniqueness
+        if (updated.constraints?.uniqueness) {
+          updated.constraints.uniqueness.enabled = false;
+        }
+      }
+      const dupMsg = document.getElementById('action-duplicate-msg')?.value || '';
+      if (dupMsg) {
+        updated.responses = { ...(updated.responses || {}), duplicate: dupMsg };
+      } else if (updated.responses?.duplicate) {
+        delete updated.responses.duplicate;
+      }
 
       const { ok: saveOk, data: saveData } = await api.put(`/agentic/actions/${encodeURIComponent(actionId)}`, updated);
       showToast(saveOk ? 'Action saved' : (saveData?.error?.message || 'Failed to save'), saveOk ? 'success' : 'error');
@@ -1069,6 +1143,19 @@ async function loadActionDetail(actionId) {
           const opts = row.dataset.options;
           if (opts) {
             try { field.options = JSON.parse(opts); } catch (e) { field.options = opts.split(',').map(o => o.trim()).filter(Boolean); }
+          }
+          // File field settings
+          if (type === 'file') {
+            const exts = row.dataset.allowedExtensions;
+            if (exts) {
+              try { field.allowed_extensions = JSON.parse(exts); } catch (e) { field.allowed_extensions = exts.split(',').map(e => e.trim().toLowerCase()).filter(Boolean); }
+            }
+            const maxSizeMb = row.dataset.maxSizeMb;
+            if (maxSizeMb) field.max_size_mb = Number(maxSizeMb);
+          }
+          // Checkbox "selected by default"
+          if (type === 'checkbox' && row.dataset.checkedDefault === 'true') {
+            field.checked_default = true;
           }
           fields.push(field);
         }
@@ -1142,7 +1229,7 @@ async function loadActionDetail(actionId) {
         </div>
         <input type="text" class="vs-input field-label" value="" placeholder="Label (e.g. Guest Name)" style="font-size: 13px; height: 32px; padding: 4px 10px;" />
         <select class="vs-input field-type" style="font-size: 12px; height: 32px; padding: 4px 6px;">
-          ${['text','email','tel','number','date','time','select','multiselect','textarea','url','checkbox','radio','hidden'].map(t =>
+          ${['text','email','tel','number','date','time','select','multiselect','textarea','url','checkbox','radio','file','hidden'].map(t =>
             `<option value="${t}">${t === 'multiselect' ? 'multi-select' : t}</option>`
           ).join('')}
         </select>
@@ -1242,6 +1329,8 @@ async function loadActionDetail(actionId) {
       const showMaxLength = ['text','email','tel','url','textarea'].includes(fieldType);
       const showOptions = ['select','radio','multiselect'].includes(fieldType);
       const isMultiselect = fieldType === 'multiselect';
+      const isFile = fieldType === 'file';
+      const isCheckbox = fieldType === 'checkbox';
 
       const labelStyle = 'display: block; font-size: 12px; font-weight: 500; color: var(--vs-text-secondary); margin-bottom: 6px;';
       const groupStyle = 'margin-bottom: 16px;';
@@ -1255,10 +1344,38 @@ async function loadActionDetail(actionId) {
         </div>`;
       }
 
-      fieldsHtml += `<div style="${groupStyle}">
-        <label style="${labelStyle}">Default Value</label>
-        <input type="${showMinMax ? 'number' : 'text'}" id="fs-default" class="vs-input" value="${escapeAttr(defaultVal)}" placeholder="Pre-filled value" />
-      </div>`;
+      if (!isFile && !isCheckbox) {
+        fieldsHtml += `<div style="${groupStyle}">
+          <label style="${labelStyle}">Default Value</label>
+          <input type="${showMinMax ? 'number' : 'text'}" id="fs-default" class="vs-input" value="${escapeAttr(defaultVal)}" placeholder="Pre-filled value" />
+        </div>`;
+      }
+
+      if (isCheckbox) {
+        fieldsHtml += `<div style="${groupStyle}">
+          <label style="${labelStyle}">Value <span style="color: var(--vs-text-ghost); font-weight: 400;">(sent when checked — defaults to field name if empty)</span></label>
+          <input type="text" id="fs-default" class="vs-input" value="${escapeAttr(defaultVal)}" placeholder="e.g. yes, true, 1" />
+        </div>
+        <div style="${groupStyle}">
+          <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+            <span style="position: relative; display: inline-flex; align-items: center; width: 36px; height: 20px; flex-shrink: 0;">
+              <input type="checkbox" id="fs-checked-default" ${(row.dataset.checkedDefault === 'true') ? 'checked' : ''} style="position: absolute; opacity: 0; width: 0; height: 0;" />
+              <span style="
+                position: absolute; inset: 0; border-radius: 10px;
+                background: ${(row.dataset.checkedDefault === 'true') ? 'var(--vs-accent)' : 'var(--vs-border-medium, #ccc)'};
+                transition: background 0.2s ease;
+              "></span>
+              <span style="
+                position: absolute; left: ${(row.dataset.checkedDefault === 'true') ? '18px' : '2px'}; top: 2px;
+                width: 16px; height: 16px; border-radius: 50%;
+                background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                transition: left 0.2s ease;
+              "></span>
+            </span>
+            <span style="font-size: 12px; font-weight: 500; color: var(--vs-text-secondary);">Selected by default</span>
+          </label>
+        </div>`;
+      }
 
       if (showMinMax) {
         fieldsHtml += `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; ${groupStyle}">
@@ -1294,6 +1411,51 @@ async function loadActionDetail(actionId) {
         fieldsHtml += `<div style="${groupStyle}">
           <label style="${labelStyle}">Options <span style="color: var(--vs-text-ghost); font-weight: 400;">${isMultiselect ? '(one per line, prefix [x] for default)' : '(one per line)'}</span></label>
           <textarea id="fs-options" class="vs-input" rows="5" placeholder="${isMultiselect ? 'Option 1\n[x] Option 2\n[x] Option 3\nOption 4' : 'Option 1\nOption 2\nOption 3'}" style="height: auto; resize: vertical; min-height: 64px;">${escapeHtml(optionsDisplay)}</textarea>
+        </div>`;
+      }
+
+      if (isFile) {
+        const existingExts = row.dataset.allowedExtensions || '';
+        const existingMaxMb = row.dataset.maxSizeMb || '10';
+        let currentExts;
+        try { currentExts = existingExts ? JSON.parse(existingExts) : []; } catch(e) { currentExts = []; }
+        const currentExtsStr = currentExts.join(', ');
+
+        // Extension group presets
+        const docExts = ['pdf','doc','docx','xls','xlsx','csv','txt'];
+        const imgExts = ['jpg','jpeg','png','gif','webp'];
+        const archExts = ['zip','rar'];
+
+        const hasDoc = docExts.some(e => currentExts.includes(e));
+        const hasImg = imgExts.some(e => currentExts.includes(e));
+        const hasArch = archExts.some(e => currentExts.includes(e));
+
+        fieldsHtml += `<div style="${groupStyle}">
+          <label style="${labelStyle}">Allowed File Types</label>
+          <div style="display: flex; gap: 12px; margin-bottom: 8px; flex-wrap: wrap;">
+            <label class="vs-checkbox-label" style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; position: relative;">
+              <input type="checkbox" class="vs-checkbox fs-ext-group" data-exts='${JSON.stringify(docExts)}' ${hasDoc ? 'checked' : ''} />
+              <span class="vs-checkbox-box"></span>
+              Documents
+            </label>
+            <label class="vs-checkbox-label" style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; position: relative;">
+              <input type="checkbox" class="vs-checkbox fs-ext-group" data-exts='${JSON.stringify(imgExts)}' ${hasImg ? 'checked' : ''} />
+              <span class="vs-checkbox-box"></span>
+              Images
+            </label>
+            <label class="vs-checkbox-label" style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; position: relative;">
+              <input type="checkbox" class="vs-checkbox fs-ext-group" data-exts='${JSON.stringify(archExts)}' ${hasArch ? 'checked' : ''} />
+              <span class="vs-checkbox-box"></span>
+              Archives
+            </label>
+          </div>
+          <input type="text" id="fs-allowed-extensions" class="vs-input" value="${escapeAttr(currentExtsStr)}" placeholder="pdf, jpg, png, doc, docx" />
+          <div style="font-size: 11px; color: var(--vs-text-ghost); margin-top: 4px;">Comma-separated extensions. Leave empty for default set.</div>
+        </div>
+        <div style="${groupStyle}">
+          <label style="${labelStyle}">Max File Size (MB)</label>
+          <input type="number" id="fs-max-size-mb" class="vs-input" value="${escapeAttr(existingMaxMb)}" placeholder="10" min="1" max="50" />
+          <div style="font-size: 11px; color: var(--vs-text-ghost); margin-top: 4px;">Maximum: 50 MB</div>
         </div>`;
       }
 
@@ -1352,6 +1514,38 @@ async function loadActionDetail(actionId) {
       // Focus first input
       setTimeout(() => modal.querySelector('input, textarea')?.focus(), 100);
 
+      // Extension group checkboxes → update the extensions text input
+      if (isFile) {
+        modal.querySelectorAll('.fs-ext-group').forEach(cb => {
+          cb.addEventListener('change', () => {
+            const extsInput = modal.querySelector('#fs-allowed-extensions');
+            if (!extsInput) return;
+            let current = extsInput.value.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+            const groupExts = JSON.parse(cb.dataset.exts || '[]');
+            if (cb.checked) {
+              groupExts.forEach(e => { if (!current.includes(e)) current.push(e); });
+            } else {
+              current = current.filter(e => !groupExts.includes(e));
+            }
+            extsInput.value = current.join(', ');
+          });
+        });
+      }
+
+      // Bind the 'Selected by default' toggle switch in checkbox field settings
+      if (isCheckbox) {
+        const toggleLabel = modal.querySelector('#fs-checked-default')?.closest('label');
+        if (toggleLabel) {
+          const cb = modal.querySelector('#fs-checked-default');
+          const track = toggleLabel.querySelectorAll('span > span')[0];
+          const thumb = toggleLabel.querySelectorAll('span > span')[1];
+          cb?.addEventListener('change', () => {
+            if (track) track.style.background = cb.checked ? 'var(--vs-accent)' : 'var(--vs-border-medium, #ccc)';
+            if (thumb) thumb.style.left = cb.checked ? '18px' : '2px';
+          });
+        }
+      }
+
       // Close handlers
       const closeModal = () => modal.remove();
       modal.querySelector('#fs-backdrop')?.addEventListener('click', closeModal);
@@ -1365,7 +1559,10 @@ async function loadActionDetail(actionId) {
       // Save
       modal.querySelector('#fs-save')?.addEventListener('click', () => {
         if (showPlaceholder) row.dataset.placeholder = modal.querySelector('#fs-placeholder')?.value || '';
-        row.dataset.default = modal.querySelector('#fs-default')?.value || '';
+        if (!isFile) row.dataset.default = modal.querySelector('#fs-default')?.value || '';
+        if (isCheckbox) {
+          row.dataset.checkedDefault = modal.querySelector('#fs-checked-default')?.checked ? 'true' : 'false';
+        }
         if (showMinMax) {
           row.dataset.min = modal.querySelector('#fs-min')?.value || '';
           row.dataset.max = modal.querySelector('#fs-max')?.value || '';
@@ -1392,6 +1589,14 @@ async function loadActionDetail(actionId) {
           } else {
             row.dataset.options = JSON.stringify(lines);
           }
+        }
+        // File field settings
+        if (isFile) {
+          const extsInput = modal.querySelector('#fs-allowed-extensions')?.value || '';
+          const exts = extsInput.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+          row.dataset.allowedExtensions = exts.length > 0 ? JSON.stringify(exts) : '';
+          const maxMb = modal.querySelector('#fs-max-size-mb')?.value || '10';
+          row.dataset.maxSizeMb = String(Math.min(Math.max(parseInt(maxMb) || 10, 1), 50));
         }
         row.dataset.description = modal.querySelector('#fs-description')?.value || '';
 
@@ -1559,7 +1764,10 @@ async function loadActionRecords(actionId, page = 1) {
                 const cleanData = Object.fromEntries(
                   Object.entries(recData || {}).filter(([k]) => !k.startsWith('_'))
                 );
-                const preview = Object.values(cleanData).filter(v => typeof v === 'string' && v.length > 0).slice(0, 2).join(' · ');
+                const textPreview = Object.values(cleanData).filter(v => typeof v === 'string' && v.length > 0).slice(0, 2).join(' · ');
+                const fileCount = Object.values(cleanData).filter(v => v && typeof v === 'object' && v.original_name).length;
+                const attachIcon = fileCount > 0 ? `<span style="display: inline-flex; align-items: center; gap: 2px; color: var(--vs-text-ghost); margin-left: ${textPreview ? '6px' : '0'};" title="${fileCount} file${fileCount > 1 ? 's' : ''} attached"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>${fileCount > 1 ? '<span style="font-size: 10px;">' + fileCount + '</span>' : ''}</span>` : '';
+                const preview = textPreview || (fileCount > 0 ? '' : '—');
                 const sc = ACTION_STATUS_COLORS[rec.status] || ACTION_STATUS_COLORS.pending;
                 const sourceLabel = rec.source === 'web' ? 'Website' : rec.source === 'mcp' ? 'MCP' : rec.source === 'api' ? 'API' : rec.source || 'Website';
                 return `
@@ -1573,7 +1781,7 @@ async function loadActionRecords(actionId, page = 1) {
                       </button>
                     </td>
                     <td style="padding: 8px 12px; font-family: var(--vs-font-mono); font-size: 12px; color: var(--vs-accent);">${escapeHtml(rec.confirmation_code || '—')}</td>
-                    <td style="padding: 8px 12px; color: var(--vs-text-secondary); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(preview || '—')}</td>
+                    <td style="padding: 8px 12px; color: var(--vs-text-secondary); max-width: 280px; overflow: hidden; white-space: nowrap;"><span style="display: inline-flex; align-items: center; max-width: 100%;"><span style="overflow: hidden; text-overflow: ellipsis;">${escapeHtml(preview)}</span>${attachIcon}</span></td>
                     <td style="padding: 8px 12px;">
                       <select class="vs-input vs-input-compact vs-action-status-select" data-record-id="${rec.id}" style="font-size: 12px; padding: 2px 8px; min-width: auto;">
                         ${Object.entries(ACTION_STATUS_COLORS).map(([key, conf]) =>
@@ -1599,10 +1807,27 @@ async function loadActionRecords(actionId, page = 1) {
                         display: grid; grid-template-columns: auto 1fr; gap: 4px 16px;
                         font-size: 12px; padding: 12px 0;
                       ">
-                        ${Object.entries(cleanData).map(([key, val]) => `
-                          <div style="color: var(--vs-text-ghost); font-weight: 500; text-transform: capitalize;">${escapeHtml(key.replace(/_/g, ' '))}</div>
-                          <div style="color: var(--vs-text-primary); word-break: break-word; white-space: pre-wrap;">${escapeHtml(String(val || '—'))}</div>
-                        `).join('')}
+                        ${Object.entries(cleanData).map(([key, val]) => {
+                          // File fields: show download link
+                          if (val && typeof val === 'object' && val.path && val.original_name) {
+                            const sizeText = val.size < 1024 ? val.size + ' B' : (val.size < 1048576 ? Math.round(val.size / 1024) + ' KB' : (val.size / 1048576).toFixed(1) + ' MB');
+                            return `
+                              <div style="color: var(--vs-text-ghost); font-weight: 500; text-transform: capitalize;">${escapeHtml(key.replace(/_/g, ' '))}</div>
+                              <div style="color: var(--vs-text-primary);">
+                                <a href="/_studio/api/router.php?_path=/agentic/actions/${encodeURIComponent(actionId)}/records/${rec.id}/files/${encodeURIComponent(key)}" target="_blank" style="
+                                  color: var(--vs-accent); text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
+                                " title="Download file">
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                  ${escapeHtml(val.original_name)} (${sizeText})
+                                </a>
+                              </div>
+                            `;
+                          }
+                          return `
+                            <div style="color: var(--vs-text-ghost); font-weight: 500; text-transform: capitalize;">${escapeHtml(key.replace(/_/g, ' '))}</div>
+                            <div style="color: var(--vs-text-primary); word-break: break-word; white-space: pre-wrap;">${escapeHtml(String(val || '—'))}</div>
+                          `;
+                        }).join('')}
                       </div>
                     </td>
                   </tr>

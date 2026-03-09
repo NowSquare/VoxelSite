@@ -552,13 +552,53 @@ CSS;
         }
 
         $footer = file_get_contents($footerPath);
+
+        // Compute cache-busting hashes
+        $jsHash = '';
+        $cssHash = '';
+        if ($docRoot !== null) {
+            $jsFile = rtrim($docRoot, '/') . '/actions-bar.js';
+            $cssFile = rtrim($docRoot, '/') . '/actions-bar.css';
+            if (file_exists($jsFile)) $jsHash = substr(md5_file($jsFile), 0, 8);
+            if (file_exists($cssFile)) $cssHash = substr(md5_file($cssFile), 0, 8);
+        }
+
         if (str_contains($footer, 'actions-bar.js')) {
-            return; // Already injected
+            // Already injected — update cache-bust versions
+            $changed = false;
+            if ($jsHash) {
+                $newFooter = preg_replace(
+                    '#(actions-bar\.js)(\?v=[a-f0-9]+)?#',
+                    '$1?v=' . $jsHash,
+                    $footer
+                );
+                if ($newFooter !== $footer) { $footer = $newFooter; $changed = true; }
+            }
+            if ($cssHash) {
+                $newFooter = preg_replace(
+                    '#(actions-bar\.css)(\?v=[a-f0-9]+)?#',
+                    '$1?v=' . $cssHash,
+                    $footer
+                );
+                if ($newFooter !== $footer) { $footer = $newFooter; $changed = true; }
+            }
+            if ($changed) {
+                file_put_contents($footerPath, $footer);
+            }
+            return;
         }
 
         if (str_contains($footer, '</body>')) {
-            $injection = '<link rel="stylesheet" href="/actions-bar.css">' . "\n"
-                . '<script src="/actions-bar.js" defer></script>' . "\n";
+            $jsVersion = '';
+            $cssVersion = '';
+            if ($docRoot !== null) {
+                $jsFile = rtrim($docRoot, '/') . '/actions-bar.js';
+                $cssFile = rtrim($docRoot, '/') . '/actions-bar.css';
+                if (file_exists($jsFile)) $jsVersion = '?v=' . substr(md5_file($jsFile), 0, 8);
+                if (file_exists($cssFile)) $cssVersion = '?v=' . substr(md5_file($cssFile), 0, 8);
+            }
+            $injection = '<link rel="stylesheet" href="/actions-bar.css' . $cssVersion . '">' . "\n"
+                . '<script src="/actions-bar.js' . $jsVersion . '" defer></script>' . "\n";
             $footer = str_replace('</body>', $injection . '</body>', $footer);
             file_put_contents($footerPath, $footer);
         }

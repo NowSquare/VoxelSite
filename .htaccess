@@ -6,6 +6,7 @@
     # These should never be web-accessible
     RewriteRule ^\.ai/ - [F,L]
     RewriteRule ^\.git/ - [F,L]
+    RewriteRule ^_data/ - [F,L]
     RewriteRule ^scripts/ - [F,L]
     RewriteRule ^vendor/ - [F,L]
     RewriteRule ^node_modules/ - [F,L]

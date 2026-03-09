@@ -235,7 +235,7 @@ if ($method === 'POST' && $path === '/publish') {
             }
 
             // Deploy submit handler
-            $submitSource = dirname(__DIR__) . '/static/actions-submit.php';
+            $submitSource = dirname(__DIR__, 2) . '/static/actions-submit.php';
             if (file_exists($submitSource)) {
                 $actionsDir = $docRoot . '/actions';
                 if (!is_dir($actionsDir)) {
@@ -246,7 +246,7 @@ if ($method === 'POST' && $path === '/publish') {
             }
 
             // Deploy i18n translation files
-            $i18nSource = dirname(__DIR__) . '/static/actions-i18n';
+            $i18nSource = dirname(__DIR__, 2) . '/static/actions-i18n';
             if (is_dir($i18nSource)) {
                 $i18nDest = $docRoot . '/actions/i18n';
                 if (!is_dir($i18nDest)) {

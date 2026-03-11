@@ -79,6 +79,8 @@ _studio/revisions/*
 !_studio/revisions/.gitkeep
 _studio/snapshots/*
 !_studio/snapshots/.gitkeep
+_studio/data/designs/*
+!_studio/data/designs/.gitkeep
 _studio/backups/*
 !_studio/backups/.gitkeep
 

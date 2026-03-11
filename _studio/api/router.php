@@ -123,6 +123,15 @@ $routes = [
     ['POST',   '/snapshots/:id/restore', 'snapshots.php',      true],
     ['DELETE', '/snapshots/:id',         'snapshots.php',      true],
 
+    // Design Library
+    ['GET',    '/designs',               'designs.php',        true],
+    ['GET',    '/designs/:id/preview',   'designs.php',        true],
+    ['POST',   '/designs/new',           'designs.php',        true],
+    ['POST',   '/designs',               'designs.php',        true],
+    ['POST',   '/designs/:id/load',      'designs.php',        true],
+    ['PUT',    '/designs/:id',           'designs.php',        true],
+    ['DELETE', '/designs/:id',           'designs.php',        true],
+
     // Collections — disabled for v1.0.0, ships in v1.1
     // ['GET',    '/collections',                        'collections.php', true],
     // ['POST',   '/collections',                        'collections.php', true],

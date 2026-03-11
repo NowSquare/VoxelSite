@@ -35,7 +35,7 @@ import { renderActionsView, renderActionDetailView } from './src/views/actions.j
 import { renderFormsView, renderFormDetailView } from './src/views/forms.js';
 import { renderTeamView, renderTeamModals } from './src/views/team.js';
 import { renderAssetsView } from './src/views/assets.js';
-import { renderSnapshotsView } from './src/views/snapshots.js';
+import { renderDesignsView, confirmNewDesign } from './src/views/designs.js';
 import { showToast, showToastWithAction } from './src/ui/toasts.js';
 import { escapeHtml, escapeAttr, getCodeLanguage } from './src/helpers.js';
 import { closeModal, showConfirmModal, showPromptModal } from './src/ui/modals.js';
@@ -53,7 +53,7 @@ const NAV_ITEMS = [
   // { route: 'collections', label: 'Collections' },
   { route: 'forms',       label: 'Forms' },
   { route: 'actions',      label: 'Actions' },
-  { route: 'snapshots',   label: 'Snapshots',  roles: ['owner', 'editor'] },
+  { route: 'designs',     label: 'Designs',    roles: ['owner', 'editor'] },
   { route: 'settings',    label: 'Settings',   roles: ['owner'] },
 ];
 
@@ -90,7 +90,7 @@ const MOBILE_NAV_ITEMS = [
   { route: 'assets',     label: 'Assets',     icon: 'image' },
   { route: 'forms',      label: 'Forms',      icon: 'inbox' },
   { route: 'actions',    label: 'Actions',    icon: 'zap' },
-  { route: 'snapshots',  label: 'Snapshots',  icon: 'camera',  roles: ['owner', 'editor'] },
+  { route: 'designs',   label: 'Designs',    icon: 'palette', roles: ['owner', 'editor'] },
   { route: 'more',       label: 'More',       icon: 'ellipsis' },
 ];
 
@@ -219,7 +219,7 @@ async function init() {
     .on('forms/:formId',     () => renderApp())
     .on('actions',           () => renderApp())
     .on('actions/:actionId', () => renderApp())
-    .on('snapshots',         () => renderApp())
+    .on('designs',           () => renderApp())
     .on('settings',          () => renderApp())
     .on('team',              () => renderApp())
     .on('profile',           () => renderApp())
@@ -627,8 +627,8 @@ function renderPageContent(route, params) {
       return renderActionsView();
     case 'actions/:actionId':
       return renderActionDetailView(params.actionId);
-    case 'snapshots':
-      return (role === 'owner' || role === 'editor') ? renderSnapshotsView() : renderAccessDenied();
+    case 'designs':
+      return (role === 'owner' || role === 'editor') ? renderDesignsView() : renderAccessDenied();
     case 'settings':
       return role === 'owner' ? renderSettingsView() : renderAccessDenied();
     case 'team':
@@ -1439,6 +1439,14 @@ function bindQuickPromptButtons() {
       }
     });
   });
+
+  // "New Design" button in Chat empty state
+  document.getElementById('chat-new-design')?.addEventListener('click', () => {
+    if (demoGuard()) return;
+    if (viewerGuard()) return;
+    // confirmNewDesign auto-saves current work, then clears workspace
+    confirmNewDesign();
+  });
 }
 
 // ═══════════════════════════════════════════
@@ -1597,6 +1605,17 @@ function renderEmptyChat() {
       class="vs-style-card">${escapeHtml(a.label)}</button>`;
   }).join('\n        ');
 
+  // "New Design" link — shown only when a site exists and user can save
+  const user = store.get('user');
+  const canSave = hasSite && (user?.role === 'owner' || user?.role === 'editor');
+  const newDesignLink = canSave ? `
+      <div class="vs-animate-in vs-stagger-5" style="margin-top: 16px; text-align: center;">
+        <button id="chat-new-design" class="vs-btn vs-btn-ghost vs-btn-xs" style="color: var(--vs-text-ghost);">
+          ${icons.filePlus} Start a new design from scratch
+        </button>
+      </div>
+  ` : '';
+
   return `
     <div class="vs-empty-state">
       <div class="vs-empty-icon vs-animate-in vs-stagger-1">
@@ -1613,6 +1632,7 @@ function renderEmptyChat() {
       <div class="vs-style-grid vs-animate-in vs-stagger-4">
         ${cardsHtml}
       </div>
+      ${newDesignLink}
     </div>
   `;
 }
@@ -3557,12 +3577,12 @@ function showPublishConfirmModal({ totalChanges = 0, snapshotDefault = true }) {
         <div class="vs-modal-header">
           <h2 class="vs-modal-title">Publish Website</h2>
           <p class="vs-modal-desc">${escapeHtml(desc)}</p>
-          <label class="vs-publish-option" for="vs-publish-snapshot-cb">
+          <label class="vs-modal-option" for="vs-publish-snapshot-cb">
             <input type="checkbox" id="vs-publish-snapshot-cb" ${snapshotDefault ? 'checked' : ''}>
-            <span class="vs-publish-check">
+            <span class="vs-modal-option-check">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             </span>
-            <span class="vs-publish-option-label">Create snapshot before publishing</span>
+            <span class="vs-modal-option-label">Create snapshot before publishing</span>
           </label>
         </div>
         <div class="vs-modal-footer">
@@ -4125,8 +4145,9 @@ async function handleSend() {
     }
   }, 1000);
 
-  // ── Disable send button during streaming ──
+  // ── Lock UI during streaming ──
   store.set('aiStreaming', true);
+  document.body.classList.add('vs-ai-streaming');
   const sendBtn = document.getElementById('btn-send');
   if (sendBtn) {
     sendBtn.disabled = true;
@@ -4478,8 +4499,9 @@ async function handleSend() {
     },
   });
 
-  // ── Re-enable send ──
+  // ── Unlock UI ──
   store.set('aiStreaming', false);
+  document.body.classList.remove('vs-ai-streaming');
   if (sendBtn) {
     sendBtn.disabled = false;
     sendBtn.classList.remove('opacity-50');

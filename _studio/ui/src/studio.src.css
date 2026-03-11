@@ -837,6 +837,181 @@ select.vs-input {
   color: var(--vs-text-ghost);
 }
 
+/* ═══════════════════════════════════════════ */
+/*  TAB BAR                                   */
+/* ═══════════════════════════════════════════ */
+
+.vs-tab-bar {
+  display: flex;
+  gap: 2px;
+  background: var(--vs-bg-inset);
+  border-radius: var(--radius-lg);
+  padding: 3px;
+  width: fit-content;
+}
+
+.vs-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: transparent;
+  color: var(--vs-text-tertiary);
+  cursor: pointer;
+  transition: all 150ms ease-out;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.vs-tab:hover {
+  color: var(--vs-text-secondary);
+}
+
+.vs-tab-active {
+  background: var(--vs-bg-surface);
+  color: var(--vs-text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 1px var(--vs-border-subtle);
+}
+
+/* ═══════════════════════════════════════════ */
+/*  DESIGN LIBRARY — Gallery Grid + Cards     */
+/* ═══════════════════════════════════════════ */
+
+.vs-design-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.vs-design-card {
+  background: var(--vs-bg-surface);
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  transition: all 250ms var(--ease-out);
+  animation: cream-rise 0.4s var(--ease-out) both;
+}
+
+.vs-design-card:nth-child(1) { animation-delay: 0.05s; }
+.vs-design-card:nth-child(2) { animation-delay: 0.1s; }
+.vs-design-card:nth-child(3) { animation-delay: 0.15s; }
+.vs-design-card:nth-child(4) { animation-delay: 0.2s; }
+.vs-design-card:nth-child(5) { animation-delay: 0.25s; }
+.vs-design-card:nth-child(6) { animation-delay: 0.3s; }
+.vs-design-card:nth-child(n+7) { animation-delay: 0.35s; }
+
+.vs-design-card:hover {
+  border-color: var(--vs-border-medium);
+  box-shadow: var(--vs-cream-hover);
+  transform: translateY(-2px);
+}
+
+.vs-design-card-active {
+  border-color: var(--vs-accent);
+  box-shadow: 0 0 0 1px var(--vs-accent), 0 4px 16px color-mix(in srgb, var(--vs-accent) 15%, transparent);
+}
+
+.vs-design-card-corrupted {
+  opacity: 0.5;
+  pointer-events: auto;
+}
+
+/* ── Card Preview: scaled-down iframe of the actual site ── */
+.vs-design-card-preview {
+  position: relative;
+  overflow: hidden;
+  background: var(--vs-bg-inset);
+  aspect-ratio: 16 / 10;
+  border-bottom: 1px solid var(--vs-border-subtle);
+}
+
+.vs-design-card-preview iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1440px;
+  height: 900px;
+  border: 0;
+  pointer-events: none;
+  /* Scale the 1440px-wide iframe to fill the container width.
+     Since container-width / 1440 ≈ 0.18, we use scale(0.18) as baseline
+     and let the container clip any height overflow. */
+  transform-origin: top left;
+}
+
+.vs-design-card-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: var(--text-xs);
+  color: var(--vs-text-ghost);
+}
+
+/* ── Card info (name, description, meta — below preview) ── */
+.vs-design-card-info {
+  padding: 12px 16px 4px;
+}
+
+.vs-design-card-info h3 {
+  margin: 0 0 2px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--vs-text-primary);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vs-design-card-desc {
+  margin: 0 0 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--vs-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ── Card meta ── */
+.vs-design-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0 2px;
+  font-size: 11px;
+  color: var(--vs-text-ghost);
+}
+
+/* ── Card actions ── */
+.vs-design-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px 12px;
+}
+
+.vs-design-badge-active {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--vs-accent) 12%, transparent);
+  color: var(--vs-accent);
+  letter-spacing: 0.02em;
+}
+
 .vs-textarea {
   resize: none;
   font-family: var(--font-sans);
@@ -1756,13 +1931,13 @@ select.vs-input {
   color: var(--vs-error);
 }
 
-/* ── Snapshot Checkbox (Publish Modal) ── */
-.vs-publish-option {
+/* ── Modal Checkbox Option (shared by Publish + New Design) ── */
+.vs-modal-option {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-top: 14px;
-  padding: 10px 14px;
+  padding: 9px 12px;
   background: var(--vs-bg-inset);
   border-radius: var(--radius-lg);
   border: 1px solid var(--vs-border-subtle);
@@ -1771,13 +1946,13 @@ select.vs-input {
   transition: border-color 150ms ease, background 150ms ease;
 }
 
-.vs-publish-option:hover {
+.vs-modal-option:hover {
   border-color: color-mix(in srgb, var(--vs-accent) 50%, transparent);
   background: color-mix(in srgb, var(--vs-accent) 3%, var(--vs-bg-inset));
 }
 
 /* Hide the native checkbox */
-.vs-publish-option input[type="checkbox"] {
+.vs-modal-option input[type="checkbox"] {
   position: absolute;
   opacity: 0;
   width: 0;
@@ -1786,7 +1961,7 @@ select.vs-input {
 }
 
 /* Custom checkbox indicator */
-.vs-publish-check {
+.vs-modal-option-check {
   position: relative;
   width: 18px;
   height: 18px;
@@ -1800,7 +1975,7 @@ select.vs-input {
   justify-content: center;
 }
 
-.vs-publish-check svg {
+.vs-modal-option-check svg {
   width: 12px;
   height: 12px;
   color: #fff;
@@ -1810,31 +1985,31 @@ select.vs-input {
 }
 
 /* Checked state */
-.vs-publish-option input:checked ~ .vs-publish-check {
+.vs-modal-option input:checked ~ .vs-modal-option-check {
   background: var(--vs-accent);
   border-color: var(--vs-accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--vs-accent) 15%, transparent);
 }
 
-.vs-publish-option input:checked ~ .vs-publish-check svg {
+.vs-modal-option input:checked ~ .vs-modal-option-check svg {
   opacity: 1;
   transform: scale(1);
 }
 
 /* Focus ring for keyboard users */
-.vs-publish-option input:focus-visible ~ .vs-publish-check {
+.vs-modal-option input:focus-visible ~ .vs-modal-option-check {
   box-shadow: 0 0 0 2px var(--vs-accent);
 }
 
-.vs-publish-option-label {
+.vs-modal-option-label {
   font-size: var(--text-xs);
   font-weight: 500;
   color: var(--vs-text-secondary);
   line-height: 1.4;
 }
 
-/* Spacing: when modal footer directly follows the publish option */
-.vs-modal-header:has(.vs-publish-option) + .vs-modal-footer {
+/* Spacing: when modal footer directly follows a checkbox option */
+.vs-modal-header:has(.vs-modal-option) + .vs-modal-footer {
   padding-top: 20px;
 }
 
@@ -5804,6 +5979,25 @@ select.vs-input {
 .vx-editing #btn-visual-editor { pointer-events: auto; }
 /* Re-enable the preview area itself (iframe + overlays) */
 .vx-editing #preview-frame-container { pointer-events: auto; }
+
+/* ── AI Streaming UI Lockdown ──
+   While the AI is generating, disable controls that could cause data loss
+   or state corruption (undo during write, navigation, publish mid-stream).
+   The conversation panel stays fully interactive — the user can read
+   progress, scroll the chat, and click "Stop" to cancel generation.
+   The preview shows the generating overlay (managed by JS). */
+.vs-ai-streaming .vs-topbar { pointer-events: none; opacity: 0.5; transition: opacity 200ms ease; }
+.vs-ai-streaming .vs-statusbar { pointer-events: none; opacity: 0.5; transition: opacity 200ms ease; }
+.vs-ai-streaming .vs-preview-toolbar { pointer-events: none; }
+.vs-ai-streaming .vs-device-toggle,
+.vs-ai-streaming #btn-edit-code,
+.vs-ai-streaming #btn-refresh-preview,
+.vs-ai-streaming #btn-external-preview,
+.vs-ai-streaming #btn-visual-editor { opacity: 0.35; }
+/* The conversation panel remains interactive for scrolling and the cancel button,
+   but the prompt area is locked — no queuing prompts during generation. */
+.vs-ai-streaming #conversation-panel { pointer-events: auto; opacity: 1; }
+.vs-ai-streaming .vs-prompt-area { pointer-events: none; opacity: 0.45; transition: opacity 200ms ease; }
 
 /* ── Context Toolbar ── */
 .vx-context-toolbar {

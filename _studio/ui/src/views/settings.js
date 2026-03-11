@@ -11,6 +11,7 @@ import { api } from '../../api.js';
 import { showToast } from '../ui/toasts.js';
 import { escapeHtml } from '../helpers.js';
 import { closeModal, showConfirmModal } from '../ui/modals.js';
+import { router } from '../../router.js';
 
 function renderSettingsView() {
   // Load settings on render
@@ -1537,10 +1538,9 @@ async function executeReset(overlay) {
         closeModal(overlay);
         // Navigate to chat — the user will see a blank state ready for create_site
         if (window.location.hash !== '#/chat') {
-          window.location.hash = '#/chat';
+          router.navigate('chat');
         } else {
-          // Force re-render if already on chat
-          window.dispatchEvent(new HashChangeEvent('hashchange'));
+          router.refresh();
         }
       }, 800);
     } else {

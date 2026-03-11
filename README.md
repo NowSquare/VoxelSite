@@ -27,6 +27,7 @@ Full documentation: **[voxelsite.com/docs](https://voxelsite.com/docs)**
 - **Live Preview** — see every change before publishing
 - **Undo/Redo** — full revision history with safe editing workflow
 - **Snapshots** — save/restore entire site states
+- **Design Library** — save, compare, and switch between entirely different website designs
 - **Asset Manager** — upload images, files, and fonts
 - **Actions** — define interactions (reservations, signups, inquiries) that serve both human visitors (beautiful form bar with file uploads) and AI agents (MCP tools) simultaneously
 - **Forms** — submission handling with validation, spam protection, and email notifications

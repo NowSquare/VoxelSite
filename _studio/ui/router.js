@@ -114,6 +114,19 @@ class Router {
   }
 
   /**
+   * Force re-resolution of the current route.
+   *
+   * Useful when application state has changed (e.g., workspace cleared)
+   * and the view needs to re-render, even though the URL hash hasn't changed.
+   * The router normally skips re-renders when the path is identical — this
+   * method clears that guard and re-runs the matched handler.
+   */
+  refresh() {
+    this.#lastPath = null;
+    this.#resolve();
+  }
+
+  /**
    * Get the current route path (without the #/).
    * @returns {string}
    */

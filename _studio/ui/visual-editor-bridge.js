@@ -943,6 +943,7 @@
 
   let sectionDividers = [];
   let dividerDebounceId = null;
+  let sectionHighlightEl = null;
 
   /** Scroll the iframe to a section by index, with a brief highlight flash. */
   function scrollToSection(index) {
@@ -1004,29 +1005,88 @@
     divider.className = 'vx-section-divider';
     divider.setAttribute('data-vx-divider', 'true');
 
-    const btn = document.createElement('button');
-    btn.className = 'vx-section-divider-btn';
-    btn.type = 'button';
-    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
-    btn.setAttribute('title', 'Add section');
+    const totalSections = allSections.length;
+    const isFirstDivider = !afterSection && !!beforeSection; // before section 0
 
+    // ── Each divider controls the section ABOVE it (section[afterIndex]). ──
+    //
+    // ▲ moves section[afterIndex] UP   (swaps with section[afterIndex - 1])
+    // ▼ moves section[afterIndex] DOWN (swaps with section[afterIndex + 1])
+    //
+    // The first divider (afterIndex = -1) doesn't control any section — just [+].
+    //
+    // After a move, the scroll follows the moved section so the user always
+    // sees the ▲/▼ buttons to undo their action.
+    const showUp = !isFirstDivider && afterIndex > 0;
+    const showDown = !isFirstDivider && afterIndex >= 0 && afterIndex < totalSections - 1;
+
+    // ── Button row: [▲ slot 24px] [+ 28px] [▼ slot 24px] ──
+    // Fixed-width slots keep + always centered, even when one chevron is absent.
+    const btnRow = document.createElement('div');
+    btnRow.className = 'vx-section-divider-row';
+
+    // Left slot (▲ or empty)
+    const leftSlot = document.createElement('span');
+    leftSlot.className = 'vx-move-slot';
+    if (showUp) {
+      const upBtn = document.createElement('button');
+      upBtn.className = 'vx-section-divider-btn vx-section-move-btn';
+      upBtn.type = 'button';
+      upBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`;
+      upBtn.setAttribute('title', 'Move section up');
+      upBtn.setAttribute('aria-label', 'Move section up');
+      upBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        moveSection(afterIndex, 'up');
+      });
+      leftSlot.appendChild(upBtn);
+    }
+    btnRow.appendChild(leftSlot);
+
+    // Center: Add Section button
+    const addBtn = document.createElement('button');
+    addBtn.className = 'vx-section-divider-btn vx-section-add-btn';
+    addBtn.type = 'button';
+    addBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+    addBtn.setAttribute('title', 'Add section');
+    addBtn.setAttribute('aria-label', 'Add section');
+    btnRow.appendChild(addBtn);
+
+    // Right slot (▼ or empty)
+    const rightSlot = document.createElement('span');
+    rightSlot.className = 'vx-move-slot';
+    if (showDown) {
+      const downBtn = document.createElement('button');
+      downBtn.className = 'vx-section-divider-btn vx-section-move-btn';
+      downBtn.type = 'button';
+      downBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+      downBtn.setAttribute('title', 'Move section down');
+      downBtn.setAttribute('aria-label', 'Move section down');
+      downBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        moveSection(afterIndex, 'down');
+      });
+      rightSlot.appendChild(downBtn);
+    }
+    btnRow.appendChild(rightSlot);
+
+    // Label: "top" for the first divider, "section" for all others
     const label = document.createElement('span');
     label.className = 'vx-section-divider-label';
-    label.textContent = 'section';
+    label.textContent = isFirstDivider ? 'top' : 'section';
+    btnRow.appendChild(label);
 
-    divider.appendChild(btn);
-    divider.appendChild(label);
+    divider.appendChild(btnRow);
 
-    // Position the divider at the boundary between sections
-    const isFirstDivider = !afterSection && !!beforeSection;
+    // Position at the boundary
     const positionDivider = () => {
       let topY;
       if (afterSection) {
-        // Place at the bottom edge of afterSection
         const rect = afterSection.getBoundingClientRect();
         topY = rect.bottom + window.scrollY;
       } else if (beforeSection) {
-        // Place near the top edge of the first section, offset down so button is fully visible
         const rect = beforeSection.getBoundingClientRect();
         topY = rect.top + window.scrollY + 20;
       }
@@ -1035,12 +1095,11 @@
       }
     };
 
-    // Click handler
-    btn.addEventListener('click', (e) => {
+    // Add Section click handler
+    addBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
 
-      // Build existing section summaries string
       const existingList = allSections.map(s => {
         let desc = `- Section ${s.index + 1}`;
         if (s.id) desc += ` (id="${s.id}")`;
@@ -1049,7 +1108,6 @@
         return desc;
       }).join('\n');
 
-      // Get outerHTML of the section AFTER which we insert (for position context)
       const anchorHtml = afterSection ? afterSection.outerHTML.substring(0, 8000) : '';
 
       notifyParent({
@@ -1058,23 +1116,103 @@
         insertAfterIndex: afterIndex,
         insertAfterHtml: anchorHtml,
         existingSections: existingList,
-        totalSections: allSections.length,
+        totalSections: totalSections,
       });
     });
 
-    // Append to body (never in the flow)
+    // Section highlight: show a soft blue overlay on the controlled section when hovering
+    if (!isFirstDivider && afterSection) {
+      btnRow.addEventListener('mouseenter', () => showSectionHighlight(afterSection));
+      btnRow.addEventListener('mouseleave', () => hideSectionHighlight());
+    }
+
     document.body.appendChild(divider);
     positionDivider();
-
-    // Store the reposition function so we can call it on scroll
     divider.__vxReposition = positionDivider;
-
     sectionDividers.push(divider);
+  }
+
+  /**
+   * Move a section up or down by swapping it with its neighbor.
+   *
+   * Each divider controls the section ABOVE it:
+   *   ▲ = move section[i] up   → swap with section[i-1]
+   *   ▼ = move section[i] down → swap with section[i+1]
+   *
+   * After the swap, scroll follows the moved section so the user
+   * can see the ▲/▼ buttons on the divider below it to undo.
+   */
+  function moveSection(sectionIndex, direction) {
+    const mainEl = document.querySelector('main') || document.body;
+    const sections = mainEl.querySelectorAll(':scope > section, :scope > div > section');
+
+    const neighborIndex = direction === 'up' ? sectionIndex - 1 : sectionIndex + 1;
+    if (neighborIndex < 0 || neighborIndex >= sections.length) return;
+
+    // Determine upper/lower for the DOM swap
+    const upperIdx = Math.min(sectionIndex, neighborIndex);
+    const lowerIdx = Math.max(sectionIndex, neighborIndex);
+    const upperEl = sections[upperIdx];
+    const lowerEl = sections[lowerIdx];
+
+    // Move preceding HTML comment nodes (<!-- Section Name -->) with their section
+    const upperComment = (upperEl.previousSibling?.nodeType === Node.COMMENT_NODE)
+      ? upperEl.previousSibling : null;
+    const lowerComment = (lowerEl.previousSibling?.nodeType === Node.COMMENT_NODE)
+      ? lowerEl.previousSibling : null;
+
+    // DOM swap: insert lower element (with comment) before upper element (with comment)
+    const anchor = upperComment || upperEl;
+    if (lowerComment) {
+      anchor.parentNode.insertBefore(lowerComment, anchor);
+    }
+    anchor.parentNode.insertBefore(lowerEl, anchor);
+
+    // Rebuild dividers at new DOM positions
+    rebuildSectionDividers();
+
+    // Scroll follows the moved section to its new position.
+    // The moved section is now at neighborIndex (it took its neighbor's slot).
+    scrollToSection(neighborIndex);
+
+    // Notify parent to persist the swap in the source file
+    notifyParent({
+      type: 'vx-editor:section-moved',
+      filePath: getPageFilePath(),
+      sectionIndex: upperIdx,
+      neighborIndex: lowerIdx,
+      direction: direction,
+    });
   }
 
   function removeSectionDividers() {
     sectionDividers.forEach(d => d.remove());
     sectionDividers = [];
+    hideSectionHighlight();
+  }
+
+  /**
+   * Show a soft blue overlay over a section element to indicate
+   * which section a divider's buttons control.
+   */
+  function showSectionHighlight(sectionEl) {
+    if (!sectionHighlightEl) {
+      sectionHighlightEl = document.createElement('div');
+      sectionHighlightEl.id = 'vx-section-highlight';
+      document.body.appendChild(sectionHighlightEl);
+    }
+    const rect = sectionEl.getBoundingClientRect();
+    sectionHighlightEl.style.left = `${rect.left}px`;
+    sectionHighlightEl.style.top = `${rect.top + window.scrollY}px`;
+    sectionHighlightEl.style.width = `${rect.width}px`;
+    sectionHighlightEl.style.height = `${rect.height}px`;
+    sectionHighlightEl.style.opacity = '1';
+  }
+
+  function hideSectionHighlight() {
+    if (sectionHighlightEl) {
+      sectionHighlightEl.style.opacity = '0';
+    }
   }
 
   // Inject divider styles
@@ -1109,6 +1247,42 @@
         border-top-color: rgba(59,130,246,0.5);
         left: 3%;
         right: 3%;
+      }
+      /* Section highlight — diagonal hatching over the controlled section on divider hover */
+      #vx-section-highlight {
+        position: absolute;
+        pointer-events: none;
+        background:
+          repeating-linear-gradient(
+            -45deg,
+            rgba(59, 130, 246, 0.08),
+            rgba(59, 130, 246, 0.08) 4px,
+            transparent 4px,
+            transparent 14px
+          );
+        border: 2px solid rgba(59, 130, 246, 0.25);
+        border-radius: 8px;
+        z-index: 9999998;
+        opacity: 0;
+        transition: opacity 200ms ease;
+      }
+      /* Button row: 3-slot flex layout keeps + always centered */
+      .vx-section-divider-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        pointer-events: auto;
+        position: relative;
+      }
+      /* Fixed-width slots for ▲ and ▼ — even when empty, they hold space */
+      .vx-move-slot {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        flex-shrink: 0;
       }
       .vx-section-divider-btn {
         position: relative;
@@ -1146,6 +1320,28 @@
         width: 14px;
         height: 14px;
       }
+      /* Move buttons: slightly smaller, fade in on divider hover */
+      .vx-section-move-btn {
+        width: 24px;
+        height: 24px;
+        opacity: 0;
+        transform: scale(0.7);
+        transition: opacity 180ms ease, transform 180ms ease, background 180ms ease, color 180ms ease, box-shadow 180ms ease;
+      }
+      .vx-section-divider:hover .vx-section-move-btn {
+        opacity: 1;
+        transform: scale(1);
+      }
+      .vx-section-move-btn:hover {
+        transform: scale(1.12) !important;
+      }
+      .vx-section-move-btn:active {
+        transform: scale(0.92) !important;
+      }
+      .vx-section-move-btn svg {
+        width: 12px;
+        height: 12px;
+      }
       .vx-section-divider-label {
         position: relative;
         white-space: nowrap;
@@ -1156,7 +1352,7 @@
         border-radius: 4px;
         pointer-events: none;
         transition: all 180ms ease;
-        margin-left: 6px;
+        margin-left: 2px;
       }
       .vx-section-divider:hover .vx-section-divider-label {
         color: rgba(255,255,255,0.85);

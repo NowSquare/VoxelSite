@@ -149,7 +149,7 @@ export function renderTeamModals() {
               ['Publish changes',       true,  true,  false],
               ['View form submissions', true,  true,  true],
               ['Preview the site',      true,  true,  true],
-              ['Manage snapshots',      true,  true,  false],
+              ['Manage designs',        true,  true,  false],
               ['Change settings',       true,  false, false],
               ['Manage team members',   true,  false, false],
             ].map(([label, owner, editor, viewer]) => `

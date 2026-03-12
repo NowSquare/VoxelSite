@@ -1499,8 +1499,8 @@ SAFETY;
      *          snapshot zips, collection data (not schemas),
      *          form definitions and submission database.
      * Preserves: user-uploaded images/files, Lucide icons, _studio internals,
-     *            collection schemas, user settings, API keys.
-     * Clears: pages, conversations, messages, prompt_log, revisions,
+     *            collection schemas, user settings, API keys, prompt_log (usage data).
+     * Clears: pages, conversations, messages, revisions,
      *         snapshots, collections database tables.
      * Removes: _studio/revisions/ and _studio/data/snapshots/ contents.
      *
@@ -1680,8 +1680,11 @@ SAFETY;
             }
         }
 
-        // 6. Clear database tables (preserve users, sessions, settings)
-        $tablesToClear = ['pages', 'conversations', 'prompt_log', 'revisions', 'snapshots', 'collections'];
+        // 6. Clear database tables (preserve users, sessions, settings, prompt_log)
+        // prompt_log is usage accounting — it persists across design switches
+        // and site resets. Only "Reset installation" (which deletes the entire
+        // database file) wipes it.
+        $tablesToClear = ['pages', 'conversations', 'revisions', 'snapshots', 'collections'];
         foreach ($tablesToClear as $table) {
             $this->db->exec("DELETE FROM {$table}");
         }

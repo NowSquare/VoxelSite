@@ -441,6 +441,9 @@ if ($method === 'GET' && $path === '/settings/usage') {
     $db = \VoxelSite\Database::getInstance();
 
     // Aggregate usage per model
+    // Count all requests that consumed tokens: success, partial (file write
+    // warnings), and any other status where the AI call completed.
+    // Exclude only error rows with no token data (API call never started).
     $rows = $db->query(
         "SELECT
             ai_model,
@@ -451,7 +454,8 @@ if ($method === 'GET' && $path === '/settings/usage') {
             MIN(created_at) as first_used,
             MAX(created_at) as last_used
          FROM prompt_log
-         WHERE status = 'success' AND ai_model IS NOT NULL
+         WHERE ai_model IS NOT NULL
+           AND (status IN ('success', 'partial') OR tokens_input > 0)
          GROUP BY ai_model
          ORDER BY total_cost DESC"
     );
@@ -464,7 +468,7 @@ if ($method === 'GET' && $path === '/settings/usage') {
             COALESCE(SUM(tokens_output), 0) as total_output_tokens,
             COALESCE(SUM(cost_estimate), 0) as total_cost
          FROM prompt_log
-         WHERE status = 'success'"
+         WHERE status IN ('success', 'partial') OR tokens_input > 0"
     );
 
     jsonResponse(['ok' => true, 'data' => [

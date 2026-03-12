@@ -420,7 +420,242 @@ CSS;
             $this->ensureShippedFormHandler();
         }
 
+        // Navigation: Replace AI-generated navigation.js with the shipped version.
+        // The AI often generates broken mobile nav JS (missing scroll lock, wrong
+        // selectors, missing transitionEnd). The shipped version is battle-tested.
+        if ($path === 'assets/js/navigation.js') {
+            $this->ensureShippedNavigation();
+            // Return early — the shipped file is written directly, not via preview
+            return $content;
+        }
+
+        // Nav partial: structural fixes for mobile menu.
+        // 1. Move #mobile-menu outside <header> (backdrop-filter trap)
+        // 2. Ensure a close button exists inside the menu
+        // 3. Ensure minimal CSS safety net in style.css
+        if ($path === '_partials/nav.php' && str_contains($content, 'mobile-menu')) {
+            $content = $this->fixMobileMenuPlacement($content);
+            $content = $this->ensureMobileMenuCloseButton($content);
+            $this->ensureMobileNavCss();
+        }
+
         return $content;
+    }
+
+    /**
+     * Move #mobile-menu outside <header> if it's nested inside.
+     *
+     * backdrop-filter on <header> creates a CSS containing block, which
+     * traps position:fixed children inside the header's height. This is
+     * the #1 cause of broken mobile menus in generated sites.
+     *
+     * Strategy: extract the mobile-menu div from inside <header> and
+     * append it after </header>. This is a structural fix, not cosmetic.
+     */
+    private function fixMobileMenuPlacement(string $content): string
+    {
+        // Quick check: is mobile-menu inside <header>?
+        $headerClosePos = strrpos($content, '</header>');
+        if ($headerClosePos === false) {
+            return $content;
+        }
+
+        // Find the mobile-menu div
+        $menuStart = strpos($content, '<div class="mobile-menu"');
+        if ($menuStart === false) {
+            // Try alternate markup patterns
+            $menuStart = strpos($content, '<div id="mobile-menu"');
+        }
+        if ($menuStart === false) {
+            return $content;
+        }
+
+        // If mobile-menu starts BEFORE </header>, it's inside — needs moving
+        if ($menuStart >= $headerClosePos) {
+            return $content; // Already outside — nothing to do
+        }
+
+        // Extract the mobile-menu block.
+        // Find the matching closing </div> by counting nesting depth.
+        $depth = 0;
+        $pos = $menuStart;
+        $len = strlen($content);
+        $menuEnd = null;
+
+        while ($pos < $len) {
+            $nextOpen = strpos($content, '<div', $pos + 1);
+            $nextClose = strpos($content, '</div>', $pos + 1);
+
+            if ($nextClose === false) {
+                break; // Malformed HTML, bail
+            }
+
+            if ($nextOpen !== false && $nextOpen < $nextClose) {
+                $depth++;
+                $pos = $nextOpen;
+            } else {
+                if ($depth === 0) {
+                    $menuEnd = $nextClose + strlen('</div>');
+                    break;
+                }
+                $depth--;
+                $pos = $nextClose;
+            }
+        }
+
+        if ($menuEnd === null) {
+            return $content; // Couldn't determine menu boundaries, bail safely
+        }
+
+        // Extract the menu HTML
+        $menuHtml = substr($content, $menuStart, $menuEnd - $menuStart);
+
+        // Remove it from its current position
+        $content = substr($content, 0, $menuStart) . substr($content, $menuEnd);
+
+        // Clean up any extra whitespace left behind
+        $content = preg_replace('/\n\s*\n\s*\n/', "\n\n", $content);
+
+        // Insert after </header>
+        $headerClosePos = strrpos($content, '</header>');
+        if ($headerClosePos !== false) {
+            $insertAt = $headerClosePos + strlen('</header>');
+            $content = substr($content, 0, $insertAt)
+                . "\n\n" . $menuHtml . "\n"
+                . substr($content, $insertAt);
+
+            Logger::info('files', 'Moved #mobile-menu outside <header> (backdrop-filter fix)');
+        }
+
+        return $content;
+    }
+
+    /**
+     * Ensure #mobile-menu contains an explicit close button.
+     *
+     * Mobile UX best practice: users should always see a clear way to
+     * dismiss the menu. While the shipped navigation.js supports ESC,
+     * overlay-click, and link-click close, a visible button is expected.
+     *
+     * Checks for any known close button pattern. If none exists, injects
+     * a minimal accessible close button as the first child of the menu.
+     * The shipped navigation.js already handles .mobile-menu-close.
+     */
+    private function ensureMobileMenuCloseButton(string $content): string
+    {
+        // Check if any close button already exists inside the mobile-menu
+        $closePatterns = [
+            'mobile-menu-close',
+            'data-close-menu',
+            'nav-close',
+            'menu-close',
+            'icon-close',     // Icon-swap pattern (close icon inside toggle)
+        ];
+
+        foreach ($closePatterns as $pattern) {
+            if (str_contains($content, $pattern)) {
+                return $content; // Already has a close mechanism
+            }
+        }
+
+        // No close button found — inject one as the first child of #mobile-menu
+        $closeBtn = '<button class="mobile-menu-close" aria-label="Close navigation">' . "\n"
+            . '      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+            . '<line x1="18" y1="6" x2="6" y2="18"></line>'
+            . '<line x1="6" y1="6" x2="18" y2="18"></line>'
+            . '</svg>' . "\n"
+            . '    </button>';
+
+        // Find the opening tag of mobile-menu and insert after it
+        $pattern = '/(<div[^>]*id="mobile-menu"[^>]*>)/s';
+        if (preg_match($pattern, $content, $m, PREG_OFFSET_CAPTURE)) {
+            $insertAt = $m[0][1] + strlen($m[0][0]);
+            $content = substr($content, 0, $insertAt)
+                . "\n    " . $closeBtn . "\n"
+                . substr($content, $insertAt);
+
+            Logger::info('files', 'Injected close button into #mobile-menu');
+        }
+
+        return $content;
+    }
+
+    /**
+     * Inject critical mobile nav CSS into style.css if missing.
+     *
+     * Only injects the absolute minimum that prevents a completely
+     * broken mobile menu. The AI owns all design decisions — colors,
+     * fonts, animations, padding. This only catches:
+     *   - Missing position:fixed (menu doesn't cover viewport)
+     *   - Missing background-color (page bleeds through)
+     *   - Missing .is-open transition (menu never appears)
+     */
+    private function ensureMobileNavCss(): void
+    {
+        $stylePath = $this->assetsPath . '/css/style.css';
+        if (!file_exists($stylePath)) {
+            return;
+        }
+
+        $css = file_get_contents($stylePath);
+        if ($css === false) {
+            return;
+        }
+
+        $inject = [];
+
+        // 1. Ensure .mobile-menu has position:fixed for full-viewport coverage
+        if (!preg_match('/\.mobile-menu\s*\{[^}]*position\s*:\s*fixed/s', $css)) {
+            $inject[] = <<<'SAFETY'
+
+/* -- Mobile Nav Safety Net (auto-injected) -- */
+.mobile-menu {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 9999;
+}
+SAFETY;
+        }
+
+        // 2. Ensure .mobile-menu has a background-color
+        if (!preg_match('/\.mobile-menu\s*\{[^}]*background[-\w]*\s*:/s', $css)) {
+            $inject[] = '.mobile-menu { background-color: var(--color-bg, #111); }';
+        }
+
+        // 3. Ensure .mobile-menu.is-open exists (without this, menu never shows)
+        if (!str_contains($css, '.mobile-menu.is-open')) {
+            $inject[] = <<<'SAFETY'
+.mobile-menu { opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
+.mobile-menu.is-open { opacity: 1; pointer-events: auto; }
+SAFETY;
+        }
+
+        // 4. Ensure .mobile-menu-close has baseline styling
+        if (!str_contains($css, '.mobile-menu-close')) {
+            $inject[] = <<<'SAFETY'
+.mobile-menu-close {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+  padding: 0.5rem;
+  line-height: 1;
+  z-index: 1;
+}
+SAFETY;
+        }
+
+        if (!empty($inject)) {
+            $css .= "\n" . implode("\n", $inject) . "\n";
+            file_put_contents($stylePath, $css);
+
+            Logger::info('files', 'Injected mobile nav CSS safety net', [
+                'rules_added' => count($inject),
+            ]);
+        }
     }
 
     /**
@@ -447,6 +682,39 @@ CSS;
             mkdir($dir, 0755, true);
         }
 
+        copy($source, $dest);
+    }
+
+    /**
+     * Copy the shipped navigation.js into assets/js/.
+     *
+     * Like form-handler.js: the AI generates a navigation.js, but we
+     * replace it with the canonical version that handles:
+     *   - Toggle open/close with .is-open class
+     *   - Body scroll lock (overflow: hidden)
+     *   - Escape key to close
+     *   - Close on link click
+     *   - Close on overlay click
+     *   - Scroll-aware sticky header (.is-scrolled)
+     *
+     * The AI is still responsible for the HTML structure and CSS styling.
+     * This file only handles behavior.
+     */
+    private function ensureShippedNavigation(): void
+    {
+        $dest = $this->assetsPath . '/js/navigation.js';
+        $source = dirname(__DIR__) . '/static/navigation.js';
+
+        if (!file_exists($source)) {
+            return;
+        }
+
+        $dir = dirname($dest);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        // Always overwrite — shipped version takes precedence
         copy($source, $dest);
     }
 
@@ -1275,7 +1543,7 @@ CSS;
         // 4. Delete AI-generated JS files (skip shipped handlers)
         $jsDir = $this->assetsPath . '/js';
         if (is_dir($jsDir)) {
-            $skipJs = ['form-handler.js', 'actions-bar.js'];
+            $skipJs = ['form-handler.js', 'actions-bar.js', 'navigation.js'];
             $jsFiles = glob($jsDir . '/*.js') ?: [];
             foreach ($jsFiles as $file) {
                 if (is_file($file) && !in_array(basename($file), $skipJs, true)) {

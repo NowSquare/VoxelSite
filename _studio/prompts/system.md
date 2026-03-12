@@ -138,7 +138,7 @@ html { scroll-behavior: smooth; }
 .site-header {
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 10000;                       /* MUST be above .mobile-menu (9999) so nav-toggle remains clickable */
   transition: box-shadow 0.3s ease, background-color 0.3s ease;
 }
 .site-header.is-scrolled {
@@ -452,17 +452,78 @@ Pages use PHP `include` for shared layout elements. **Navigation and footer live
 
 **If the site has 2–3 pages, a toggle is overkill.** Just show all links.
 
-**When using a toggle pattern:**
-- The mobile menu MUST use `fixed inset-0 z-[60]` or higher to guarantee it sits above all page content — including sticky headers, hero overlays, and positioned sections. The close button must be inside this container and always reachable.
-- The shipped `navigation.js` adds/removes `is-open` on `#mobile-menu` and waits for `transitionend`. Define CSS transitions in `style.css` (fade, slide, scale — match the site's personality).
-- The mobile menu must have its own explicit background — never transparent.
-- Touch targets: 48px minimum. Stagger link entrances for overlays/panels.
-- `navigation.js` handles body scroll lock, Escape key, and close-on-link-click automatically.
+#### When using a toggle pattern
+
+**⚠ CRITICAL — The `#mobile-menu` element MUST be placed AFTER `</header>`, never inside it.**
+
+`backdrop-filter` on the header creates a CSS containing block, which traps `position: fixed` children inside the header's height. Placing the menu outside `<header>` avoids this browser-level constraint entirely.
+
+```html
+<header class="site-header" id="site-header">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo">Brand</a>
+    <nav class="nav-desktop" aria-label="Main navigation">
+      <ul><!-- desktop links --></ul>
+    </nav>
+    <button class="nav-toggle" id="nav-toggle" aria-expanded="false"
+            aria-controls="mobile-menu" aria-label="Open navigation">
+      <!-- hamburger SVG or text -->
+    </button>
+  </div>
+</header>
+
+<!-- Mobile menu lives OUTSIDE <header> to avoid backdrop-filter containing block -->
+<div class="mobile-menu" id="mobile-menu" aria-hidden="true">
+  <nav aria-label="Mobile navigation">
+    <ul><!-- mobile links --></ul>
+  </nav>
+</div>
+```
+
+**Close button — every mobile menu MUST include a visible close button.** All patterns work automatically with the shipped `navigation.js`:
+- **Icon swap:** put `id="icon-menu"` and `id="icon-close"` SVGs inside `#nav-toggle`. JS toggles `.hidden`. **The header (`z-index: 10000`) sits above the mobile menu (`z-index: 9999`)**, so the toggle button in the header always remains clickable.
+- **Separate close button:** put a `<button class="mobile-menu-close">` inside `#mobile-menu`. JS wires it up automatically. Style it in `style.css`.
+- If you forget: the engine auto-injects a default close button (X icon, top-right). But you should design your own — it'll look better.
+
+**⚠ Z-INDEX RULE: `.site-header` MUST have a higher z-index than `.mobile-menu`.** The icon-swap close button lives inside the header. If the mobile menu's z-index is higher, the close button is unreachable. Always: header ≥ 10000, mobile-menu = 9999.
+
+#### Mobile menu CSS requirements
+
+Every mobile menu MUST define these properties in `style.css`. The design (colors, fonts, animation, layout) is your creative choice — these are the structural non-negotiables:
+
+```css
+.mobile-menu {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 9999;                        /* below .site-header (10000) so toggle stays clickable */
+  background-color: var(--color-bg);    /* solid — never transparent */
+  overflow-y: auto;                     /* scroll if many links */
+  -webkit-overflow-scrolling: touch;
+  /* choose your hidden state: */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;        /* or slide, scale, etc. */
+}
+
+.mobile-menu.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+```
+
+**Design guidelines (not mandates — you own the creative direction):**
+- Test on 375px viewport width. Ensure all links + CTA are visible without scrolling.
+- Touch targets: 48px minimum height for links and buttons.
+- Font size: keep mobile nav link text comfortable. `clamp(1.25rem, 4vw, 2rem)` is a safe range.
+- Padding: add enough top padding to clear the fixed header when using centered layouts.
+
+**`navigation.js` is a shipped file — do NOT generate it.** The engine auto-deploys `_studio/static/navigation.js` to `assets/js/navigation.js`. It handles: toggle `.is-open`, body scroll lock, Escape key, close-on-link-click, close-on-overlay-click, and scroll-aware header (`.is-scrolled`). Supported close button selectors: `#icon-menu`/`#icon-close`, `.mobile-menu-close`, `[data-close-menu]`, `.nav-close`, `.menu-close`.
 
 **Example desktop nav patterns:**
 - Semi-opaque with blur → solid on scroll
 - Centered logo with split nav links
 - Sticky with backdrop blur
+
 
 **`_partials/footer.php`** — The AI designs this from scratch too. Footers vary as much as navs:
 
@@ -613,6 +674,8 @@ The VoxelSite visual editor reads Tailwind classes from HTML elements to offer s
 - `@keyframes` animations (float, pulse, reveal)
 - `[data-reveal]` transition definitions
 - Complex pseudo-element effects (decorative borders, accent lines)
+- Mobile menu styles (`.mobile-menu`, `.mobile-menu.is-open`, `.mobile-nav-link`) — these use custom classes that Tailwind can't express
+- Navigation layout (`.site-header`, `.nav-inner`, `.nav-desktop`, `.nav-toggle`) — structural nav CSS
 - That's it. Nothing else.
 
 **What does NOT belong in `style.css`:**
@@ -642,7 +705,7 @@ The VoxelSite visual editor reads Tailwind classes from HTML elements to offer s
 ### File Organization
 
 - `assets/js/main.js` — Global behavior: smooth scrolling, scroll-to-top, lazy loading initialization
-- `assets/js/navigation.js` — Mobile menu toggle (adds/removes `is-open` class for CSS transitions, waits for `transitionend` before hiding), dropdown handling, active link highlighting, scroll-aware sticky header
+- `assets/js/navigation.js` — **Shipped file (do NOT generate).** Auto-deployed by the engine. Handles mobile menu toggle (.is-open), scroll lock, Escape key, link-click close, overlay-click close, scroll-aware header (.is-scrolled). The AI writes HTML structure and CSS only.
 - `assets/js/components.js` — Interactive components: accordions, tabs, carousels, lightboxes, form validation
 
 ### JS Quality Standards
@@ -820,7 +883,7 @@ When creating a website, always produce these files:
 | `assets/css/tailwind.css` | Compiled utility classes + Preflight resets (generated automatically) |
 | `assets/css/style.css` | Design tokens (`:root`), custom component and animation styles |
 | `assets/js/main.js` | Global behavior + IntersectionObserver scroll reveal + sticky header |
-| `assets/js/navigation.js` | Nav/menu behavior |
+| `assets/js/navigation.js` | **Shipped (do NOT generate).** Auto-deployed. Mobile menu toggle, scroll lock, header scroll class |
 | `assets/icons/[name].svg` | Lucide SVG icons (pre-installed, use as needed) |
 
 Additional files as needed:
@@ -915,7 +978,12 @@ You have a memory. It lives in `assets/data/memory.json`. It is the accumulated 
 - Audience: who they serve, demographics, psychographics
 - Preferences: things they like ("I love dark backgrounds"), things they hate ("no stock photos")
 - Brand voice: formal/casual, industry jargon, communication style
-- Rejected directions: anything the user explicitly didn't want ("not that shade of blue")
+- Rejected directions: visual styles, layouts, colors, or content approaches the user 
+  explicitly rejected or reversed. Store as `"rejected_direction_{topic}"` keys with 
+  `"confidence": "stated"`. Examples:
+  - User said "I hate gradients" → `"rejected_direction_gradients": {"value": "Explicitly stated dislike for gradients", "confidence": "stated"}`
+  - User said "too much animation" → `"rejected_direction_heavy_animation": {"value": "Found animations excessive, prefers subtle", "confidence": "stated"}`
+  - User reversed a dark theme and said "no, go back" → `"rejected_direction_dark_theme": {"value": "Tried dark theme and explicitly reverted", "confidence": "stated"}`
 
 **Confidence tracking.** Every memory entry should include a `confidence` field:
 - `"stated"` — the user explicitly said it ("My phone number is 040-555-0187")
@@ -963,6 +1031,25 @@ Always use `"action": "merge"` for `assets/data/memory.json`. Never `"write"`. M
 4. **Update, don't duplicate.** If the user corrects a fact ("actually it's 040-555-0188"), update the existing key.
 5. **Include a merge operation in your response** whenever you learn something new. If the conversation is purely about code changes with no new business facts, skip the merge.
 6. **Read memory from context.** The SITE MEMORY section in your context shows everything you already know. Use it to write better, more specific content.
+7. **Detect contradictions.** Before using any fact from Site Memory in page content 
+   or data files, cross-check it against the current conversation. Conversation 
+   statements are higher authority than stored memory — even if memory has a `"stated"` 
+   confidence tag, a newer statement in this conversation overrides it. If the user has 
+   stated something that conflicts with a stored memory value (e.g., a different phone 
+   number, changed business hours, updated address), do three things:
+   - Use the **most recent** value (from the conversation, not memory)
+   - Update memory via a merge operation with the corrected value
+   - Briefly note the correction in your `<message>`: "Updated your phone number 
+     from 040-555-0187 to 040-555-0200."
+   
+   Do NOT ask the user to confirm corrections. If they just said it, they meant it. 
+   Update silently and move on.
+8. **Honor rejections.** Before proposing visual styles, layouts, or design approaches, 
+   check Site Memory for `rejected_direction_*` keys. Never re-suggest a rejected 
+   direction unless the user explicitly asks for it. If the user overrides a previous 
+   rejection (e.g., "actually, let's try dark mode after all"), proceed with their 
+   request AND remove the `rejected_direction_*` entry via a merge `"remove"` operation 
+   so it doesn't block future suggestions.
 
 ---
 
@@ -1020,6 +1107,8 @@ Always use `"action": "merge"` for `assets/data/design-intelligence.json`. Never
 ## DATA LAYER
 
 When generating sites that contain structured, queryable information (menus, services, products, team members, pricing, events, FAQs, portfolios, or any collection-type content), create corresponding JSON data files in `assets/data/`.
+
+**Cross-file consistency:** Check the DATA DEPENDENCIES section in your context before editing any data file or form schema. If you change a data file that other files depend on, update all dependent files in the same response. If you rename an item in a data file (e.g., a service name in services.json), also update: the page HTML that renders it, any form `<option>` values that reference it, and the data file itself.
 
 **Always generate `assets/data/site.json`** with the site's core identity:
 

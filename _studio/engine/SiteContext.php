@@ -56,14 +56,22 @@ class SiteContext
      * @param int|null $userId Scope conversation history to an owner
      * @param int $maxChars Maximum character budget. PromptEngine derives this
      *   from the model's actual context window. 0 = unlimited (legacy fallback).
-     * @return string Formatted context string ready for prompt injection
+     * @return array{context: string, metrics: array{
+     *   total_chars: int,
+     *   budget_chars: int,
+     *   budget_used_pct: float|null,
+     *   sections: array<string, int>,
+     *   trimmed: string[],
+     *   focus_page_chars: int,
+     *   history_chars: int
+     * }}
      */
     public function build(
         ?string $focusPageSlug = null,
         ?string $conversationId = null,
         ?int $userId = null,
         int $maxChars = 0
-    ): string
+    ): array
     {
         // Priority 1 (essential) — always included
         $essential = [];
@@ -142,6 +150,11 @@ class SiteContext
             $important[] = $formSchemas;
         }
 
+        $dependencies = $this->buildDataDependencies();
+        if ($dependencies !== null) {
+            $important[] = $dependencies;
+        }
+
         $activeActions = $this->buildActiveActions();
         if ($activeActions !== null) {
             $important[] = $activeActions;
@@ -163,41 +176,96 @@ class SiteContext
             $optional[] = $iconList;
         }
 
+        // Track each section's size BEFORE trimming
+        $sectionSizes = [];
+        foreach (array_merge($essential, $important, $optional) as $part) {
+            if ($part === null || $part === '') continue;
+            $label = $this->extractSectionLabel($part);
+            $sectionSizes[$label] = strlen($part);
+        }
+
         // Assemble with budget awareness
         $allParts = array_merge($essential, $important, $optional);
 
         if ($maxChars <= 0) {
             // No budget — include everything
-            return implode("\n\n", array_filter($allParts));
-        }
-
-        // Progressive trimming: start with all, drop optional sections first
-        $result = implode("\n\n", array_filter($allParts));
-        if (strlen($result) <= $maxChars) {
-            return $result;
-        }
-
-        // Drop optional sections one by one (reverse order: icons first, then CSS)
-        for ($i = count($optional) - 1; $i >= 0; $i--) {
-            array_pop($allParts);
             $result = implode("\n\n", array_filter($allParts));
-            if (strlen($result) <= $maxChars) {
-                return $result;
+            $includedLabels = array_keys($sectionSizes);
+        } else {
+            // Progressive trimming: start with all, drop optional sections first
+            $result = implode("\n\n", array_filter($allParts));
+            $includedParts = $allParts;
+
+            if (strlen($result) > $maxChars) {
+                // Drop optional sections one by one (reverse order: icons first, then CSS)
+                for ($i = count($optional) - 1; $i >= 0; $i--) {
+                    array_pop($includedParts);
+                    $result = implode("\n\n", array_filter($includedParts));
+                    if (strlen($result) <= $maxChars) {
+                        break;
+                    }
+                }
+            }
+
+            if (strlen($result) > $maxChars) {
+                // Drop important sections one by one
+                $includedParts = array_merge($essential, $important);
+                for ($i = count($important) - 1; $i >= 0; $i--) {
+                    array_pop($includedParts);
+                    $result = implode("\n\n", array_filter($includedParts));
+                    if (strlen($result) <= $maxChars) {
+                        break;
+                    }
+                }
+            }
+
+            if (strlen($result) > $maxChars) {
+                // Last resort: essentials only
+                $result = implode("\n\n", array_filter($essential));
+                $includedParts = $essential;
+            }
+
+            // Determine which sections were included after trimming
+            $includedLabels = [];
+            foreach ($includedParts as $part) {
+                if ($part === null || $part === '') continue;
+                $includedLabels[] = $this->extractSectionLabel($part);
             }
         }
 
-        // Drop important sections one by one
-        $remaining = array_merge($essential, $important);
-        for ($i = count($important) - 1; $i >= 0; $i--) {
-            array_pop($remaining);
-            $result = implode("\n\n", array_filter($remaining));
-            if (strlen($result) <= $maxChars) {
-                return $result;
-            }
-        }
+        // Build metrics
+        $trimmedSections = array_values(array_diff(array_keys($sectionSizes), $includedLabels));
 
-        // Last resort: essentials only
-        return implode("\n\n", array_filter($essential));
+        $focusPageChars = $sectionSizes['FOCUS PAGE'] ?? $sectionSizes['REFERENCE PAGE'] ?? 0;
+        $historyChars   = $sectionSizes['CONVERSATION HISTORY'] ?? 0;
+
+        $metrics = [
+            'total_chars'      => strlen($result),
+            'budget_chars'     => $maxChars,
+            'budget_used_pct'  => $maxChars > 0
+                ? round(strlen($result) / $maxChars * 100, 1)
+                : null,
+            'sections'         => $sectionSizes,
+            'trimmed'          => $trimmedSections,
+            'focus_page_chars' => $focusPageChars,
+            'history_chars'    => $historyChars,
+        ];
+
+        return ['context' => $result, 'metrics' => $metrics];
+    }
+
+    /**
+     * Extract the section label from a context section string.
+     * Looks for "=== LABEL ===" or "=== LABEL (details) ===" headers.
+     */
+    private function extractSectionLabel(string $section): string
+    {
+        if (preg_match('/^===\s+(.+?)\s+===/m', $section, $m)) {
+            // Trim context-specific details like file paths
+            $label = preg_replace('/\s*\(.*\)/', '', $m[1]);
+            return trim($label);
+        }
+        return 'UNKNOWN';
     }
 
     /**
@@ -974,6 +1042,190 @@ class SiteContext
         }
 
         return $section;
+    }
+
+    /**
+     * Cross-file data dependency tracking.
+     *
+     * When the AI edits a data file (e.g., renames a service), it needs to
+     * know what OTHER files depend on that data — form schemas with
+     * options_from, pages that json_decode the file, and AEO outputs
+     * that propagate the data to public discovery files.
+     *
+     * Without this, the AI can silently break form dropdowns, page rendering,
+     * or structured data by updating one file but not its dependents.
+     */
+    private function buildDataDependencies(): ?string
+    {
+        $formsDir = dirname($this->assetsPath, 1) . '/assets/forms';
+        $dataDir  = $this->assetsPath . '/data';
+
+        $hasForms = is_dir($formsDir) && !empty(glob($formsDir . '/*.json'));
+        $hasData  = is_dir($dataDir)  && !empty(glob($dataDir . '/*.json'));
+
+        if (!$hasForms && !$hasData) {
+            return null;
+        }
+
+        // 1. Form → Data file (via options_from)
+        $formDeps = $hasForms ? $this->scanFormDataDependencies() : [];
+
+        // 2. Page → Data file (via file_get_contents)
+        $pageDeps = $hasData ? $this->scanPageDataDependencies() : [];
+
+        // 3. Data → AEO (hardcoded mapping, only for data files that exist)
+        $aeoDeps = $hasData ? $this->getAEODependencies() : [];
+
+        if (empty($formDeps) && empty($pageDeps) && empty($aeoDeps)) {
+            return null;
+        }
+
+        $section = "=== DATA DEPENDENCIES ===\n";
+        $section .= "When editing, preserve these linkages — if you change a source file, ";
+        $section .= "also update all listed dependents in this response.\n\n";
+
+        if (!empty($formDeps)) {
+            $section .= "Form schemas referencing data files:\n";
+            foreach ($formDeps as $dep) {
+                $section .= "  {$dep['form']} → field \"{$dep['field']}\" ";
+                $section .= "pulls options from {$dep['data_file']}\n";
+            }
+            $section .= "\n";
+        }
+
+        if (!empty($pageDeps)) {
+            $section .= "Pages reading data files:\n";
+            foreach ($pageDeps as $page => $files) {
+                $section .= "  {$page} → reads " . implode(', ', array_unique($files)) . "\n";
+            }
+            $section .= "\n";
+        }
+
+        if (!empty($aeoDeps)) {
+            $section .= "AEO propagation (changes here update public discovery files on publish):\n";
+            foreach ($aeoDeps as $dep) {
+                $section .= "  {$dep['source']} → {$dep['targets']}\n";
+            }
+        }
+
+        return $section;
+    }
+
+    /**
+     * Scan form schemas for options_from references to data files.
+     *
+     * Each form schema can have fields with "options_from": "services.json"
+     * which means the form dropdown reads its options from that data file.
+     * Changing the data file without updating the form = broken dropdown.
+     *
+     * @return array<int, array{form: string, field: string, data_file: string}>
+     */
+    private function scanFormDataDependencies(): array
+    {
+        $formsDir = dirname($this->assetsPath, 1) . '/assets/forms';
+        $files = @glob($formsDir . '/*.json');
+        if ($files === false || empty($files)) {
+            return [];
+        }
+
+        $deps = [];
+        foreach ($files as $file) {
+            $content = @file_get_contents($file);
+            if ($content === false) continue;
+
+            $schema = json_decode($content, true);
+            if (!is_array($schema) || empty($schema['fields'])) continue;
+
+            $formBasename = 'assets/forms/' . basename($file);
+
+            foreach ($schema['fields'] as $field) {
+                if (!empty($field['options_from'])) {
+                    $deps[] = [
+                        'form'      => $formBasename,
+                        'field'     => $field['name'] ?? 'unknown',
+                        'data_file' => 'assets/data/' . basename($field['options_from']),
+                    ];
+                }
+            }
+        }
+
+        return $deps;
+    }
+
+    /**
+     * Scan page PHP files for file_get_contents references to data files.
+     *
+     * Pages read data files with patterns like:
+     *   file_get_contents(__DIR__ . '/assets/data/menu.json')
+     *
+     * If a data file is edited, all pages that render it must be
+     * updated in the same response.
+     *
+     * @return array<string, string[]> Page filename => list of data files
+     */
+    private function scanPageDataDependencies(): array
+    {
+        $previewDir = $this->previewPath;
+        if (!is_dir($previewDir)) {
+            return [];
+        }
+
+        $phpFiles = @glob($previewDir . '/*.php');
+        if ($phpFiles === false || empty($phpFiles)) {
+            return [];
+        }
+
+        $pattern = '/file_get_contents\s*\(\s*__DIR__\s*\.\s*[\'"]\\/?assets\/data\/([^\'\"]+)[\'"]/';
+
+        $deps = [];
+        foreach ($phpFiles as $file) {
+            $content = @file_get_contents($file);
+            if ($content === false) continue;
+
+            if (preg_match_all($pattern, $content, $matches)) {
+                $pageName = basename($file);
+                $deps[$pageName] = [];
+                foreach ($matches[1] as $dataFile) {
+                    $deps[$pageName][] = 'assets/data/' . $dataFile;
+                }
+            }
+        }
+
+        return $deps;
+    }
+
+    /**
+     * Hardcoded AEO dependency mapping.
+     *
+     * These are documented in PR Part XXVII: when certain data files
+     * change, the AEO pipeline regenerates public discovery files.
+     * Only includes entries for data files that actually exist on disk.
+     *
+     * @return array<int, array{source: string, targets: string}>
+     */
+    private function getAEODependencies(): array
+    {
+        $dataDir = $this->assetsPath . '/data';
+
+        // Mapping: data file → public files it feeds
+        $mapping = [
+            'site.json'         => 'llms.txt, schema.php, mcp.php, robots.txt',
+            'menu.json'         => 'llms.txt (menu section), mcp.php (get_menu tool)',
+            'services.json'     => 'llms.txt (services section), mcp.php (get_services tool)',
+            'faq.json'          => 'llms.txt (FAQ section), mcp.php (get_faq tool), schema.php (FAQPage)',
+        ];
+
+        $deps = [];
+        foreach ($mapping as $file => $targets) {
+            if (file_exists($dataDir . '/' . $file)) {
+                $deps[] = [
+                    'source'  => 'assets/data/' . $file,
+                    'targets' => $targets,
+                ];
+            }
+        }
+
+        return $deps;
     }
 
     /**

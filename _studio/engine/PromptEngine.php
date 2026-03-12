@@ -241,16 +241,23 @@ class PromptEngine
 
             // ── Build context — read the actual current state of the website ──
             $this->emitSSE('status', ['message' => 'Reading your site...']);
-            $context = $this->siteContext->build($pageScope, $conversationId, $userId, $contextBudget);
+            $contextResult = $this->siteContext->build($pageScope, $conversationId, $userId, $contextBudget);
+            $context = $contextResult['context'];
+            $contextMetrics = $contextResult['metrics'];
 
             Logger::debug('ai', 'Context built', [
                 'context_length'    => strlen($context),
                 'context_budget'    => $contextBudget,
+                'budget_used_pct'   => $contextMetrics['budget_used_pct'],
                 'context_window'    => $contextWindow,
                 'system_prompt_len' => $systemPromptChars,
                 'max_tokens'        => $maxTokens,
                 'model'             => $configuredModel,
                 'provider'          => $this->provider->getId(),
+                'sections'          => $contextMetrics['sections'],
+                'trimmed'           => $contextMetrics['trimmed'],
+                'focus_page_chars'  => $contextMetrics['focus_page_chars'],
+                'history_chars'     => $contextMetrics['history_chars'],
             ]);
 
             // ── Build messages array ──
@@ -430,6 +437,21 @@ class PromptEngine
                 'message_length'  => strlen($parsed['message']),
                 'response_length' => strlen($fullResponse),
                 'operations'      => array_map(fn($op) => $op['path'] . ' (' . $op['action'] . ')', $parsed['operations']),
+            ]);
+
+            // Check if the AI performed knowledge extraction
+            $hasMemoryMerge = false;
+            $hasDIMerge = false;
+            foreach ($parsed['operations'] as $op) {
+                if ($op['path'] === 'assets/data/memory.json') $hasMemoryMerge = true;
+                if ($op['path'] === 'assets/data/design-intelligence.json') $hasDIMerge = true;
+            }
+
+            Logger::info('ai', 'Knowledge extraction check', [
+                'action_type'     => $actionType,
+                'memory_merge'    => $hasMemoryMerge,
+                'di_merge'        => $hasDIMerge,
+                'user_prompt_len' => strlen($userPrompt),
             ]);
 
             // ── Create revision (before state already captured during streaming) ──

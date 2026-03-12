@@ -8,7 +8,7 @@ import { api } from '../../api.js';
 import { icons } from '../icons.js';
 import { escapeHtml, escapeAttr, formatRelativeTime } from '../helpers.js';
 import { showToast } from '../ui/toasts.js';
-import { showConfirmModal, closeModal } from '../ui/modals.js';
+import { showConfirmModal, closeModal, onBackdropClick } from '../ui/modals.js';
 
 
 /**
@@ -560,7 +560,7 @@ async function showNewActionModal() {
     };
     const onKeydown = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
     document.addEventListener('keydown', onKeydown);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    onBackdropClick(overlay, close);
     document.getElementById('close-new-action-modal')?.addEventListener('click', () => close());
 
     // Template card clicks
@@ -1548,7 +1548,8 @@ async function loadActionDetail(actionId) {
 
       // Close handlers
       const closeModal = () => modal.remove();
-      modal.querySelector('#fs-backdrop')?.addEventListener('click', closeModal);
+      const fsBd = modal.querySelector('#fs-backdrop');
+      if (fsBd) onBackdropClick(fsBd, closeModal);
       modal.querySelector('#fs-close')?.addEventListener('click', closeModal);
       modal.querySelector('#fs-cancel')?.addEventListener('click', closeModal);
 
@@ -1935,7 +1936,7 @@ async function loadActionRecords(actionId, page = 1) {
 
     const close = () => closeModal(overlay);
 
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    onBackdropClick(overlay, close);
     document.getElementById('vs-purge-cancel')?.addEventListener('click', close);
     document.getElementById('vs-purge-ok')?.addEventListener('click', async () => {
       const select = document.getElementById('vs-purge-select');

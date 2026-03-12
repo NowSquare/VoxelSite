@@ -8,7 +8,7 @@ import { api } from '../../api.js';
 import { icons } from '../icons.js';
 import { escapeHtml, formatRelativeTime } from '../helpers.js';
 import { showToast } from '../ui/toasts.js';
-import { showConfirmModal, closeModal } from '../ui/modals.js';
+import { showConfirmModal, closeModal, onBackdropClick } from '../ui/modals.js';
 
 const demoGuard = () => window.demoGuard?.() || false;
 const viewerGuard = () => window.viewerGuard?.() || false;
@@ -661,7 +661,7 @@ async function openSubmissionDetail(formId, subId) {
     setTimeout(() => overlay.remove(), 200);
   };
 
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closePanel(); });
+  onBackdropClick(overlay, closePanel);
   document.getElementById('close-sub-detail')?.addEventListener('click', closePanel);
 
   // Save notes

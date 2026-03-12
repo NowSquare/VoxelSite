@@ -302,10 +302,19 @@ function bindTeamEvents() {
     });
   });
 
-  // Modal overlay clicks
-  document.querySelector('[data-team-modal-overlay]')?.addEventListener('click', closeTeamModal);
-  document.querySelector('[data-team-pw-overlay]')?.addEventListener('click', closePasswordModal);
-  document.querySelector('[data-team-roles-overlay]')?.addEventListener('click', closeRolesModal);
+  // Modal overlay clicks — only close if mousedown AND click both land on backdrop
+  // (prevents accidental close when selecting text and dragging outside)
+  [
+    ['[data-team-modal-overlay]', closeTeamModal],
+    ['[data-team-pw-overlay]', closePasswordModal],
+    ['[data-team-roles-overlay]', closeRolesModal],
+  ].forEach(([sel, fn]) => {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    let mdt = null;
+    el.addEventListener('mousedown', (e) => { mdt = e.target; });
+    el.addEventListener('click', (e) => { if (e.target === el && mdt === el) fn(); });
+  });
 
   // Modal buttons
   document.getElementById('btn-team-cancel')?.addEventListener('click', closeTeamModal);

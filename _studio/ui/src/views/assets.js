@@ -403,8 +403,13 @@ function openAssetLightbox(imageAssets, startIndex, currentFilter) {
     });
 
     // Click backdrop (the stage area outside center) to close
+    // Only close if mousedown started on the backdrop too (prevents drag-from-image closing)
+    let _lbMdt = null;
+    shell.addEventListener('mousedown', (e) => { _lbMdt = e.target; });
     shell.addEventListener('click', (e) => {
-      if (e.target === shell || e.target.classList.contains('vs-lightbox-stage')) close();
+      const isBackdrop = e.target === shell || e.target.classList.contains('vs-lightbox-stage');
+      const mdWasBackdrop = _lbMdt === shell || _lbMdt?.classList?.contains('vs-lightbox-stage');
+      if (isBackdrop && mdWasBackdrop) close();
     });
 
     // Nav buttons

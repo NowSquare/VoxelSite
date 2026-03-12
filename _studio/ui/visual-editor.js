@@ -18,6 +18,7 @@
  */
 
 import { api, apiStream } from './api.js';
+import { onBackdropClick } from './src/ui/modals.js';
 
 // ═══════════════════════════════════════════
 //  State
@@ -529,7 +530,7 @@ function confirmDelete(elementData) {
   };
   modal.addEventListener('keydown', onKeydown);
   modal.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
-  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  onBackdropClick(modal, close);
   modal.tabIndex = -1;
   modal.focus();
 
@@ -1776,7 +1777,7 @@ function openSectionPicker(requestData) {
   const onKeydown = (e) => { if (e.key === 'Escape') close(); };
   modal.addEventListener('keydown', onKeydown);
   modal.querySelector('[data-close]').addEventListener('click', close);
-  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  onBackdropClick(modal, close);
   modal.tabIndex = -1;
   modal.focus();
 
@@ -2003,7 +2004,7 @@ function openImagePicker(elementData) {
   const onKeydown = (e) => { if (e.key === 'Escape') close(); };
   modal.addEventListener('keydown', onKeydown);
   modal.querySelector('[data-close]').addEventListener('click', close);
-  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  onBackdropClick(modal, close);
   modal.tabIndex = -1;
   modal.focus();
   loadAssetImages(modal);
@@ -2075,7 +2076,7 @@ function openLinkEditor(elementData) {
   const onKeydown = (e) => { if (e.key === 'Escape') close(); };
   modal.addEventListener('keydown', onKeydown);
   modal.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
-  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  onBackdropClick(modal, close);
   document.getElementById('vx-link-save').addEventListener('click', () => {
     sendToPreview({ type: 'vx-editor:update-link', href: document.getElementById('vx-link-href').value.trim(), text: document.getElementById('vx-link-text').value.trim() });
     close();

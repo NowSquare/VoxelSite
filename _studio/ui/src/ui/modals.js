@@ -16,6 +16,28 @@ export function closeModal(overlay) {
 }
 
 /**
+ * Attach a safe "click outside to close" handler to a modal overlay.
+ *
+ * The naive approach — `overlay.addEventListener('click', ...)` — fires
+ * when the user clicks inside the modal and drags the mouse outside
+ * (e.g. selecting text in an input). This is confusing because the
+ * modal closes instead of keeping the text selection.
+ *
+ * Fix: only close if BOTH mousedown AND click (mouseup) land on the
+ * backdrop element itself. A drag that starts inside the modal content
+ * will have a different mousedown target, so it's ignored.
+ */
+export function onBackdropClick(overlay, callback) {
+  let mouseDownTarget = null;
+  overlay.addEventListener('mousedown', (e) => { mouseDownTarget = e.target; });
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay && mouseDownTarget === overlay) {
+      callback(e);
+    }
+  });
+}
+
+/**
  * Show a confirmation dialog.  Returns a Promise<boolean>.
  * Escape or overlay‑click resolves `false`. Confirm button resolves `true`.
  */
@@ -59,7 +81,7 @@ export function showConfirmModal({
     document.body.appendChild(overlay);
     requestAnimationFrame(() => overlay.classList.add('is-visible'));
 
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(false); });
+    onBackdropClick(overlay, () => close(false));
     document.getElementById('vs-confirm-cancel')?.addEventListener('click', () => close(false));
     document.getElementById('vs-confirm-ok')?.addEventListener('click', () => close(true));
     document.addEventListener('keydown', onKeydown);
@@ -126,7 +148,7 @@ export function showPromptModal({
     const input = overlay.querySelector('#vs-prompt-input');
     setTimeout(() => input?.focus(), 220);
 
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+    onBackdropClick(overlay, () => close(null));
     overlay.querySelector('#vs-prompt-cancel')?.addEventListener('click', () => close(null));
     overlay.querySelector('#vs-prompt-ok')?.addEventListener('click', () => {
       close((input?.value || '').trim());

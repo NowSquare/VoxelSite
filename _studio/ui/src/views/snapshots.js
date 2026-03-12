@@ -8,7 +8,7 @@ import { api } from '../../api.js';
 import { icons } from '../icons.js';
 import { escapeHtml, timeAgo } from '../helpers.js';
 import { showToast } from '../ui/toasts.js';
-import { showConfirmModal, closeModal } from '../ui/modals.js';
+import { showConfirmModal, closeModal, onBackdropClick } from '../ui/modals.js';
 
 
 export function renderSnapshotsView() {
@@ -229,7 +229,7 @@ function showSnapshotCreateModal() {
 
   const close = () => closeModal(overlay);
 
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  onBackdropClick(overlay, close);
   document.getElementById('snap-cancel')?.addEventListener('click', close);
 
   const descInput = document.getElementById('snap-desc');
@@ -309,7 +309,7 @@ function showSnapshotPreviewModal(snap) {
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('is-visible'));
 
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(overlay); });
+  onBackdropClick(overlay, () => closeModal(overlay));
   document.getElementById('snap-preview-close')?.addEventListener('click', () => closeModal(overlay));
 }
 

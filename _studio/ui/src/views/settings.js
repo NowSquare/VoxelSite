@@ -10,7 +10,7 @@ import { store } from '../../state.js';
 import { api } from '../../api.js';
 import { showToast } from '../ui/toasts.js';
 import { escapeHtml } from '../helpers.js';
-import { closeModal, showConfirmModal } from '../ui/modals.js';
+import { closeModal, showConfirmModal, onBackdropClick } from '../ui/modals.js';
 import { router } from '../../router.js';
 
 function renderSettingsView() {
@@ -1091,7 +1091,7 @@ function openKnowledgeViewer(title, data, type) {
   document.addEventListener('keydown', escHandler);
   overlay.querySelector('#vs-knowledge-close')?.addEventListener('click', close);
   overlay.querySelector('#vs-knowledge-done')?.addEventListener('click', close);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  onBackdropClick(overlay, close);
 }
 
 /**

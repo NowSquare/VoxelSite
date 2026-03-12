@@ -38,7 +38,7 @@ import { renderAssetsView } from './src/views/assets.js';
 import { renderDesignsView, confirmNewDesign } from './src/views/designs.js';
 import { showToast, showToastWithAction } from './src/ui/toasts.js';
 import { escapeHtml, escapeAttr, getCodeLanguage } from './src/helpers.js';
-import { closeModal, showConfirmModal, showPromptModal } from './src/ui/modals.js';
+import { closeModal, showConfirmModal, showPromptModal, onBackdropClick } from './src/ui/modals.js';
 
 
 // ═══════════════════════════════════════════
@@ -1279,9 +1279,7 @@ async function openPageScopeSelector() {
   // Close handlers
   const close = () => closeModal(overlay);
   overlay.querySelector('#vs-pages-modal-close').addEventListener('click', close);
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) close();
-  });
+  onBackdropClick(overlay, close);
   overlay.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') close();
   });
@@ -3604,7 +3602,7 @@ function showPublishConfirmModal({ totalChanges = 0, snapshotDefault = true }) {
     document.body.appendChild(overlay);
     requestAnimationFrame(() => overlay.classList.add('is-visible'));
 
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+    onBackdropClick(overlay, () => close(null));
     document.getElementById('vs-confirm-cancel')?.addEventListener('click', () => close(null));
     document.getElementById('vs-confirm-ok')?.addEventListener('click', () => {
       const cb = document.getElementById('vs-publish-snapshot-cb');
@@ -3697,9 +3695,7 @@ function openDownloadModal() {
     closeModal(overlay);
   };
   overlay.querySelector('#vs-download-close').addEventListener('click', close);
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) close();
-  });
+  onBackdropClick(overlay, close);
   document.addEventListener('keydown', onEscapeKey);
 
   // ── Publish first link ──

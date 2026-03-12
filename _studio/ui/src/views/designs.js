@@ -16,7 +16,7 @@ import { store } from '../../state.js';
 import { icons } from '../icons.js';
 import { escapeHtml, escapeAttr, timeAgo } from '../helpers.js';
 import { showToast } from '../ui/toasts.js';
-import { showConfirmModal, closeModal } from '../ui/modals.js';
+import { showConfirmModal, closeModal, onBackdropClick } from '../ui/modals.js';
 import { router } from '../../router.js';
 
 const SAVE_DESIGN_PREF_KEY = 'vs-newdesign-save-pref';
@@ -582,7 +582,7 @@ export function showSaveDesignModal() {
   });
   observer.observe(document.body, { childList: true });
 
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  onBackdropClick(overlay, close);
   document.getElementById('design-save-cancel')?.addEventListener('click', close);
 
   const nameInput = document.getElementById('design-name');
@@ -670,7 +670,7 @@ function showEditDesignModal(id, currentName, currentDesc) {
 
   const close = () => closeModal(overlay);
 
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  onBackdropClick(overlay, close);
   document.getElementById('edit-design-cancel')?.addEventListener('click', close);
 
   const nameInput = document.getElementById('edit-design-name');
@@ -760,7 +760,7 @@ function showSwitchDesignModal(designName) {
 
     const cb = document.getElementById('vs-switch-save-cb');
 
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+    onBackdropClick(overlay, () => close(null));
     document.getElementById('vs-switch-cancel')?.addEventListener('click', () => close(null));
     document.getElementById('vs-switch-ok')?.addEventListener('click', () => {
       const saveDesign = cb ? cb.checked : false;
@@ -908,7 +908,7 @@ function showNewDesignModal() {
       }
     });
 
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+    onBackdropClick(overlay, () => close(null));
     document.getElementById('vs-newdesign-cancel')?.addEventListener('click', () => close(null));
     document.getElementById('vs-newdesign-ok')?.addEventListener('click', () => {
       const saveDesign = cb ? cb.checked : false;
@@ -976,7 +976,7 @@ function showSnapshotCreateModal() {
 
   const close = () => closeModal(overlay);
 
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  onBackdropClick(overlay, close);
   document.getElementById('snap-cancel')?.addEventListener('click', close);
 
   const descInput = document.getElementById('snap-desc');
@@ -1058,7 +1058,7 @@ function showSnapshotPreviewModal(snap) {
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('is-visible'));
 
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(overlay); });
+  onBackdropClick(overlay, () => closeModal(overlay));
   document.getElementById('snap-preview-close')?.addEventListener('click', () => closeModal(overlay));
 }
 

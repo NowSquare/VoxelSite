@@ -152,6 +152,7 @@ export const api = {
  * - conversation: { conversation_id } — active conversation identifier
  * - file_complete: { path, action } — file operation completed
  * - done: { message, files_modified, revision_id } — stream complete
+ * - evaluation: { issues } — post-generation quality review results
  * - warning: { message } — non-fatal issue
  * - error: { message, code } — fatal error
  *
@@ -167,6 +168,7 @@ export async function apiStream(endpoint, body, callbacks = {}) {
     onConversation = () => {},
     onFile   = () => {},
     onDone   = () => {},
+    onEvaluation = () => {},
     onWarning = () => {},
     onError  = () => {},
     signal   = null,
@@ -262,6 +264,9 @@ export async function apiStream(endpoint, body, callbacks = {}) {
         case 'done':
           receivedDone = true;
           onDone(parsed);
+          break;
+        case 'evaluation':
+          onEvaluation(parsed);
           break;
         case 'warning':
           onWarning(parsed.message || '');

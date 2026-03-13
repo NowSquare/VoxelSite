@@ -3299,6 +3299,16 @@ function showGeneratingOverlay() {
   // Don't duplicate
   if (container.querySelector('.vs-generating-overlay')) return;
 
+  // Context-aware copy: new sites take much longer than incremental updates.
+  // store('pages') is populated by prefetchPagesForContext() on load.
+  const pages = store.get('pages');
+  const isNewSite = !pages || pages.length === 0;
+
+  const title = isNewSite ? 'Building your site' : 'Applying your changes';
+  const subtitle = isNewSite
+    ? 'Generating a new website can take more than 5 minutes.<br>Please be patient while the AI works.'
+    : 'Your site is being updated.<br>This may take a few minutes.';
+
   const overlay = document.createElement('div');
   overlay.className = 'vs-generating-overlay';
   overlay.innerHTML = `
@@ -3307,9 +3317,9 @@ function showGeneratingOverlay() {
       <span class="vs-gen-dot"></span>
       <span class="vs-gen-dot"></span>
     </div>
-    <div class="vs-gen-title">Working on your site</div>
-    <div class="vs-gen-subtitle">Content is being generated.<br>This may take a few minutes.</div>
-    <div class="vs-gen-note">Please keep this page open — do not navigate away during generation.</div>
+    <div class="vs-gen-title">${title}</div>
+    <div class="vs-gen-subtitle">${subtitle}</div>
+    <div class="vs-gen-note">Keep this page open — do not navigate away during generation.</div>
     <div class="vs-gen-progress"><div class="vs-gen-progress-bar"></div></div>
   `;
 
@@ -4460,6 +4470,152 @@ async function handleSend() {
       chatMessages.removeEventListener('scroll', onChatScroll);
       // Always scroll to bottom on completion — the user should see the final result
       chatMessages.scrollTop = chatMessages.scrollHeight;
+    },
+
+    onEvaluation(result) {
+      const issues = result?.issues || [];
+      if (issues.length === 0) return;
+
+      // Count by severity
+      const counts = { error: 0, warning: 0, info: 0 };
+      issues.forEach(i => counts[i.severity] = (counts[i.severity] || 0) + 1);
+
+      // Sort: errors first, then warnings, then info
+      const severityOrder = { error: 0, warning: 1, info: 2 };
+      const sorted = [...issues].sort((a, b) =>
+        (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3)
+      );
+
+      // Split into primary (error/warning) and secondary (info)
+      const primaryIssues = sorted.filter(i => i.severity !== 'info');
+      const infoIssues = sorted.filter(i => i.severity === 'info');
+
+      // Build summary text
+      const parts = [];
+      if (counts.error > 0) parts.push(`${counts.error} error${counts.error !== 1 ? 's' : ''}`);
+      if (counts.warning > 0) parts.push(`${counts.warning} warning${counts.warning !== 1 ? 's' : ''}`);
+      if (counts.info > 0) parts.push(`${counts.info} suggestion${counts.info !== 1 ? 's' : ''}`);
+
+      // Severity badge colors
+      const sevColor = (s) => s === 'error' ? 'var(--vs-error, #ef4444)'
+        : s === 'warning' ? 'var(--vs-warning, #d97706)' : 'var(--vs-text-ghost)';
+      const sevBg = (s) => s === 'error' ? 'rgba(239,68,68,0.08)'
+        : s === 'warning' ? 'rgba(217,119,6,0.08)' : 'var(--vs-bg-raised)';
+
+      // Build a chat prompt for the "Add to chat" link — advisory tone,
+      // not asserting the finding is definitely correct.
+      const buildFixPrompt = (issue) => {
+        const filePart = issue.file ? ` in ${issue.file}` : '';
+        const fixPart = issue.suggested_fix ? `\n\nSuggested approach: ${issue.suggested_fix}` : '';
+        return `Review this suggestion and apply if appropriate — ${issue.severity}${filePart}: ${issue.description}${fixPart}`;
+      };
+
+      // Render a single issue row
+      const renderIssueRow = (issue, idx) => `
+        <div style="padding: 8px 12px; border-bottom: 1px solid var(--vs-border-subtle);">
+          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
+            <span style="font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 5px; border-radius: 3px; color: ${sevColor(issue.severity)}; background: ${sevBg(issue.severity)};">${escapeHtml(issue.severity)}</span>
+            <span style="font-size: 11px; color: var(--vs-text-ghost);">${escapeHtml(issue.category || '')}</span>
+            ${issue.file ? `<span style="font-size: 11px; color: var(--vs-text-ghost); margin-left: auto; font-family: 'SF Mono', monospace; opacity: 0.7;">${escapeHtml(issue.file)}${issue.line ? ':' + issue.line : ''}</span>` : ''}
+          </div>
+          <div style="font-size: 12px; color: var(--vs-text-secondary); line-height: 1.4;">${escapeHtml(issue.description || '')}</div>
+          ${issue.suggested_fix ? `<div style="font-size: 11px; color: var(--vs-text-ghost); margin-top: 3px; line-height: 1.3;">💡 ${escapeHtml(issue.suggested_fix)}</div>` : ''}
+          <div style="margin-top: 4px; text-align: right;">
+            <button class="vs-eval-add-to-chat" data-eval-idx="${idx}" style="
+              background: none; border: none; cursor: pointer; padding: 2px 0;
+              font-size: 11px; color: var(--vs-accent); opacity: 0.7;
+              transition: opacity 0.15s ease;
+            " onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.7'">Add to chat →</button>
+          </div>
+        </div>
+      `;
+
+      const primaryRows = primaryIssues.map((issue, idx) => renderIssueRow(issue, idx)).join('');
+
+      // Info issues go in a collapsed sub-section so they don't overwhelm
+      const infoSection = infoIssues.length > 0 ? `
+        <details style="border-top: 1px solid var(--vs-border-subtle);">
+          <summary style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; cursor: pointer; user-select: none; font-size: 11px; color: var(--vs-text-ghost); list-style: none;">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5; flex-shrink: 0; transition: transform 0.2s;"><polyline points="6 9 12 15 18 9"/></svg>
+            ${infoIssues.length} additional suggestion${infoIssues.length !== 1 ? 's' : ''}
+          </summary>
+          ${infoIssues.map((issue, idx) => renderIssueRow(issue, primaryIssues.length + idx)).join('')}
+        </details>
+      ` : '';
+
+      // Determine banner icon/color based on highest severity
+      const highestSev = counts.error > 0 ? 'error' : counts.warning > 0 ? 'warning' : 'info';
+      const bannerColor = sevColor(highestSev);
+      const bannerBorder = highestSev === 'error' ? 'rgba(239,68,68,0.15)'
+        : highestSev === 'warning' ? 'rgba(217,119,6,0.15)' : 'var(--vs-border-subtle)';
+
+      const evalHtml = `
+        <details class="vs-eval-details" style="margin-top: 8px; border: 1px solid ${bannerBorder}; border-radius: var(--radius-md, 8px); overflow: hidden; background: var(--vs-bg-surface, var(--vs-bg-floating));">
+          <summary style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; user-select: none; font-size: 12px; color: var(--vs-text-secondary); list-style: none;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${bannerColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;">
+              <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+            </svg>
+            <span>Expert Review · ${parts.join(', ')}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: auto; opacity: 0.4; flex-shrink: 0; transition: transform 0.2s;"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div style="border-top: 1px solid var(--vs-border-subtle);">
+            <div style="padding: 6px 12px; font-size: 10px; color: var(--vs-text-ghost); border-bottom: 1px solid var(--vs-border-subtle); line-height: 1.4;">These are heuristic suggestions — verify before applying.</div>
+            ${primaryRows}
+            ${infoSection}
+          </div>
+        </details>
+      `;
+
+      // Insert after files section or after content
+      let insertTarget;
+      if (filesSectionEl && !filesSectionEl.hasAttribute('hidden')) {
+        filesSectionEl.insertAdjacentHTML('afterend', evalHtml);
+        insertTarget = filesSectionEl.nextElementSibling;
+      } else if (contentEl) {
+        contentEl.insertAdjacentHTML('afterend', evalHtml);
+        insertTarget = contentEl.nextElementSibling;
+      } else {
+        aiBlock.insertAdjacentHTML('beforeend', evalHtml);
+        insertTarget = aiBlock.lastElementChild;
+      }
+
+      // Bind "Add to chat" buttons via event delegation
+      if (insertTarget) {
+        insertTarget.addEventListener('click', (e) => {
+          const btn = e.target.closest('.vs-eval-add-to-chat');
+          if (!btn) return;
+          e.preventDefault();
+          const idx = parseInt(btn.dataset.evalIdx, 10);
+          const issue = sorted[idx];
+          if (!issue) return;
+
+          const promptInput = document.getElementById('prompt-input');
+          if (!promptInput) return;
+
+          // Append to existing draft instead of replacing it
+          const fixPrompt = buildFixPrompt(issue);
+          const existing = promptInput.value.trim();
+          promptInput.value = existing
+            ? existing + '\n\n' + fixPrompt
+            : fixPrompt;
+          promptInput.focus();
+          // Auto-resize the textarea for the (possibly multi-line) prompt
+          promptInput.style.height = 'auto';
+          promptInput.style.height = Math.min(promptInput.scrollHeight, 200) + 'px';
+          // Set cursor to the end
+          promptInput.selectionStart = promptInput.selectionEnd = promptInput.value.length;
+
+          // Visual feedback on the button
+          btn.textContent = '✓ Added';
+          btn.style.opacity = '1';
+          setTimeout(() => {
+            btn.textContent = 'Add to chat →';
+            btn.style.opacity = '0.7';
+          }, 1500);
+        });
+      }
+
+      scrollToBottomIfSticky();
     },
 
     onWarning(message) {

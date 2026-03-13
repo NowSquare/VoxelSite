@@ -20,12 +20,15 @@ class TailwindConfig
         '2xl' => '1536px',
     ];
 
+    // Named max-* breakpoints: values are the CORRESPONDING min-width boundary.
+    // Used with "not all and (min-width:...)" to match Tailwind 4's semantics.
+    // max-sm means "below sm", so its value is sm's breakpoint (640px).
     public const MAX_BREAKPOINTS = [
-        'max-sm'  => '639.98px',
-        'max-md'  => '767.98px',
-        'max-lg'  => '1023.98px',
-        'max-xl'  => '1279.98px',
-        'max-2xl' => '1535.98px',
+        'max-sm'  => '640px',
+        'max-md'  => '768px',
+        'max-lg'  => '1024px',
+        'max-xl'  => '1280px',
+        'max-2xl' => '1536px',
     ];
 
     public const STATE_VARIANTS = [
@@ -342,13 +345,13 @@ public static function textSizes(): array
     public static function shadowScale(): array
     {
         return [
-            'sm'    => 'var(--shadow-sm, 0 1px 2px 0 rgba(0,0,0,0.05))',
-            ''      => 'var(--shadow-md, 0 4px 6px -1px rgba(0,0,0,0.1))',
-            'md'    => 'var(--shadow-md, 0 4px 6px -1px rgba(0,0,0,0.1))',
-            'lg'    => 'var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,0.1))',
-            'xl'    => 'var(--shadow-xl, 0 20px 25px -5px rgba(0,0,0,0.1))',
-            '2xl'   => '0 25px 50px -12px rgba(0,0,0,0.25)',
-            'inner' => 'inset 0 2px 4px 0 rgba(0,0,0,0.06)',
+            'sm'    => 'var(--shadow-sm, 0 1px 2px 0 var(--tw-shadow-color, rgba(0,0,0,0.05)))',
+            ''      => 'var(--shadow-md, 0 4px 6px -1px var(--tw-shadow-color, rgba(0,0,0,0.1)), 0 2px 4px -2px var(--tw-shadow-color, rgba(0,0,0,0.1)))',
+            'md'    => 'var(--shadow-md, 0 4px 6px -1px var(--tw-shadow-color, rgba(0,0,0,0.1)), 0 2px 4px -2px var(--tw-shadow-color, rgba(0,0,0,0.1)))',
+            'lg'    => 'var(--shadow-lg, 0 10px 15px -3px var(--tw-shadow-color, rgba(0,0,0,0.1)), 0 4px 6px -4px var(--tw-shadow-color, rgba(0,0,0,0.1)))',
+            'xl'    => 'var(--shadow-xl, 0 20px 25px -5px var(--tw-shadow-color, rgba(0,0,0,0.1)), 0 8px 10px -6px var(--tw-shadow-color, rgba(0,0,0,0.1)))',
+            '2xl'   => '0 25px 50px -12px var(--tw-shadow-color, rgba(0,0,0,0.25))',
+            'inner' => 'inset 0 2px 4px 0 var(--tw-shadow-color, rgba(0,0,0,0.06))',
             'none'  => '0 0 #0000',
         ];
     }
@@ -431,12 +434,17 @@ public static function textSizes(): array
             'order' => ['order'],
             'flex' => ['flex'],
             'grow' => ['flex-grow'], 'shrink' => ['flex-shrink'],
+            'ease' => ['transition-timing-function'],
+            'perspective' => ['perspective'],
         ];
     }
 
     /** Static utilities — exact class name to CSS declarations */
     public static function staticUtilities(): array
     {
+        $composedBoxShadow = 'var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow,0 0 #0000)';
+        $ringShadow = fn(string $width) => "--tw-ring-width:{$width};--tw-ring-offset-shadow:var(--tw-ring-inset,) 0 0 0 var(--tw-ring-offset-width,0px) var(--tw-ring-offset-color,#fff);--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(var(--tw-ring-width) + var(--tw-ring-offset-width,0px)) var(--tw-ring-color,rgba(59,130,246,0.5));box-shadow:{$composedBoxShadow}";
+
         return [
             // Display
             'block' => 'display:block', 'inline-block' => 'display:inline-block',
@@ -698,13 +706,13 @@ public static function textSizes(): array
             'outline' => 'outline-style:solid',
             'outline-dashed' => 'outline-style:dashed', 'outline-dotted' => 'outline-style:dotted',
             'outline-double' => 'outline-style:double',
-            // Ring (simplified)
-            'ring' => 'box-shadow:0 0 0 3px var(--c-primary-500,rgba(59,130,246,0.5))',
-            'ring-0' => 'box-shadow:0 0 0 0px transparent',
-            'ring-1' => 'box-shadow:0 0 0 1px var(--c-primary-500,rgba(59,130,246,0.5))',
-            'ring-2' => 'box-shadow:0 0 0 2px var(--c-primary-500,rgba(59,130,246,0.5))',
-            'ring-4' => 'box-shadow:0 0 0 4px var(--c-primary-500,rgba(59,130,246,0.5))',
-            'ring-8' => 'box-shadow:0 0 0 8px var(--c-primary-500,rgba(59,130,246,0.5))',
+            // Ring — composed via CSS custom properties so ring, offset, and shadow utilities coexist.
+            'ring'   => $ringShadow('3px'),
+            'ring-0' => $ringShadow('0px'),
+            'ring-1' => $ringShadow('1px'),
+            'ring-2' => $ringShadow('2px'),
+            'ring-4' => $ringShadow('4px'),
+            'ring-8' => $ringShadow('8px'),
             'ring-inset' => '--tw-ring-inset:inset',
             // Object fit
             'object-contain' => 'object-fit:contain', 'object-cover' => 'object-fit:cover',
@@ -771,15 +779,33 @@ public static function textSizes(): array
             // Accessibility
             'sr-only' => 'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border-width:0',
             'not-sr-only' => 'position:static;width:auto;height:auto;padding:0;margin:0;overflow:visible;clip:auto;white-space:normal',
-            // Transform
+            // Transform — TW4 uses individual CSS properties (translate:, rotate:, scale:)
+            // so transform-gpu just adds a GPU compositing hint via translateZ(0)
             'transform-none' => 'transform:none',
             'transform-gpu' => 'transform:translateZ(0)',
+            'transform-cpu' => 'transform:none',
             // Transform origin
             'origin-center' => 'transform-origin:center', 'origin-top' => 'transform-origin:top',
             'origin-top-right' => 'transform-origin:top right', 'origin-right' => 'transform-origin:right',
             'origin-bottom-right' => 'transform-origin:bottom right', 'origin-bottom' => 'transform-origin:bottom',
             'origin-bottom-left' => 'transform-origin:bottom left', 'origin-left' => 'transform-origin:left',
             'origin-top-left' => 'transform-origin:top left',
+            // 3D transform utilities
+            'backface-hidden' => 'backface-visibility:hidden',
+            'backface-visible' => 'backface-visibility:visible',
+            'transform-3d' => 'transform-style:preserve-3d',
+            'transform-flat' => 'transform-style:flat',
+            'perspective-none' => 'perspective:none',
+            // Perspective origin
+            'perspective-origin-center' => 'perspective-origin:center',
+            'perspective-origin-top' => 'perspective-origin:top',
+            'perspective-origin-top-right' => 'perspective-origin:top right',
+            'perspective-origin-right' => 'perspective-origin:right',
+            'perspective-origin-bottom-right' => 'perspective-origin:bottom right',
+            'perspective-origin-bottom' => 'perspective-origin:bottom',
+            'perspective-origin-bottom-left' => 'perspective-origin:bottom left',
+            'perspective-origin-left' => 'perspective-origin:left',
+            'perspective-origin-top-left' => 'perspective-origin:top left',
             // Animations
             'animate-none' => 'animation:none',
             'animate-spin' => 'animation:spin 1s linear infinite',

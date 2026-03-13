@@ -536,6 +536,69 @@ class PromptEngine
                 // when data-layer files were modified. This keeps AEO content in sync
                 // with every AI edit — not just on publish.
                 $this->autoRegenerateAEO($parsed['operations']);
+
+                // ── Post-generation quality evaluation ──
+                // Runs only when opted in via Settings → AI Provider → Review.
+                // Uses a separate non-streaming AI call with structured output
+                // to check for broken links, missing alt text, heading errors, etc.
+                // Results are emitted via SSE so the frontend can surface them.
+                // The evaluator is advisory — exceptions return empty issues and
+                // never block the pipeline.
+                if ($this->settings->get('evaluator_enabled', false)) {
+                    try {
+                        $this->emitSSE('status', ['message' => 'Reviewing quality...']);
+
+                        // Build files map from write operations (skip deletes)
+                        $evalFiles = [];
+                        foreach ($parsed['operations'] as $op) {
+                            if (($op['action'] ?? '') !== 'delete' && isset($op['content'])) {
+                                $evalFiles[$op['path']] = $op['content'];
+                            }
+                        }
+
+                        if (!empty($evalFiles)) {
+                            // Merge preview pages + shipped root files that the AI
+                            // legitimately references (e.g. submit.php form handler).
+                            // Without this, the evaluator flags shipped files as
+                            // broken links — a false positive.
+                            $existingPages = array_column(
+                                $this->fileManager->listPreviewFiles(), 'path'
+                            );
+                            $shippedRootFiles = ['submit.php'];
+                            $rootDir = dirname(dirname(__DIR__));
+                            foreach ($shippedRootFiles as $shipped) {
+                                if (file_exists($rootDir . '/' . $shipped)) {
+                                    $existingPages[] = $shipped;
+                                }
+                            }
+
+                            $evaluator = new EvaluatorEngine($this->provider);
+                            $evalResult = $evaluator->evaluate(
+                                $evalFiles,
+                                $this->fileManager->readFile('assets/css/style.css') ?? '',
+                                $existingPages,
+                                ['model' => $configuredModel]
+                            );
+
+                            $evalIssues = $evalResult['issues'] ?? [];
+                            if (!empty($evalIssues)) {
+                                Logger::info('evaluator', 'Post-generation review found issues', [
+                                    'count' => count($evalIssues),
+                                    'severities' => array_count_values(array_column($evalIssues, 'severity')),
+                                ]);
+
+                                $this->emitSSE('evaluation', [
+                                    'issues' => $evalIssues,
+                                ]);
+                            }
+                        }
+                    } catch (\Throwable $evalError) {
+                        // Advisory only — never block generation
+                        Logger::warning('evaluator', 'Post-generation evaluation failed (non-blocking)', [
+                            'error' => $evalError->getMessage(),
+                        ]);
+                    }
+                }
             }
 
             // ── Log to prompt_log ──

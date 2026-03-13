@@ -21,6 +21,7 @@ class DeepSeekProvider implements AIProviderInterface
     private const API_URL = 'https://api.deepseek.com/v1/chat/completions';
     private const MODELS_URL = 'https://api.deepseek.com/v1/models';
     private const STRUCTURED_TOOL_NAME = 'apply_voxelsite_changes';
+    private const CUSTOM_TOOL_PREFIX = 'voxelsite_structured_';
 
     private string $apiKey;
     private ?string $model;
@@ -183,8 +184,20 @@ class DeepSeekProvider implements AIProviderInterface
     ): void {
         $model = $this->resolveRuntimeModel((string) ($options['model'] ?? $this->model ?? $this->getModels()[0]['id']));
         $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), $model);
-        $isStructured = !empty($options['structured_output']);
+        $structuredOption = $options['structured_output'] ?? false;
+        $isStructured = $structuredOption !== false;
         $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
+
+        $toolDef = null;
+        $toolName = self::STRUCTURED_TOOL_NAME;
+        if ($isStructured) {
+            if (is_array($structuredOption)) {
+                $toolName = $structuredOption['tool_name'] ?? (self::CUSTOM_TOOL_PREFIX . 'output');
+                $toolDef = $this->buildToolFromSchema($structuredOption, $toolName);
+            } else {
+                $toolDef = $this->getStructuredToolDefinition();
+            }
+        }
 
         $requestMessages = $this->stripImageContent($messages);
         array_unshift($requestMessages, ['role' => 'system', 'content' => $systemPrompt]);
@@ -195,11 +208,11 @@ class DeepSeekProvider implements AIProviderInterface
             'messages'   => $requestMessages,
             'stream'     => true,
         ];
-        if ($isStructured) {
-            $payload['tools'] = [$this->getStructuredToolDefinition()];
+        if ($isStructured && $toolDef !== null) {
+            $payload['tools'] = [$toolDef];
             $payload['tool_choice'] = [
                 'type' => 'function',
-                'function' => ['name' => self::STRUCTURED_TOOL_NAME],
+                'function' => ['name' => $toolName],
             ];
         }
 
@@ -312,8 +325,8 @@ class DeepSeekProvider implements AIProviderInterface
         if ($isStructured && !empty($toolArgsByIndex)) {
             ksort($toolArgsByIndex);
             foreach ($toolArgsByIndex as $index => $rawArgs) {
-                $toolName = $toolNamesByIndex[$index] ?? self::STRUCTURED_TOOL_NAME;
-                if ($toolName === self::STRUCTURED_TOOL_NAME && trim($rawArgs) !== '') {
+                $matchName = $toolNamesByIndex[$index] ?? $toolName;
+                if ($matchName === $toolName && trim($rawArgs) !== '') {
                     $fullResponse = $this->normalizeStructuredPayload($rawArgs);
                     break;
                 }
@@ -335,8 +348,20 @@ class DeepSeekProvider implements AIProviderInterface
     ): string {
         $model = $this->resolveRuntimeModel((string) ($options['model'] ?? $this->model ?? $this->getModels()[0]['id']));
         $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), $model);
-        $isStructured = !empty($options['structured_output']);
+        $structuredOption = $options['structured_output'] ?? false;
+        $isStructured = $structuredOption !== false;
         $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
+
+        $toolDef = null;
+        $toolName = self::STRUCTURED_TOOL_NAME;
+        if ($isStructured) {
+            if (is_array($structuredOption)) {
+                $toolName = $structuredOption['tool_name'] ?? (self::CUSTOM_TOOL_PREFIX . 'output');
+                $toolDef = $this->buildToolFromSchema($structuredOption, $toolName);
+            } else {
+                $toolDef = $this->getStructuredToolDefinition();
+            }
+        }
 
         $requestMessages = $this->stripImageContent($messages);
         array_unshift($requestMessages, ['role' => 'system', 'content' => $systemPrompt]);
@@ -346,25 +371,29 @@ class DeepSeekProvider implements AIProviderInterface
             'max_tokens' => $maxTokens,
             'messages'   => $requestMessages,
         ];
-        if ($isStructured) {
-            $payload['tools'] = [$this->getStructuredToolDefinition()];
+        if ($isStructured && $toolDef !== null) {
+            $payload['tools'] = [$toolDef];
             $payload['tool_choice'] = [
                 'type' => 'function',
-                'function' => ['name' => self::STRUCTURED_TOOL_NAME],
+                'function' => ['name' => $toolName],
             ];
         }
 
+        // Wrap the API call so tool-related rejections fall back to prompt-only JSON.
+        // apiCall() throws with the HTTP status as $e->getCode(), so we check
+        // the code directly — no brittle message-text matching needed.
         try {
             $response = $this->apiCall($payload);
         } catch (\Throwable $e) {
-            $msg = strtolower($e->getMessage());
-            if ($isStructured && !$structuredFallbackTried && (
-                str_contains($msg, 'http 400')
-                || str_contains($msg, 'http 404')
-                || str_contains($msg, 'http 422')
-                || str_contains($msg, 'tool')
-                || str_contains($msg, 'function')
-            )) {
+            if ($isStructured && !$structuredFallbackTried
+                && in_array($e->getCode(), [400, 404, 422], true)
+            ) {
+                \VoxelSite\Logger::warning('ai', 'DeepSeek tool call rejected — retrying without structured output', [
+                    'error'    => $e->getMessage(),
+                    'httpCode' => $e->getCode(),
+                    'tool'     => $toolName,
+                    'model'    => $model,
+                ]);
                 $fallbackOptions = $options;
                 $fallbackOptions['structured_output'] = false;
                 $fallbackOptions['_structured_fallback_tried'] = true;
@@ -435,7 +464,7 @@ class DeepSeekProvider implements AIProviderInterface
         ];
     }
 
-    private function apiCall(array $payload): array
+    protected function apiCall(array $payload): array
     {
         $ch = curl_init(self::API_URL);
         curl_setopt_array($ch, [
@@ -461,12 +490,12 @@ class DeepSeekProvider implements AIProviderInterface
 
         $decoded = json_decode($response, true);
         if (!is_array($decoded)) {
-            throw new RuntimeException("Invalid response from DeepSeek API (HTTP {$httpCode})");
+            throw new RuntimeException("Invalid response from DeepSeek API (HTTP {$httpCode})", $httpCode);
         }
 
         if ($httpCode !== 200) {
             $msg = $decoded['error']['message'] ?? "HTTP {$httpCode}";
-            throw new RuntimeException("DeepSeek API error: {$msg}");
+            throw new RuntimeException("DeepSeek API error: {$msg}", $httpCode);
         }
 
         return $decoded;
@@ -603,6 +632,28 @@ class DeepSeekProvider implements AIProviderInterface
                         ],
                     ],
                 ],
+            ],
+        ];
+    }
+
+    /**
+     * Build a tool definition from a custom JSON Schema.
+     *
+     * @param array  $schemaConfig  Must contain 'schema' (JSON Schema object)
+     * @param string $toolName      The function name to use
+     * @return array OpenAI-compatible tool definition
+     */
+    protected function buildToolFromSchema(array $schemaConfig, string $toolName): array
+    {
+        $schema = $schemaConfig['schema'] ?? $schemaConfig;
+        unset($schema['tool_name'], $schema['description']);
+
+        return [
+            'type' => 'function',
+            'function' => [
+                'name' => $toolName,
+                'description' => $schemaConfig['description'] ?? 'Return structured output.',
+                'parameters' => $schema,
             ],
         ];
     }

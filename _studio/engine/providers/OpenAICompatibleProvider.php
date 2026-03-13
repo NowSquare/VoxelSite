@@ -22,6 +22,7 @@ use RuntimeException;
 class OpenAICompatibleProvider implements AIProviderInterface
 {
     private const STRUCTURED_TOOL_NAME = 'apply_voxelsite_changes';
+    private const CUSTOM_TOOL_PREFIX = 'voxelsite_structured_';
 
     private string $apiKey;
     private ?string $model;
@@ -221,8 +222,20 @@ class OpenAICompatibleProvider implements AIProviderInterface
     ): void {
         $model = $options['model'] ?? $this->model ?? '';
         $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), (string) $model);
-        $isStructured = !empty($options['structured_output']);
+        $structuredOption = $options['structured_output'] ?? false;
+        $isStructured = $structuredOption !== false;
         $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
+
+        $toolDef = null;
+        $toolName = self::STRUCTURED_TOOL_NAME;
+        if ($isStructured) {
+            if (is_array($structuredOption)) {
+                $toolName = $structuredOption['tool_name'] ?? (self::CUSTOM_TOOL_PREFIX . 'output');
+                $toolDef = $this->buildToolFromSchema($structuredOption, $toolName);
+            } else {
+                $toolDef = $this->getStructuredToolDefinition();
+            }
+        }
 
         if (empty($model)) {
             throw new RuntimeException('No model selected. Please choose a model first.');
@@ -237,11 +250,11 @@ class OpenAICompatibleProvider implements AIProviderInterface
             'messages'   => $requestMessages,
             'stream'     => true,
         ];
-        if ($isStructured) {
-            $payload['tools'] = [$this->getStructuredToolDefinition()];
+        if ($isStructured && $toolDef !== null) {
+            $payload['tools'] = [$toolDef];
             $payload['tool_choice'] = [
                 'type' => 'function',
-                'function' => ['name' => self::STRUCTURED_TOOL_NAME],
+                'function' => ['name' => $toolName],
             ];
         }
 
@@ -436,8 +449,8 @@ class OpenAICompatibleProvider implements AIProviderInterface
         if ($isStructured && !empty($toolArgsByIndex)) {
             ksort($toolArgsByIndex);
             foreach ($toolArgsByIndex as $index => $rawArgs) {
-                $toolName = $toolNamesByIndex[$index] ?? self::STRUCTURED_TOOL_NAME;
-                if ($toolName === self::STRUCTURED_TOOL_NAME && trim($rawArgs) !== '') {
+                $matchName = $toolNamesByIndex[$index] ?? $toolName;
+                if ($matchName === $toolName && trim($rawArgs) !== '') {
                     $fullResponse = $this->normalizeStructuredPayload($rawArgs);
                     break;
                 }
@@ -459,8 +472,20 @@ class OpenAICompatibleProvider implements AIProviderInterface
     ): string {
         $model = $options['model'] ?? $this->model ?? '';
         $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), (string) $model);
-        $isStructured = !empty($options['structured_output']);
+        $structuredOption = $options['structured_output'] ?? false;
+        $isStructured = $structuredOption !== false;
         $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
+
+        $toolDef = null;
+        $toolName = self::STRUCTURED_TOOL_NAME;
+        if ($isStructured) {
+            if (is_array($structuredOption)) {
+                $toolName = $structuredOption['tool_name'] ?? (self::CUSTOM_TOOL_PREFIX . 'output');
+                $toolDef = $this->buildToolFromSchema($structuredOption, $toolName);
+            } else {
+                $toolDef = $this->getStructuredToolDefinition();
+            }
+        }
 
         if (empty($model)) {
             throw new RuntimeException('No model selected.');
@@ -469,6 +494,64 @@ class OpenAICompatibleProvider implements AIProviderInterface
         $messages = $this->transformMessagesForVision($messages);
         array_unshift($messages, ['role' => 'system', 'content' => $systemPrompt]);
 
+        $payloadArray = [
+            'model'      => $model,
+            'max_tokens' => $maxTokens,
+            'messages'   => $messages,
+        ];
+        if ($isStructured && $toolDef !== null) {
+            $payloadArray['tools'] = [$toolDef];
+            $payloadArray['tool_choice'] = [
+                'type' => 'function',
+                'function' => ['name' => $toolName],
+            ];
+        }
+
+        // Route through apiCall() so test subclasses can simulate errors.
+        // apiCall() throws with the HTTP status as $e->getCode(), so we check
+        // the code directly — no brittle message-text matching needed.
+        try {
+            $decoded = $this->apiCall($payloadArray);
+        } catch (\Throwable $e) {
+            if ($isStructured && !$structuredFallbackTried
+                && in_array($e->getCode(), [400, 404, 422], true)
+            ) {
+                \VoxelSite\Logger::warning('ai', 'API tool call rejected — retrying without structured output', [
+                    'error'    => $e->getMessage(),
+                    'httpCode' => $e->getCode(),
+                    'tool'     => $toolName,
+                    'model'    => $model,
+                ]);
+                $fallbackOptions = $options;
+                $fallbackOptions['structured_output'] = false;
+                $fallbackOptions['_structured_fallback_tried'] = true;
+                return $this->complete($systemPrompt, array_slice($messages, 1), $fallbackOptions);
+            }
+            throw $e;
+        }
+
+        if ($isStructured) {
+            $toolArgs = $decoded['choices'][0]['message']['tool_calls'][0]['function']['arguments'] ?? '';
+            if (is_string($toolArgs) && trim($toolArgs) !== '') {
+                return $this->normalizeStructuredPayload($toolArgs);
+            }
+        }
+
+        return $decoded['choices'][0]['message']['content'] ?? '';
+    }
+
+    /**
+     * Make a non-streaming API call to the compatible endpoint.
+     *
+     * Extracted as a protected method so test subclasses can override
+     * it to simulate HTTP error responses for fallback testing.
+     *
+     * @param array $payload Request body (will be JSON-encoded)
+     * @return array<string, mixed> Decoded JSON response
+     * @throws RuntimeException On connection, decode, or HTTP errors
+     */
+    protected function apiCall(array $payload): array
+    {
         $headers = [
             'Content-Type: application/json',
         ];
@@ -476,22 +559,10 @@ class OpenAICompatibleProvider implements AIProviderInterface
             $headers[] = 'Authorization: Bearer ' . $this->apiKey;
         }
 
-        $payload = json_encode([
-            'model'      => $model,
-            'max_tokens' => $maxTokens,
-            'messages'   => $messages,
-        ] + ($isStructured ? [
-            'tools' => [$this->getStructuredToolDefinition()],
-            'tool_choice' => [
-                'type' => 'function',
-                'function' => ['name' => self::STRUCTURED_TOOL_NAME],
-            ],
-        ] : []));
-
         $ch = curl_init($this->baseUrl . '/chat/completions');
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_POSTFIELDS     => json_encode($payload),
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 120,
@@ -508,25 +579,16 @@ class OpenAICompatibleProvider implements AIProviderInterface
         }
 
         $decoded = json_decode($response, true);
-        if (!is_array($decoded) || $httpCode !== 200) {
+        if (!is_array($decoded)) {
+            throw new RuntimeException("Invalid response from API (HTTP {$httpCode})", $httpCode);
+        }
+
+        if ($httpCode !== 200) {
             $msg = $decoded['error']['message'] ?? "HTTP {$httpCode}";
-            if ($isStructured && !$structuredFallbackTried && $this->shouldRetryWithoutTools($httpCode, (string) json_encode($decoded))) {
-                $fallbackOptions = $options;
-                $fallbackOptions['structured_output'] = false;
-                $fallbackOptions['_structured_fallback_tried'] = true;
-                return $this->complete($systemPrompt, array_slice($messages, 1), $fallbackOptions);
-            }
-            throw new RuntimeException("API error: {$msg}");
+            throw new RuntimeException("API error: {$msg}", $httpCode);
         }
 
-        if ($isStructured) {
-            $toolArgs = $decoded['choices'][0]['message']['tool_calls'][0]['function']['arguments'] ?? '';
-            if (is_string($toolArgs) && trim($toolArgs) !== '') {
-                return $this->normalizeStructuredPayload($toolArgs);
-            }
-        }
-
-        return $decoded['choices'][0]['message']['content'] ?? '';
+        return $decoded;
     }
 
     public function estimateTokens(string $text): int
@@ -673,6 +735,28 @@ class OpenAICompatibleProvider implements AIProviderInterface
                         ],
                     ],
                 ],
+            ],
+        ];
+    }
+
+    /**
+     * Build a tool definition from a custom JSON Schema.
+     *
+     * @param array  $schemaConfig  Must contain 'schema' (JSON Schema object)
+     * @param string $toolName      The function name to use
+     * @return array OpenAI-compatible tool definition
+     */
+    protected function buildToolFromSchema(array $schemaConfig, string $toolName): array
+    {
+        $schema = $schemaConfig['schema'] ?? $schemaConfig;
+        unset($schema['tool_name'], $schema['description']);
+
+        return [
+            'type' => 'function',
+            'function' => [
+                'name' => $toolName,
+                'description' => $schemaConfig['description'] ?? 'Return structured output.',
+                'parameters' => $schema,
             ],
         ];
     }

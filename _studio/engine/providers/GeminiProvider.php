@@ -208,7 +208,8 @@ class GeminiProvider implements AIProviderInterface
     ): void {
         $model = $options['model'] ?? $this->model ?? $this->getModels()[0]['id'];
         $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), (string) $model);
-        $isStructured = !empty($options['structured_output']);
+        $structuredOption = $options['structured_output'] ?? false;
+        $isStructured = $structuredOption !== false;
         $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
 
         // Convert messages to Gemini format
@@ -227,7 +228,13 @@ class GeminiProvider implements AIProviderInterface
         ];
         if ($isStructured) {
             $payload['generationConfig']['responseMimeType'] = 'application/json';
-            $payload['generationConfig']['responseSchema'] = $this->getStructuredResponseSchema();
+            if (is_array($structuredOption)) {
+                $schema = $structuredOption['schema'] ?? $structuredOption;
+                unset($schema['tool_name'], $schema['description']);
+                $payload['generationConfig']['responseSchema'] = $this->convertSchemaToGeminiFormat($schema);
+            } else {
+                $payload['generationConfig']['responseSchema'] = $this->getStructuredResponseSchema();
+            }
         }
 
         $fullResponse = '';
@@ -325,7 +332,8 @@ class GeminiProvider implements AIProviderInterface
     ): string {
         $model = $options['model'] ?? $this->model ?? $this->getModels()[0]['id'];
         $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), (string) $model);
-        $isStructured = !empty($options['structured_output']);
+        $structuredOption = $options['structured_output'] ?? false;
+        $isStructured = $structuredOption !== false;
         $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
 
         $contents = $this->convertToGeminiContents($messages);
@@ -343,38 +351,35 @@ class GeminiProvider implements AIProviderInterface
         ];
         if ($isStructured) {
             $payload['generationConfig']['responseMimeType'] = 'application/json';
-            $payload['generationConfig']['responseSchema'] = $this->getStructuredResponseSchema();
+            if (is_array($structuredOption)) {
+                $schema = $structuredOption['schema'] ?? $structuredOption;
+                unset($schema['tool_name'], $schema['description']);
+                $payload['generationConfig']['responseSchema'] = $this->convertSchemaToGeminiFormat($schema);
+            } else {
+                $payload['generationConfig']['responseSchema'] = $this->getStructuredResponseSchema();
+            }
         }
 
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode($payload),
-            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 120,
-            CURLOPT_CONNECTTIMEOUT => 10,
-        ]);
-
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
-
-        if (!empty($error)) {
-            throw new RuntimeException("Gemini API connection failed: {$error}");
-        }
-
-        $decoded = json_decode($response, true);
-        if (!is_array($decoded) || $httpCode !== 200) {
-            $msg = $decoded['error']['message'] ?? "HTTP {$httpCode}";
-            if ($isStructured && !$structuredFallbackTried && $this->shouldRetryWithoutSchema($httpCode, (string) json_encode($decoded))) {
+        // Route through apiCall() so test subclasses can simulate errors.
+        // apiCall() throws with the HTTP status as $e->getCode(), so we check
+        // the code directly — no message-body inspection needed.
+        try {
+            $decoded = $this->apiCall($url, $payload);
+        } catch (\Throwable $e) {
+            if ($isStructured && !$structuredFallbackTried
+                && in_array($e->getCode(), [400, 422], true)
+            ) {
+                \VoxelSite\Logger::warning('ai', 'Gemini schema rejected — retrying without structured output', [
+                    'error'    => $e->getMessage(),
+                    'httpCode' => $e->getCode(),
+                    'model'    => $model,
+                ]);
                 $fallbackOptions = $options;
                 $fallbackOptions['structured_output'] = false;
                 $fallbackOptions['_structured_fallback_tried'] = true;
                 return $this->complete($systemPrompt, $messages, $fallbackOptions);
             }
-            throw new RuntimeException("Gemini API error: {$msg}");
+            throw $e;
         }
 
         return $decoded['candidates'][0]['content']['parts'][0]['text'] ?? '';
@@ -448,6 +453,51 @@ class GeminiProvider implements AIProviderInterface
             }
         }
         return $contents;
+    }
+
+    /**
+     * Make a non-streaming API call to Gemini.
+     *
+     * Extracted as a protected method so test subclasses can override
+     * it to simulate HTTP error responses for fallback testing.
+     *
+     * @param string $url     Full Gemini API URL including model and key
+     * @param array  $payload Request body
+     * @return array<string, mixed> Decoded JSON response
+     * @throws RuntimeException On connection, decode, or HTTP errors
+     */
+    protected function apiCall(string $url, array $payload): array
+    {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => json_encode($payload),
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 120,
+            CURLOPT_CONNECTTIMEOUT => 10,
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if (!empty($error)) {
+            throw new RuntimeException("Gemini API connection failed: {$error}");
+        }
+
+        $decoded = json_decode($response, true);
+        if (!is_array($decoded)) {
+            throw new RuntimeException("Invalid response from Gemini API (HTTP {$httpCode})", $httpCode);
+        }
+
+        if ($httpCode !== 200) {
+            $msg = $decoded['error']['message'] ?? "HTTP {$httpCode}";
+            throw new RuntimeException("Gemini API error: {$msg}", $httpCode);
+        }
+
+        return $decoded;
     }
 
     private function shouldRetryWithoutSchema(int $httpCode, string $errorBody): bool
@@ -543,5 +593,41 @@ class GeminiProvider implements AIProviderInterface
                 ],
             ],
         ];
+    }
+
+    /**
+     * Convert a standard JSON Schema to Gemini's format.
+     *
+     * Gemini requires uppercased type names (STRING, OBJECT, ARRAY, etc.)
+     * and does not support all JSON Schema features. This method
+     * recursively converts a standard JSON Schema object.
+     *
+     * @param array $schema Standard JSON Schema
+     * @return array Gemini-compatible schema
+     */
+    protected function convertSchemaToGeminiFormat(array $schema): array
+    {
+        $result = [];
+
+        foreach ($schema as $key => $value) {
+            if ($key === 'type' && is_string($value)) {
+                $result['type'] = strtoupper($value);
+            } elseif ($key === 'additionalProperties') {
+                // Gemini doesn't support additionalProperties — skip it
+                continue;
+            } elseif ($key === 'maxItems') {
+                // Gemini doesn't support maxItems — skip it (enforced via prompt)
+                continue;
+            } elseif ($key === 'const') {
+                // Gemini doesn't support const — convert to single-value enum
+                $result['enum'] = [$value];
+            } elseif (is_array($value)) {
+                $result[$key] = $this->convertSchemaToGeminiFormat($value);
+            } else {
+                $result[$key] = $value;
+            }
+        }
+
+        return $result;
     }
 }

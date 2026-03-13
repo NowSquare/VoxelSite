@@ -21,6 +21,7 @@ class OpenAIProvider implements AIProviderInterface
     private const API_URL = 'https://api.openai.com/v1/chat/completions';
     private const MODELS_URL = 'https://api.openai.com/v1/models';
     private const STRUCTURED_TOOL_NAME = 'apply_voxelsite_changes';
+    private const CUSTOM_TOOL_PREFIX = 'voxelsite_structured_';
 
     private string $apiKey;
     private ?string $model;
@@ -198,8 +199,20 @@ class OpenAIProvider implements AIProviderInterface
     ): void {
         $model = $this->resolveRuntimeModel((string) ($options['model'] ?? $this->model ?? $this->getModels()[0]['id']));
         $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), $model);
-        $isStructured = !empty($options['structured_output']);
+        $structuredOption = $options['structured_output'] ?? false;
+        $isStructured = $structuredOption !== false;
         $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
+
+        $toolDef = null;
+        $toolName = self::STRUCTURED_TOOL_NAME;
+        if ($isStructured) {
+            if (is_array($structuredOption)) {
+                $toolName = $structuredOption['tool_name'] ?? (self::CUSTOM_TOOL_PREFIX . 'output');
+                $toolDef = $this->buildOpenAIToolFromSchema($structuredOption, $toolName);
+            } else {
+                $toolDef = $this->getStructuredToolDefinition();
+            }
+        }
 
         $payload = [
             'model'    => $model,
@@ -207,11 +220,11 @@ class OpenAIProvider implements AIProviderInterface
             'stream'   => true,
         ];
         $this->setOutputTokenLimit($payload, $maxTokens, $model);
-        if ($isStructured) {
-            $payload['tools'] = [$this->getStructuredToolDefinition()];
+        if ($isStructured && $toolDef !== null) {
+            $payload['tools'] = [$toolDef];
             $payload['tool_choice'] = [
                 'type' => 'function',
-                'function' => ['name' => self::STRUCTURED_TOOL_NAME],
+                'function' => ['name' => $toolName],
             ];
         }
 
@@ -330,8 +343,8 @@ class OpenAIProvider implements AIProviderInterface
         if ($isStructured && !empty($toolArgsByIndex)) {
             ksort($toolArgsByIndex);
             foreach ($toolArgsByIndex as $index => $rawArgs) {
-                $toolName = $toolNamesByIndex[$index] ?? self::STRUCTURED_TOOL_NAME;
-                if ($toolName === self::STRUCTURED_TOOL_NAME && trim($rawArgs) !== '') {
+                $matchName = $toolNamesByIndex[$index] ?? $toolName;
+                if ($matchName === $toolName && trim($rawArgs) !== '') {
                     $fullResponse = $this->normalizeStructuredPayload($rawArgs);
                     break;
                 }
@@ -353,35 +366,49 @@ class OpenAIProvider implements AIProviderInterface
     ): string {
         $model = $this->resolveRuntimeModel((string) ($options['model'] ?? $this->model ?? $this->getModels()[0]['id']));
         $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), $model);
-        $isStructured = !empty($options['structured_output']);
+        $structuredOption = $options['structured_output'] ?? false;
+        $isStructured = $structuredOption !== false;
         $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
+
+        $toolDef = null;
+        $toolName = self::STRUCTURED_TOOL_NAME;
+        if ($isStructured) {
+            if (is_array($structuredOption)) {
+                $toolName = $structuredOption['tool_name'] ?? (self::CUSTOM_TOOL_PREFIX . 'output');
+                $toolDef = $this->buildOpenAIToolFromSchema($structuredOption, $toolName);
+            } else {
+                $toolDef = $this->getStructuredToolDefinition();
+            }
+        }
 
         $payload = [
             'model'    => $model,
             'messages' => $this->prependSystemMessage($messages, $systemPrompt, $model),
         ];
         $this->setOutputTokenLimit($payload, $maxTokens, $model);
-        if ($isStructured) {
-            $payload['tools'] = [$this->getStructuredToolDefinition()];
+        if ($isStructured && $toolDef !== null) {
+            $payload['tools'] = [$toolDef];
             $payload['tool_choice'] = [
                 'type' => 'function',
-                'function' => ['name' => self::STRUCTURED_TOOL_NAME],
+                'function' => ['name' => $toolName],
             ];
         }
 
+        // Wrap the API call so tool-related rejections fall back to prompt-only JSON.
+        // apiCall() throws with the HTTP status as $e->getCode(), so we check
+        // the code directly — no brittle message-text matching needed.
         try {
             $response = $this->apiCall($payload);
         } catch (\Throwable $e) {
-            $msg = strtolower($e->getMessage());
-            if ($isStructured && !$structuredFallbackTried && (
-                str_contains($msg, 'http 400')
-                || str_contains($msg, 'http 404')
-                || str_contains($msg, 'http 422')
-                || str_contains($msg, 'tool')
-                || str_contains($msg, 'function')
-                || str_contains($msg, 'tool_choice')
-                || str_contains($msg, 'unsupported')
-            )) {
+            if ($isStructured && !$structuredFallbackTried
+                && in_array($e->getCode(), [400, 404, 422], true)
+            ) {
+                \VoxelSite\Logger::warning('ai', 'OpenAI tool call rejected — retrying without structured output', [
+                    'error'    => $e->getMessage(),
+                    'httpCode' => $e->getCode(),
+                    'tool'     => $toolName,
+                    'model'    => $model,
+                ]);
                 $fallbackOptions = $options;
                 $fallbackOptions['structured_output'] = false;
                 $fallbackOptions['_structured_fallback_tried'] = true;
@@ -482,7 +509,7 @@ class OpenAIProvider implements AIProviderInterface
         ];
     }
 
-    private function apiCall(array $payload): array
+    protected function apiCall(array $payload): array
     {
         $ch = curl_init(self::API_URL);
         curl_setopt_array($ch, [
@@ -508,12 +535,12 @@ class OpenAIProvider implements AIProviderInterface
 
         $decoded = json_decode($response, true);
         if (!is_array($decoded)) {
-            throw new RuntimeException("Invalid response from OpenAI API (HTTP {$httpCode})");
+            throw new RuntimeException("Invalid response from OpenAI API (HTTP {$httpCode})", $httpCode);
         }
 
         if ($httpCode !== 200) {
             $msg = $decoded['error']['message'] ?? "HTTP {$httpCode}";
-            throw new RuntimeException("OpenAI API error: {$msg}");
+            throw new RuntimeException("OpenAI API error: {$msg}", $httpCode);
         }
 
         return $decoded;
@@ -732,6 +759,31 @@ class OpenAIProvider implements AIProviderInterface
                         ],
                     ],
                 ],
+            ],
+        ];
+    }
+
+    /**
+     * Build an OpenAI function tool definition from a custom JSON Schema.
+     *
+     * Wraps the generic schema in OpenAI's function-calling format.
+     * Used by secondary engines for provider-enforced structured output.
+     *
+     * @param array  $schemaConfig  Must contain 'schema' (JSON Schema object)
+     * @param string $toolName      The function name to use
+     * @return array OpenAI tool definition
+     */
+    protected function buildOpenAIToolFromSchema(array $schemaConfig, string $toolName): array
+    {
+        $schema = $schemaConfig['schema'] ?? $schemaConfig;
+        unset($schema['tool_name'], $schema['description']);
+
+        return [
+            'type' => 'function',
+            'function' => [
+                'name' => $toolName,
+                'description' => $schemaConfig['description'] ?? 'Return structured output.',
+                'parameters' => $schema,
             ],
         ];
     }

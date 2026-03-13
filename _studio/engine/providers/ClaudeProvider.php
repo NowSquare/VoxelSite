@@ -25,6 +25,7 @@ class ClaudeProvider implements AIProviderInterface
     private const MODELS_URL = 'https://api.anthropic.com/v1/models';
     private const API_VERSION = '2023-06-01';
     private const STRUCTURED_TOOL_NAME = 'apply_voxelsite_changes';
+    private const CUSTOM_TOOL_PREFIX = 'voxelsite_structured_';
 
     private string $apiKey;
     private ?string $model;
@@ -235,7 +236,22 @@ class ClaudeProvider implements AIProviderInterface
     ): void {
         $model = $options['model'] ?? $this->model ?? $this->getModels()[0]['id'];
         $maxTokens = $this->resolveMaxTokens($options['max_tokens'] ?? $this->maxTokens, $model);
-        $isStructured = !empty($options['structured_output']);
+        $structuredOption = $options['structured_output'] ?? false;
+        $isStructured = $structuredOption !== false;
+        $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
+
+        // Resolve the tool definition: true = built-in filesystem schema,
+        // array = custom JSON Schema for evaluator/auditor outputs
+        $toolDef = null;
+        $toolName = self::STRUCTURED_TOOL_NAME;
+        if ($isStructured) {
+            if (is_array($structuredOption)) {
+                $toolName = $structuredOption['tool_name'] ?? (self::CUSTOM_TOOL_PREFIX . 'output');
+                $toolDef = $this->buildClaudeToolFromSchema($structuredOption, $toolName);
+            } else {
+                $toolDef = $this->getStructuredToolDefinition();
+            }
+        }
 
         $payload = [
             'model'      => $model,
@@ -244,11 +260,11 @@ class ClaudeProvider implements AIProviderInterface
             'messages'   => $messages,
             'stream'     => true,
         ];
-        if ($isStructured) {
-            $payload['tools'] = [$this->getStructuredToolDefinition()];
+        if ($isStructured && $toolDef !== null) {
+            $payload['tools'] = [$toolDef];
             $payload['tool_choice'] = [
                 'type' => 'tool',
-                'name' => self::STRUCTURED_TOOL_NAME,
+                'name' => $toolName,
             ];
         }
 
@@ -257,6 +273,7 @@ class ClaudeProvider implements AIProviderInterface
         $lastActivityTime = microtime(true);
         $toolInputByIndex = [];
         $toolNameByIndex = [];
+        $expectedToolName = $toolName;
         $errorBody = '';
 
         $ch = curl_init(self::API_URL);
@@ -448,6 +465,21 @@ class ClaudeProvider implements AIProviderInterface
             throw new RuntimeException("Claude API connection failed: {$error}");
         }
 
+        // Structured output fallback: if tool call was rejected, retry without tools
+        if ($isStructured && !$structuredFallbackTried && empty($fullResponse)
+            && in_array($httpCode, [400, 404, 422], true)
+        ) {
+            \VoxelSite\Logger::warning('ai', 'Claude stream tool call rejected — retrying without structured output', [
+                'httpCode' => $httpCode,
+                'model'    => $model,
+            ]);
+            $fallbackOptions = $options;
+            $fallbackOptions['structured_output'] = false;
+            $fallbackOptions['_structured_fallback_tried'] = true;
+            $this->stream($systemPrompt, $messages, $onToken, $onComplete, $fallbackOptions);
+            return;
+        }
+
         if ($httpCode === 429) {
             throw new RuntimeException('rate_limited');
         }
@@ -484,8 +516,8 @@ class ClaudeProvider implements AIProviderInterface
         if ($isStructured && !empty($toolInputByIndex)) {
             ksort($toolInputByIndex);
             foreach ($toolInputByIndex as $index => $rawInput) {
-                $toolName = $toolNameByIndex[$index] ?? self::STRUCTURED_TOOL_NAME;
-                if ($toolName === self::STRUCTURED_TOOL_NAME && trim($rawInput) !== '') {
+                $matchName = $toolNameByIndex[$index] ?? $expectedToolName;
+                if ($matchName === $expectedToolName && trim($rawInput) !== '') {
                     $fullResponse = $this->normalizeStructuredPayload($rawInput);
                     break;
                 }
@@ -511,7 +543,20 @@ class ClaudeProvider implements AIProviderInterface
     ): string {
         $model = $options['model'] ?? $this->model ?? $this->getModels()[0]['id'];
         $maxTokens = $this->resolveMaxTokens($options['max_tokens'] ?? $this->maxTokens, $model);
-        $isStructured = !empty($options['structured_output']);
+        $structuredOption = $options['structured_output'] ?? false;
+        $isStructured = $structuredOption !== false;
+        $structuredFallbackTried = !empty($options['_structured_fallback_tried']);
+
+        $toolDef = null;
+        $toolName = self::STRUCTURED_TOOL_NAME;
+        if ($isStructured) {
+            if (is_array($structuredOption)) {
+                $toolName = $structuredOption['tool_name'] ?? (self::CUSTOM_TOOL_PREFIX . 'output');
+                $toolDef = $this->buildClaudeToolFromSchema($structuredOption, $toolName);
+            } else {
+                $toolDef = $this->getStructuredToolDefinition();
+            }
+        }
 
         $payload = [
             'model'      => $model,
@@ -520,22 +565,43 @@ class ClaudeProvider implements AIProviderInterface
             'messages'   => $messages,
         ];
 
-        if ($isStructured) {
-            $payload['tools'] = [$this->getStructuredToolDefinition()];
+        if ($isStructured && $toolDef !== null) {
+            $payload['tools'] = [$toolDef];
             $payload['tool_choice'] = [
                 'type' => 'tool',
-                'name' => self::STRUCTURED_TOOL_NAME,
+                'name' => $toolName,
             ];
         }
 
-        $response = $this->apiCall($payload);
+        // Wrap the API call so tool-related rejections fall back to prompt-only JSON.
+        // apiCall() throws with the HTTP status as $e->getCode(), so we check
+        // the code directly — no brittle message-text matching needed.
+        try {
+            $response = $this->apiCall($payload);
+        } catch (\Throwable $e) {
+            if ($isStructured && !$structuredFallbackTried
+                && in_array($e->getCode(), [400, 404, 422], true)
+            ) {
+                \VoxelSite\Logger::warning('ai', 'Claude tool call rejected — retrying without structured output', [
+                    'error'    => $e->getMessage(),
+                    'httpCode' => $e->getCode(),
+                    'tool'     => $toolName,
+                    'model'    => $model,
+                ]);
+                $fallbackOptions = $options;
+                $fallbackOptions['structured_output'] = false;
+                $fallbackOptions['_structured_fallback_tried'] = true;
+                return $this->complete($systemPrompt, $messages, $fallbackOptions);
+            }
+            throw $e;
+        }
 
         if ($isStructured) {
             foreach ($response['content'] ?? [] as $block) {
                 if (!is_array($block) || ($block['type'] ?? '') !== 'tool_use') {
                     continue;
                 }
-                if (($block['name'] ?? '') !== self::STRUCTURED_TOOL_NAME) {
+                if (($block['name'] ?? '') !== $toolName) {
                     continue;
                 }
 
@@ -677,7 +743,7 @@ class ClaudeProvider implements AIProviderInterface
      *
      * @return array<string, mixed> Decoded JSON response
      */
-    private function apiCall(array $payload): array
+    protected function apiCall(array $payload): array
     {
         $model = $payload['model'] ?? '';
         $maxTokens = $payload['max_tokens'] ?? 0;
@@ -703,12 +769,12 @@ class ClaudeProvider implements AIProviderInterface
 
         $decoded = json_decode($response, true);
         if (!is_array($decoded)) {
-            throw new RuntimeException("Invalid response from Claude API (HTTP {$httpCode})");
+            throw new RuntimeException("Invalid response from Claude API (HTTP {$httpCode})", $httpCode);
         }
 
         if ($httpCode !== 200) {
             $msg = $decoded['error']['message'] ?? "HTTP {$httpCode}";
-            throw new RuntimeException("Claude API error: {$msg}");
+            throw new RuntimeException("Claude API error: {$msg}", $httpCode);
         }
 
         return $decoded;
@@ -743,6 +809,37 @@ class ClaudeProvider implements AIProviderInterface
                     ],
                 ],
             ],
+        ];
+    }
+
+    /**
+     * Build a Claude tool definition from a custom JSON Schema.
+     *
+     * Accepts a generic JSON Schema object (the subset all three providers
+     * understand) and wraps it in Claude's tool format. The schema must be
+     * a valid JSON Schema "object" type with properties defined.
+     *
+     * Custom schemas are used by secondary engines (evaluator, auditor)
+     * that need provider-enforced structured output for machine-consumed
+     * JSON results — unlike the main generation flow which uses <file>
+     * tags and deliberately disables structured output.
+     *
+     * @param array  $schemaConfig  Must contain 'schema' (JSON Schema object)
+     *                              and optionally 'description', 'tool_name'
+     * @param string $toolName      The tool name to use
+     * @return array Claude tool definition
+     */
+    protected function buildClaudeToolFromSchema(array $schemaConfig, string $toolName): array
+    {
+        $schema = $schemaConfig['schema'] ?? $schemaConfig;
+
+        // Remove non-schema keys that are part of the config envelope
+        unset($schema['tool_name'], $schema['description']);
+
+        return [
+            'name' => $toolName,
+            'description' => $schemaConfig['description'] ?? 'Return structured output.',
+            'input_schema' => $schema,
         ];
     }
 

@@ -64,6 +64,7 @@ if ($method === 'PUT' && $path === '/settings') {
         'ai_claude_model', 'ai_openai_model', 'ai_gemini_model', 'ai_deepseek_model', 'ai_openai_compatible_model',
         'ai_openai_compatible_base_url',
         'ai_max_tokens',
+        'evaluator_enabled',
         'nav_style', 'mobile_nav_style', 'footer_style',
         'auto_snapshot', 'max_snapshots', 'max_revisions',
     ];

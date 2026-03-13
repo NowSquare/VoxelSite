@@ -183,8 +183,11 @@ if ($method === 'PUT' && $path === '/files/content') {
             $fileManager->syncPageRegistry();
         }
 
+        $tailwindCompiled = false;
+        $tailwindCompile = null;
         if ($fileManager->pathAffectsTailwind($editablePath)) {
-            $fileManager->compileTailwind();
+            $tailwindCompiled = true;
+            $tailwindCompile = $fileManager->compileTailwind();
         }
 
         $revisionManager->captureAfterState($revisionId, $operations);
@@ -194,6 +197,8 @@ if ($method === 'PUT' && $path === '/files/content') {
             'path' => $editablePath,
             'changed' => true,
             'revision_id' => $revisionId,
+            'tailwindCompiled' => $tailwindCompiled,
+            'tailwindCompile' => $tailwindCompile,
             'file' => $latestAbsolute !== null
                 ? buildEditableFileMeta($editablePath, $latestAbsolute)
                 : null,

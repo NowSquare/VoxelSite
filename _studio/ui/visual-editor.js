@@ -127,6 +127,10 @@ export function initVisualEditor() {
       if (richTextActive) {
         onEditingEnded();
       }
+      // Re-send editor state after iframe reload (fallback for bridge-ready race)
+      if (editorActive) {
+        setTimeout(() => sendToPreview({ type: 'vx-editor:toggle', active: true }), 200);
+      }
     });
   }
 }
@@ -184,6 +188,12 @@ function handlePreviewMessage(e) {
       break;
     case 'vx-editor:section-moved':
       persistSectionMove(e.data);
+      break;
+    case 'vx-editor:bridge-ready':
+      // Bridge just initialized (after iframe reload). Re-send editor state.
+      if (editorActive) {
+        sendToPreview({ type: 'vx-editor:toggle', active: true });
+      }
       break;
   }
 }
@@ -727,6 +737,10 @@ function renderTabContent(tab) {
   };
   body.innerHTML = (renderers[tab] || renderers.classes)();
   bindTabControls(body);
+
+  // Scroll active color into view inside the compact matrix
+  const activeCell = body.querySelector('.vx-cm-active');
+  if (activeCell) activeCell.scrollIntoView({ block: 'nearest' });
 }
 
 // ── Tab renderers ──
@@ -854,26 +868,21 @@ function renderColorsTab() {
     }).join('')}</div>
   </div>`;
 
-  const family = activeColorFamily ? TW.colors.find(c => c.name === activeColorFamily) : null;
+  // ── Flat Color Matrix ──
+  // Every family × every shade in one compact grid. One tap, no navigation.
+  const shadeKeys = ['50','100','200','300','400','500','600','700','800','900','950'];
   html += `<div class="vx-sp-section">
     <div class="vx-sp-section-title">Palette</div>
-    <div class="vx-color-stage">
-      ${!family ? `
-        <div class="vx-sp-color-families">${TW.colors.map(color => {
-          const isActive = activeColorFamily === color.name;
-          const isUsed = findCurrent(new RegExp(`^${prefix}-${color.name}-\\d+$`));
-          return `<button class="vx-sp-color-family${isActive ? ' vx-sp-fam-active' : ''}${isUsed ? ' vx-sp-fam-used' : ''}" data-family="${color.name}" style="background:${color.shades['500']}" title="${color.name}"></button>`;
-        }).join('')}</div>
-      ` : `
-        <div class="vx-shade-stage-header">
-          <button class="vx-shade-back" data-family-back>&larr; Colors</button>
-          <span class="vx-shade-title">${family.name}</span>
+    <div class="vx-color-matrix">
+      ${TW.colors.map(color => `
+        <div class="vx-cm-row" title="${color.name}">
+          ${shadeKeys.map(shade => {
+            const cls = `${prefix}-${color.name}-${shade}`;
+            const isActive = hasCurrentClass(cls);
+            return `<button class="vx-cm-cell${isActive ? ' vx-cm-active' : ''}" data-set="${cls}" data-pattern="${colorPattern}" data-toggle="false" style="background:${color.shades[shade]}" title="${color.name}-${shade}"></button>`;
+          }).join('')}
         </div>
-        <div class="vx-shade-grid">${Object.entries(family.shades).map(([shade, hex]) => {
-          const cls = `${prefix}-${family.name}-${shade}`;
-          return `<button class="vx-sp-shade${hasCurrentClass(cls) ? ' vx-sp-shade-active' : ''}" data-set="${cls}" data-pattern="${colorPattern}" data-toggle="false" style="background:${hex}" title="${shade}"><span class="vx-sp-shade-num">${shade}</span></button>`;
-        }).join('')}</div>
-      `}
+      `).join('')}
     </div>
   </div>`;
 
@@ -1215,7 +1224,16 @@ function applyClassMutation(setClass, patternSource, { toggle = true, rerender =
   // Update breakpoint dots
   const bpBar = document.getElementById('vx-sp-breakpoints');
   if (bpBar) bpBar.innerHTML = renderBreakpointBar();
-  if (rerender) renderTabContent(getActiveTab());
+  if (rerender) {
+    // Preserve color matrix scroll position across re-render
+    const matrix = document.querySelector('.vx-color-matrix');
+    const scrollY = matrix ? matrix.scrollTop : 0;
+    renderTabContent(getActiveTab());
+    if (scrollY) {
+      const m2 = document.querySelector('.vx-color-matrix');
+      if (m2) m2.scrollTop = scrollY;
+    }
+  }
 }
 
 function findCurrent(pattern) {
@@ -1370,12 +1388,22 @@ async function applyAndCompile(elementData) {
     return;
   }
 
+  // Compute the diff between the original and new class sets.
+  // We store the diff so the save path can apply it to source-level classes
+  // even when they differ from the runtime classes (e.g., JS adds 'is-visible').
+  const origSet = new Set(originalClassString.split(' ').filter(Boolean));
+  const newSet = new Set(newClassStr.split(' ').filter(Boolean));
+  const additions = [...newSet].filter(c => !origSet.has(c));
+  const removals = [...origSet].filter(c => !newSet.has(c));
+
   // Queue class change for save
   pendingChanges.push({
-    type: 'text',
+    type: 'class-change',
     filePath: elementData.filePath,
     originalHTML: `class="${originalClassString}"`,
     newHTML: `class="${newClassStr}"`,
+    additions,
+    removals,
     timestamp: Date.now(),
   });
 
@@ -2236,6 +2264,57 @@ function queueDeletion(data) {
   queueDeletion._timer = setTimeout(() => saveAllPending(), 300);
 }
 
+/** Extract class names from a needle string like 'class="foo bar baz"' */
+function originalClassesFromNeedle(needle) {
+  const m = needle.match(/class="([^"]*)"/);
+  return m ? m[1].split(/\s+/).filter(Boolean) : [];
+}
+
+/**
+ * Subset match: find a class="..." attribute in `content` whose source classes
+ * are a subset of `runtimeClasses`, then apply additions/removals to the
+ * source-level classes (avoiding writing runtime-only classes into the file).
+ *
+ * Returns the modified content string, or null if no match was found.
+ */
+function applyClassDiffSubset(content, runtimeClasses, additions, removals) {
+  // Common classes added by JS at runtime — never in source
+  const RUNTIME_ONLY = new Set(['is-visible', 'is-active', 'is-open', 'active', 'open',
+    'show', 'shown', 'visible', 'in', 'entered', 'transitioning']);
+
+  const classAttrRe = /class="([^"]*)"/g;
+  let match;
+  while ((match = classAttrRe.exec(content)) !== null) {
+    const sourceClasses = match[1].split(/\s+/).filter(Boolean);
+    if (sourceClasses.length === 0) continue;
+
+    // Check: every source class should be in the runtime set
+    const allInRuntime = sourceClasses.every(c => runtimeClasses.has(c));
+    if (!allInRuntime) continue;
+
+    // The runtime set should be the source set PLUS only runtime-only, additions, or removals
+    const extraInRuntime = [...runtimeClasses].filter(c => !sourceClasses.includes(c));
+    const allExtraAreRuntime = extraInRuntime.every(c =>
+      RUNTIME_ONLY.has(c) || additions.includes(c) || removals.includes(c)
+    );
+    if (!allExtraAreRuntime) continue;
+
+    // Found! Apply the diff to source-level classes
+    const resultClasses = sourceClasses.filter(c => !removals.includes(c));
+    for (const add of additions) {
+      if (!RUNTIME_ONLY.has(add) && !resultClasses.includes(add)) {
+        resultClasses.push(add);
+      }
+    }
+
+    const oldAttr = match[0];
+    const newAttr = `class="${resultClasses.join(' ')}"`;
+    // Ensure unique replacement (only replace this specific occurrence)
+    return content.substring(0, match.index) + newAttr + content.substring(match.index + oldAttr.length);
+  }
+  return null;
+}
+
 async function saveAllPending() {
   if (isSaving || pendingChanges.length === 0) return;
   isSaving = true;
@@ -2274,6 +2353,22 @@ async function saveAllPending() {
               ? content.replace(needle, '')
               : content.replace(needle, change.newHTML);
             modified = true;
+          } else if (change.type === 'class-change' && change.additions) {
+            // ── Subset Match ──
+            // Runtime JS may add classes (is-visible, active, open) not in the source.
+            // Find a class attribute whose source classes are a subset of the runtime classes,
+            // then apply only our additions/removals to the source-level classes.
+            const runtimeClasses = new Set(originalClassesFromNeedle(needle));
+            const subsetResult = applyClassDiffSubset(content, runtimeClasses, change.additions, change.removals);
+            if (subsetResult) {
+              content = subsetResult;
+              modified = true;
+            } else {
+              // Not found in main file — try partials
+              const found = await findAndReplaceInPartials(filePath, change, partialSearchCache);
+              if (found) { anyTailwind = true; continue; }
+              console.warn('[VX] Not found in source:', needle.substring(0, 80));
+            }
           } else {
             // Not found in main file — try partials
             const found = await findAndReplaceInPartials(filePath, change, partialSearchCache);

@@ -5963,9 +5963,27 @@ select.vs-input {
 /* ── Visual Editor UI Lockdown ──
    When the visual editor is active, disable all controls that could
    cause navigation, state corruption, or data loss. Only the visual
-   editor toggle and the preview area remain interactive. */
+   editor toggle, undo/redo, and the preview area remain interactive. */
 .vx-editing .vs-topbar { pointer-events: none; opacity: 0.5; }
-.vx-editing .vs-statusbar { pointer-events: none; opacity: 0.5; }
+/* Statusbar: lock pointer-events on the container, then selectively
+   re-enable undo/redo. We fade individual leaf elements instead of
+   wrapper divs because CSS opacity is multiplicative — children can
+   never appear brighter than their faded parent. */
+.vx-editing .vs-statusbar { pointer-events: none; }
+.vx-editing #btn-undo-status,
+.vx-editing #btn-redo-status {
+  pointer-events: auto;
+}
+/* Fade all statusbar controls EXCEPT undo/redo */
+.vx-editing #status-text,
+.vx-editing #btn-preview-site,
+.vx-editing #btn-snapshot,
+.vx-editing #btn-download,
+.vx-editing #publish-state-label,
+.vx-editing .vs-publish-split {
+  opacity: 0.35;
+  transition: opacity 120ms ease;
+}
 .vx-editing #conversation-panel { pointer-events: none; opacity: 0.5; }
 /* Preview toolbar: disable clicks on everything, then re-enable the visual toggle.
    Opacity is applied per-element (not on the container) because parent opacity
@@ -6816,77 +6834,61 @@ select.vs-input {
 }
 
 /* Special color dots */
-.vx-sp-color-specials { display: flex; gap: 10px; }
+.vx-sp-color-specials { display: flex; gap: 12px; }
 .vx-sp-color-dot {
-  width: 26px; height: 26px; border-radius: 50%; border: none;
+  width: 28px; height: 28px; border-radius: 50%; border: none;
   cursor: pointer; transition: all 100ms var(--ease-out);
   flex-shrink: 0; padding: 0;
 }
-.vx-sp-color-dot:hover { transform: scale(1.2); box-shadow: 0 0 0 2px var(--vs-bg-raised), 0 1px 4px rgba(0,0,0,0.15); }
-.vx-sp-dot-active { box-shadow: 0 0 0 2px var(--vs-bg-raised), 0 0 0 3px var(--vs-accent); transform: scale(1.1); }
+.vx-sp-color-dot:hover { transform: scale(1.15); box-shadow: 0 0 0 2px var(--vs-bg-raised), 0 1px 4px rgba(0,0,0,0.15); }
+.vx-sp-dot-active { box-shadow: 0 0 0 3px var(--vs-bg-raised), 0 0 0 5.5px var(--vs-accent); transform: scale(1.05); }
 
-/* Color family circles / shade stage */
-.vx-color-stage {
-  min-height: 118px;
+/* ── Color Matrix (flat palette) ── */
+.vx-color-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   padding: 6px;
   border: 1px solid var(--vs-border-subtle);
   border-radius: var(--radius-lg);
   background: var(--vs-bg-surface);
+  max-height: 88px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--vs-border-subtle) transparent;
 }
-.vx-sp-color-families { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; }
-.vx-sp-color-family {
-  width: 24px; height: 24px; border-radius: 50%; border: none;
-  cursor: pointer; transition: all 100ms var(--ease-out);
-  flex-shrink: 0; padding: 0;
-}
-.vx-sp-color-family:hover { transform: scale(1.25); z-index: 1; box-shadow: 0 0 0 2px var(--vs-bg-raised), 0 1px 4px rgba(0,0,0,0.15); }
-.vx-sp-fam-active { transform: scale(1.2); box-shadow: 0 0 0 2px var(--vs-bg-raised), 0 0 0 3px var(--vs-accent); z-index: 1; }
-.vx-sp-fam-used { box-shadow: 0 0 0 2px var(--vs-bg-raised), 0 0 0 1.5px var(--vs-text-ghost); }
-
-.vx-shade-stage-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-.vx-shade-back {
-  border: 1px solid var(--vs-border-subtle);
-  background: var(--vs-bg-raised);
-  border-radius: var(--radius-sm);
-  color: var(--vs-text-secondary);
-  font: 600 10px/1 var(--font-sans);
-  min-height: 24px;
-  padding: 0 8px;
-  cursor: pointer;
-}
-.vx-shade-back:hover { border-color: var(--vs-border-medium, var(--vs-border-subtle)); color: var(--vs-text-primary); }
-.vx-shade-title {
-  font: 700 10px/1 var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--vs-text-ghost);
-}
-.vx-shade-grid {
+.vx-cm-row {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 5px;
+  grid-template-columns: repeat(11, 1fr);
+  gap: 2px;
 }
-.vx-sp-shade {
-  min-height: 28px;
-  border: none; border-radius: 5px;
-  cursor: pointer; transition: all 80ms var(--ease-out);
-  display: flex; align-items: flex-end; justify-content: center;
-  padding: 0 0 2px; position: relative;
+.vx-cm-cell {
+  height: 18px;
+  border: 2px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  padding: 0;
+  transition: all 80ms var(--ease-out);
 }
-.vx-sp-shade:hover { transform: scaleY(1.15); z-index: 1; box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
-.vx-sp-shade-active { box-shadow: 0 0 0 2px var(--vs-bg-raised), 0 0 0 3px var(--vs-accent); z-index: 2; transform: scaleY(1.1); }
-.vx-sp-shade-num {
-  font: 600 7px/1 var(--font-mono); opacity: 0;
-  color: inherit; mix-blend-mode: difference;
-  transition: opacity 80ms var(--ease-out);
+.vx-cm-cell:hover {
+  transform: scale(1.35);
+  z-index: 2;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  border-radius: 4px;
 }
-.vx-sp-shade:hover .vx-sp-shade-num { opacity: 0.8; }
-.vx-sp-shade-active .vx-sp-shade-num { opacity: 1; }
+.vx-cm-active {
+  border-color: white;
+  box-shadow: 0 0 0 1.5px var(--vs-accent);
+  z-index: 1;
+  transform: scale(1.15);
+  border-radius: 4px;
+}
+/* First row: round the top corners */
+.vx-cm-row:first-child .vx-cm-cell:first-child { border-top-left-radius: 6px; }
+.vx-cm-row:first-child .vx-cm-cell:last-child { border-top-right-radius: 6px; }
+/* Last row: round the bottom corners */
+.vx-cm-row:last-child .vx-cm-cell:first-child { border-bottom-left-radius: 6px; }
+.vx-cm-row:last-child .vx-cm-cell:last-child { border-bottom-right-radius: 6px; }
 
 /* Class tags */
 .vx-sp-classes { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -7108,8 +7110,7 @@ select.vs-input {
 .vx-save-visible { opacity: 1; transform: translateY(0); }
 .vx-save-error { background: rgba(239,68,68,0.9); }
 
-/* Body class when editing */
-.vx-editing #conversation-panel { opacity: 0.6; pointer-events: none; transition: opacity 200ms var(--ease-out); }
+
 
 /* Mobile polish for style panel and AI panel */
 @media (max-width: 900px) {

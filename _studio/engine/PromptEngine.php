@@ -1587,8 +1587,8 @@ Pages use PHP includes for shared partials. Styling uses **Tailwind utility clas
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?= htmlspecialchars($page['title'] ?? 'Home') ?> — <?= htmlspecialchars($siteName ?? 'My Site') ?></title>
   <meta name="description" content="<?= htmlspecialchars($page['description'] ?? '') ?>">
-  <link rel="stylesheet" href="/assets/css/tailwind.css">
   <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/tailwind.css">
 </head>
 <body class="bg-white text-gray-900 antialiased">
 <?php include __DIR__ . '/nav.php'; ?>

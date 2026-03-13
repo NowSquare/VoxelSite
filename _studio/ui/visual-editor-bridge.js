@@ -332,8 +332,13 @@
       const baseClass = bpMatch ? bpMatch[2] : cls;
       const breakpoint = bpMatch ? bpMatch[1] : null;
 
-      const baseRule = classToCSS(baseClass);
+      let baseRule = classToCSS(baseClass);
       if (baseRule) {
+        // Add !important to every declaration so JIT preview always wins
+        // over site-specific CSS with higher specificity (e.g., .hero em { color: ... }).
+        // This only affects the live preview — the compiled Tailwind handles its own cascade.
+        baseRule = baseRule.replace(/;/g, ' !important;').replace(/}$/, ' !important}');
+
         if (breakpoint) {
           // Rewrite selector from .baseClass to .bp\:baseClass and wrap in @media
           const escapedSelector = `.${escCSS(cls)}`;
@@ -813,6 +818,7 @@
     if (!selectedEl) return;
     const oldClassAttr = originalClasses || selectedEl.className;
     const newClassAttr = newClasses.join(' ');
+    const oldOuterHTML = selectedEl.outerHTML;
 
     // Inject JIT CSS for ALL classes to ensure preview works
     injectJitCSS(newClasses);
@@ -820,7 +826,16 @@
     selectedEl.className = newClassAttr;
 
     if (!silent && oldClassAttr !== newClassAttr) {
-      notifyParent({ type: 'vx-editor:text-changed', filePath: getPageFilePath(), originalHTML: `class="${oldClassAttr}"`, newHTML: `class="${newClassAttr}"` });
+      notifyParent({
+        type: 'vx-editor:text-changed',
+        changeKind: 'class',
+        filePath: getPageFilePath(),
+        originalHTML: `class="${oldClassAttr}"`,
+        newHTML: `class="${newClassAttr}"`,
+        originalClasses: oldClassAttr,
+        newClasses: newClassAttr,
+        elementOuterHTML: oldOuterHTML,
+      });
     }
     originalClasses = null;
   }
@@ -1444,4 +1459,9 @@
     const target = findEditableAncestor(e.target);
     if (!target && selectedEl) { deselectElement(); notifyParent({ type: 'vx-editor:deselect' }); }
   });
+
+  // Notify parent that the bridge is ready to receive messages.
+  // This fires after iframe reload (save+compile, page nav) so the parent
+  // can re-send the editor state (toggle, etc.) at the right time.
+  notifyParent({ type: 'vx-editor:bridge-ready' });
 })();

@@ -86,7 +86,9 @@ Only use facts from the user's SITE INFORMATION context. If a section needs a ph
 
 2. **Match the personality, not the pixels.** If the source site has a warm, rounded, generous-spacing feel — capture that with appropriate border radii, padding values, and color temperature. Don't try to reproduce exact measurements.
 
-3. **Respect VoxelSite's architecture.** All output must follow the PHP partial system, Tailwind utility classes, and the design token conventions. Never output custom CSS component classes.
+   **Typography is especially critical.** Pay close attention to font weight — if the source uses light/thin headings (`font-light`, `font-normal`, `font-medium`), do NOT default to `font-bold` or `font-black`. The weight difference between a `font-light` Apple-inspired site and a `font-bold` default is massive. Match the source's actual weight and letter spacing. Use `tracking-tight`, `tracking-wide`, `font-light`, `font-medium` etc. as observed in the source.
+
+3. **Respect VoxelSite's architecture.** All output must follow the PHP partial system, Tailwind utility classes, and the design token conventions. **`style.css` must ONLY contain `:root` tokens, `@keyframes`, `[data-reveal]`, mobile menu CSS, nav structural CSS, and `.icon` classes.** Never create semantic component classes like `.hero-section`, `.btn-primary`, `.service-card`, `.card`, `.section-header`. All visual styling lives in Tailwind utility classes in the HTML: `class="py-24 bg-[var(--color-bg)] text-white"` not `class="hero-section"`.
 
 4. **Simplify complex JavaScript.** The source site may use React, Vue, or complex JavaScript animations. Map these to VoxelSite's vanilla JS patterns: `data-reveal` for scroll animations, `IntersectionObserver` for lazy behavior, CSS transitions for hover effects.
 

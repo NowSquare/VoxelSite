@@ -201,7 +201,7 @@ class PromptEngine
             // data files) routinely needs 35-45K tokens. The default 32K
             // almost guarantees truncation, leaving pages missing.
             // Sonnet 4/4.5 supports 64K output — use it when generating sites.
-            if ($actionType === 'free_prompt' && $maxTokens <= 32000) {
+            if (in_array($actionType, ['free_prompt', 'import_site', 'restyle_site'], true) && $maxTokens <= 32000) {
                 $maxTokens = 64000;
                 Logger::debug('ai', 'Boosted max_tokens for site generation', [
                     'original'  => (int) $this->settings->get('ai_max_tokens', 32000),
@@ -233,15 +233,96 @@ class PromptEngine
             $contextBudget = $inputBudgetChars - $systemPromptChars;
 
             // Guardrail: if the budget is non-positive (e.g. very small local model),
-            // force essentials-only context instead of treating 0 as "unlimited".
-            // A minimum of 4000 chars (~1K tokens) ensures at least site info + design tokens.
-            if ($contextBudget < 4000) {
-                $contextBudget = 4000;
+            // provide a minimal floor for essentials-only context, but NEVER exceed
+            // the actual remaining input budget. This prevents overflow on compact models.
+            if ($contextBudget < 0) {
+                // Floor: enough for site info + design tokens, but capped at reality
+                $contextBudget = max(0, min(4000, $inputBudgetChars));
+            }
+
+            // ── Import: fetch reference site HTML and reserve budget ──
+            // Must happen BEFORE context building so we can subtract the
+            // HTML size from the context budget, preventing context overflow.
+            $importHtml = null;
+            if (in_array($actionType, ['import_site', 'restyle_site'], true) && !empty($actionData['url'])) {
+                try {
+                    $this->emitSSE('status', ['message' => 'Fetching reference site...']);
+                    $importer = new SiteImporter();
+                    $importResult = $importer->fetch($actionData['url']);
+                    $importHtml = $importResult['html'];
+
+                    Logger::info('ai', 'Reference site fetched', [
+                        'url'            => $importResult['url'],
+                        'title'          => $importResult['title'],
+                        'html_length'    => strlen($importHtml),
+                        'internal_links' => count($importResult['internal_links']),
+                    ]);
+                } catch (RuntimeException $e) {
+                    // Import-specific errors — surface to user, don't crash
+                    $this->emitSSE('error', [
+                        'message' => $e->getMessage(),
+                        'code'    => 'import_failed',
+                    ]);
+                    if ($promptLogId !== null) {
+                        $this->db->update('prompt_log', [
+                            'status'        => 'error',
+                            'error_message' => $e->getMessage(),
+                        ], 'id = ?', [$promptLogId]);
+                    }
+                    $shutdownDone = true;
+                    return;
+                }
+
+                // Reserve import HTML budget from the context budget.
+                // The import HTML will be injected into the user message,
+                // so its size must be subtracted from what's available
+                // for site context.
+                $importHtmlChars = strlen($importHtml) + 200; // +200 for wrapper text
+
+                // Minimum context for site info on imports, but capped at reality
+                $minContextForImport = min(2000, $contextBudget);
+                $availableForImport = $contextBudget - $minContextForImport;
+
+                // Clamp import HTML to whatever actually fits in the budget.
+                // Three scenarios:
+                //   1. importHtml fits alongside minContext → no truncation
+                //   2. importHtml exceeds availableForImport → truncate, keep minContext
+                //   3. contextBudget is tiny → truncate importHtml to contextBudget, zero context
+                if ($importHtmlChars > $contextBudget) {
+                    // Scenario 3: model too small — import gets everything, context gets nothing
+                    $importHtml = substr($importHtml, 0, max(0, $contextBudget - 200));
+                    $importHtml .= "\n<!-- HTML truncated to fit model context -->";
+                    $importHtmlChars = strlen($importHtml) + 200;
+                } elseif ($importHtmlChars > $availableForImport && $availableForImport > 0) {
+                    // Scenario 2: truncate import to fit, leaving room for minContext
+                    $importHtml = substr($importHtml, 0, max(0, $availableForImport - 200));
+                    $importHtml .= "\n<!-- HTML truncated to fit model context -->";
+                    $importHtmlChars = strlen($importHtml) + 200;
+                }
+                // Scenario 1: importHtml fits → no changes needed
+
+                $contextBudget = max(0, $contextBudget - $importHtmlChars);
+
+                Logger::debug('ai', 'Import HTML budget reserved', [
+                    'import_html_chars' => $importHtmlChars,
+                    'adjusted_budget'   => $contextBudget,
+                ]);
             }
 
             // ── Build context — read the actual current state of the website ──
+            // import_site: null scope (site-level info only — design comes from reference HTML)
+            // restyle_site: '__all__' scope (include ALL current page files so the AI
+            //   can preserve content while transforming visual design)
+            // everything else: passed through from client (page-specific or null)
+            if ($actionType === 'restyle_site') {
+                $effectivePageScope = '__all__';
+            } elseif ($actionType === 'import_site') {
+                $effectivePageScope = null;
+            } else {
+                $effectivePageScope = $pageScope;
+            }
             $this->emitSSE('status', ['message' => 'Reading your site...']);
-            $contextResult = $this->siteContext->build($pageScope, $conversationId, $userId, $contextBudget);
+            $contextResult = $this->siteContext->build($effectivePageScope, $conversationId, $userId, $contextBudget, $actionType);
             $context = $contextResult['context'];
             $contextMetrics = $contextResult['metrics'];
 
@@ -268,7 +349,8 @@ class PromptEngine
                 $userId,
                 $actionType,
                 $actionData,
-                $images
+                $images,
+                $importHtml
             );
 
             // ── Stream the response ──
@@ -489,19 +571,31 @@ class PromptEngine
                 // Auto-repair PHP syntax errors via a focused AI call.
                 // The same model that generated the bug fixes it — a small,
                 // non-streaming call with just the broken file + error message.
+                // CRITICAL: Wrapped in try-catch because repair is non-critical.
+                // A repair failure must NEVER roll back the entire generation.
                 $phpWarnings = $result['warnings'] ?? [];
                 if (!empty($phpWarnings)) {
                     Logger::warning('ai', 'PHP syntax errors detected, attempting auto-repair', [
                         'warnings' => $phpWarnings,
                         'model'    => $configuredModel,
                     ]);
-                    $repairResults = $this->repairBrokenPhpFiles($phpWarnings, $configuredModel);
-                    Logger::info('ai', 'Auto-repair results', $repairResults);
-                    foreach ($repairResults['repaired'] as $msg) {
-                        $this->emitSSE('status', ['message' => $msg]);
-                    }
-                    foreach ($repairResults['failed'] as $msg) {
-                        $this->emitSSE('warning', ['message' => $msg]);
+                    try {
+                        $repairResults = $this->repairBrokenPhpFiles($phpWarnings, $configuredModel);
+                        Logger::info('ai', 'Auto-repair results', $repairResults);
+                        foreach ($repairResults['repaired'] as $msg) {
+                            $this->emitSSE('status', ['message' => $msg]);
+                        }
+                        foreach ($repairResults['failed'] as $msg) {
+                            $this->emitSSE('warning', ['message' => $msg]);
+                        }
+                    } catch (\Throwable $repairEx) {
+                        Logger::error('ai', 'Auto-repair failed (non-fatal)', [
+                            'exception' => $repairEx->getMessage(),
+                            'warnings'  => $phpWarnings,
+                        ]);
+                        $this->emitSSE('warning', [
+                            'message' => 'Could not auto-repair PHP syntax error — the file may need manual fixes.',
+                        ]);
                     }
                 }
 
@@ -590,6 +684,9 @@ class PromptEngine
                                 $this->emitSSE('evaluation', [
                                     'issues' => $evalIssues,
                                 ]);
+
+                                // Persist for history reload
+                                $storedEvalIssues = json_encode($evalIssues);
                             }
                         }
                     } catch (\Throwable $evalError) {
@@ -623,6 +720,7 @@ class PromptEngine
                 'duration_ms'        => $usage['duration_ms'] ?? null,
                 'status'             => empty($operationErrors) ? 'success' : 'partial',
                 'error_message'      => empty($operationErrors) ? null : implode("\n", $operationErrors),
+                'evaluation_issues'  => $storedEvalIssues ?? null,
             ];
 
             if ($promptLogId !== null) {
@@ -880,13 +978,14 @@ class PromptEngine
         int $userId,
         string $actionType,
         array $actionData,
-        array $images = []
+        array $images = [],
+        ?string $importHtml = null
     ): array {
         $messages = [];
 
-        // Strip [vx-img:...] thumbnail markers before AI consumption.
-        // These markers are for frontend display persistence only.
-        $cleanPrompt = $this->stripVxImageMarkers($userPrompt);
+        // Strip [vx-img:...] and [vx-ref:...] persistence markers before AI consumption.
+        // These markers are for frontend display only — never sent to the model.
+        $cleanPrompt = self::stripVxMarkers($userPrompt);
 
         // Enrich the user prompt with structured action data.
         $enrichedPrompt = $this->actionRegistry->buildPromptContext(
@@ -910,7 +1009,7 @@ class PromptEngine
             foreach ($history as $entry) {
                 $messages[] = [
                     'role'    => 'user',
-                    'content' => $this->stripVxImageMarkers($entry['user_prompt']),
+                    'content' => self::stripVxMarkers($entry['user_prompt']),
                 ];
                 if (!empty($entry['ai_response'])) {
                     // Keep only assistant-facing narrative for context continuity.
@@ -929,8 +1028,19 @@ class PromptEngine
 
         // ── Add current context + user prompt as the final message ──
         $textContent = !empty($context)
-            ? $context . "\n\n---\n\n" . $enrichedPrompt
-            : $enrichedPrompt;
+            ? $context . "\n\n---\n\n"
+            : '';
+
+        // Inject fetched HTML for import actions (between context and prompt)
+        if ($importHtml !== null) {
+            $textContent .= "=== REFERENCE SITE HTML ===\n"
+                . "The following is the cleaned HTML of the reference website. "
+                . "Extract the design language from this HTML.\n\n"
+                . $importHtml
+                . "\n\n---\n\n";
+        }
+
+        $textContent .= $enrichedPrompt;
 
         // When images are attached, build a multi-content message block
         // that all major providers support (Claude, OpenAI, Gemini).
@@ -965,13 +1075,22 @@ class PromptEngine
     }
 
     /**
-     * Strip [vx-img:data:image/...;base64,...] thumbnail markers from a prompt.
-     * These markers are embedded by the frontend for chat history display.
-     * The AI should never see them — it gets the full images via multi-content blocks.
+     * Strip all [vx-*:...] persistence markers from a prompt.
+     *
+     * The frontend embeds these for chat history display:
+     *   [vx-img:data:image/...;base64,...] — thumbnail previews
+     *   [vx-ref:https://...]               — attached web reference URL
+     *
+     * The AI should never see them — images arrive via multi-content blocks,
+     * and references are passed in action_data. Strip both and trim.
      */
-    private function stripVxImageMarkers(string $text): string
+    public static function stripVxMarkers(string $text): string
     {
-        return trim(preg_replace('/\[vx-img:data:image\/[^;]+;base64,[A-Za-z0-9+\/=]+\]/', '', $text));
+        // Strip image thumbnails
+        $text = preg_replace('/\[vx-img:data:image\/[^;]+;base64,[A-Za-z0-9+\/=]+\]/', '', $text);
+        // Strip web reference URLs
+        $text = preg_replace('/\[vx-ref:https?:\/\/[^\]]+\]/', '', $text);
+        return trim($text);
     }
 
     /**
@@ -983,8 +1102,9 @@ class PromptEngine
     private function createConversation(int $userId, ?string $pageScope, string $userPrompt): string
     {
         $id = $this->generateUuid();
-        $title = mb_substr($userPrompt, 0, 60);
-        if (mb_strlen($userPrompt) > 60) {
+        $cleanTitle = self::stripVxMarkers($userPrompt);
+        $title = mb_substr($cleanTitle, 0, 60);
+        if (mb_strlen($cleanTitle) > 60) {
             $title .= '...';
         }
 
@@ -1445,8 +1565,10 @@ class PromptEngine
 
         foreach ($warnings as $warning) {
             // Extract file path from warning format:
+            // "PHP syntax error in about.php on line 56: syntax error, ..."
             // "PHP syntax error in _partials/nav.php: Parse error: ..."
-            if (!preg_match('/PHP syntax error in ([^:]+):\s*(.*)/', $warning, $m)) {
+            // The "on line N" part is optional and must not be included in the path.
+            if (!preg_match('/PHP syntax error in (.+?)(?:\s+on line \d+)?:\s*(.*)/', $warning, $m)) {
                 $failed[] = $warning;
                 continue;
             }

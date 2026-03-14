@@ -99,3 +99,26 @@ export function generatePassword(length = 16) {
   crypto.getRandomValues(array);
   return Array.from(array, b => chars[b % chars.length]).join('');
 }
+
+/**
+ * Format a reference URL for display.
+ *
+ * Strips protocol and `www.` prefix, removes trailing slash,
+ * and truncates with `…` if the result exceeds maxLen characters.
+ *
+ * Examples:
+ *   https://www.apple.com/nl/macbook-neo/ → apple.com/nl/macbook-neo
+ *   https://stripe.com/payments           → stripe.com/payments
+ *   https://very-long.com/deep/path/here  → very-long.com/deep/path/h…  (if maxLen=30)
+ */
+export function formatRefUrl(url, maxLen = 40) {
+  if (!url) return '';
+  let display = url
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/+$/, '');
+  if (display.length > maxLen) {
+    display = display.substring(0, maxLen - 1) + '\u2026';
+  }
+  return display;
+}

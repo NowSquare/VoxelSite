@@ -155,6 +155,8 @@ class ActionRegistry
     ): string {
         return match ($actionId) {
             'create_site'   => $this->buildCreateSitePrompt($userPrompt, $actionData),
+            'import_site'   => $this->buildImportSitePrompt($userPrompt, $actionData),
+            'restyle_site'  => $this->buildRestyleSitePrompt($userPrompt, $actionData),
             'edit_page'     => $this->buildEditPagePrompt($userPrompt, $actionData),
             'change_design' => $this->buildChangeDesignPrompt($userPrompt, $actionData),
             'add_page'      => $this->buildAddPagePrompt($userPrompt, $actionData),
@@ -226,6 +228,26 @@ class ActionRegistry
                         ],
                     ],
                 ],
+            ],
+
+            'import_site' => [
+                'id'          => 'import_site',
+                'label'       => 'Use Website as Reference',
+                'description' => 'Create a new site inspired by an existing website\'s design',
+                'icon'        => 'globe',
+                'category'    => 'site',
+                'promptFile'  => 'import_site.md',
+                'steps'       => [],  // No wizard — input comes from the URL attachment flow
+            ],
+
+            'restyle_site' => [
+                'id'          => 'restyle_site',
+                'label'       => 'Restyle from Reference',
+                'description' => 'Redesign your existing site using another website as design reference',
+                'icon'        => 'globe',
+                'category'    => 'site',
+                'promptFile'  => 'restyle_site.md',
+                'steps'       => [],  // No wizard — input comes from the URL attachment flow
             ],
 
             'edit_page' => [
@@ -570,6 +592,68 @@ class ActionRegistry
         }
 
         $parts[] = "\n## IMPORTANT\nGenerate the section NOW. Do NOT ask questions. Match the existing design language exactly. Generate realistic content appropriate for this business. Return ONLY the section snippet in a `<file path=\"__section_snippet__\">` tag.";
+
+        return implode("\n", $parts);
+    }
+
+    /**
+     * Build the prompt for importing a site from a reference URL.
+     *
+     * Combines the reference URL, content mode, and any user instructions
+     * into a single directive. The fetched HTML is injected separately
+     * by PromptEngine (not here) because it's context, not prompt.
+     */
+    private function buildImportSitePrompt(string $userPrompt, array $data): string
+    {
+        $parts = ["Create a new website using an existing website as design reference."];
+
+        $url = $data['url'] ?? '';
+        if (!empty($url)) {
+            $parts[] = "\n## Reference Website\nURL: {$url}";
+        }
+
+        // Content mode: regenerate (default) or preserve
+        $contentMode = $data['content_mode'] ?? 'regenerate';
+        $modeLabel = $contentMode === 'preserve'
+            ? 'Preserve original content (paraphrased — never copy verbatim)'
+            : 'Generate new content based on business context';
+        $parts[] = "\n## Content Mode\n{$modeLabel}";
+
+        // User's additional instructions
+        if (!empty($userPrompt)) {
+            $parts[] = "\n## Additional Instructions\n{$userPrompt}";
+        }
+
+        $parts[] = "\n## IMPORTANT\nDo NOT ask clarifying questions. Generate the complete website now using the reference site's design language. The fetched HTML of the reference site is included in your context below.";
+
+        return implode("\n", $parts);
+    }
+
+    /**
+     * Build an enriched prompt for restyling an existing site from a reference URL.
+     */
+    private function buildRestyleSitePrompt(string $userPrompt, array $data): string
+    {
+        $parts = ["Restyle the existing website using another website's design language as reference."];
+
+        $url = $data['url'] ?? '';
+        if (!empty($url)) {
+            $parts[] = "\n## Reference Website\nURL: {$url}";
+        }
+
+        // Content mode: keep (default) or adapt
+        $contentMode = $data['content_mode'] ?? 'keep';
+        $modeLabel = $contentMode === 'adapt'
+            ? 'Adapt current content to fit the new design'
+            : 'Keep all current content exactly as-is';
+        $parts[] = "\n## Content Handling\n{$modeLabel}";
+
+        // User's additional instructions
+        if (!empty($userPrompt)) {
+            $parts[] = "\n## Additional Instructions\n{$userPrompt}";
+        }
+
+        $parts[] = "\n## IMPORTANT\nDo NOT ask clarifying questions. Restyle the entire site now using the reference site's design language. The fetched HTML of the reference site is included in your context below. Preserve the user's existing page structure and navigation — only change the visual design.";
 
         return implode("\n", $parts);
     }

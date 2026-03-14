@@ -283,6 +283,7 @@ if ($method === 'POST' && $path === '/designs') {
 
     $name = trim($body['name'] ?? '');
     $description = trim($body['description'] ?? '');
+    $isSystemBackup = !empty($body['is_system_backup']);
 
     if ($name === '') {
         jsonResponse(['ok' => false, 'error' => [
@@ -293,7 +294,7 @@ if ($method === 'POST' && $path === '/designs') {
     }
 
     try {
-        $result = $designManager->save($name, $description);
+        $result = $designManager->save($name, $description, $isSystemBackup);
 
         if (!$result['ok']) {
             jsonResponse(['ok' => false, 'error' => [

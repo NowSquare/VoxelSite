@@ -35,9 +35,9 @@ import { renderActionsView, renderActionDetailView } from './src/views/actions.j
 import { renderFormsView, renderFormDetailView } from './src/views/forms.js';
 import { renderTeamView, renderTeamModals } from './src/views/team.js';
 import { renderAssetsView } from './src/views/assets.js';
-import { renderDesignsView, confirmNewDesign } from './src/views/designs.js';
+import { renderDesignsView, confirmNewDesign, showSaveDesignModal } from './src/views/designs.js';
 import { showToast, showToastWithAction } from './src/ui/toasts.js';
-import { escapeHtml, escapeAttr, getCodeLanguage } from './src/helpers.js';
+import { escapeHtml, escapeAttr, getCodeLanguage, formatRefUrl } from './src/helpers.js';
 import { closeModal, showConfirmModal, showPromptModal, onBackdropClick } from './src/ui/modals.js';
 
 
@@ -73,6 +73,9 @@ const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/web
 
 /** Pending image attachments for the next send */
 let pendingImages = [];
+
+/** Pending website reference for the next send */
+let pendingWebRef = null; // { url: string, contentMode: 'regenerate'|'preserve' }
 
 /** Demo mode flag — read once from the server-rendered data attribute */
 const IS_DEMO = document.documentElement.dataset.demo === 'true';
@@ -261,12 +264,17 @@ async function prefetchPagesForContext() {
     const { ok, data } = await api.get('/pages');
     if (ok && Array.isArray(data?.pages)) {
       store.set('pages', data.pages);
+      // Update globe sheet UI reactively based on site state
+      updateGlobeSheet();
       // If Chat is currently showing the empty state, refresh it
       const chatMessages = document.getElementById('chat-messages');
       const emptyState = chatMessages?.querySelector('.vs-empty-state');
       if (emptyState) {
         chatMessages.innerHTML = renderEmptyChat();
         bindQuickPromptButtons();
+        // Note: do NOT rebind website-ref events here — the prompt bar
+        // is NOT recreated by this refresh, only #chat-messages is.
+        // Rebinding would stack listeners on persistent prompt-bar nodes.
       }
     }
   } catch (_) {
@@ -490,22 +498,55 @@ function renderDashboardLayout() {
           <div class="vs-prompt-container">
             <input type="file" id="image-file-input" accept="image/jpeg,image/png,image/gif,image/webp" multiple class="hidden" />
             <div id="image-attachments" class="vs-image-attachments" hidden></div>
+            <div id="website-ref-chip" class="vs-website-ref-chip" hidden>
+              ${icons.globe}
+              <span id="website-ref-chip-label">Website reference</span>
+              <button id="btn-remove-website-ref" class="vs-chip-remove" title="Remove reference"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            </div>
             <textarea id="prompt-input"
               class="vs-prompt-input vs-textarea"
               placeholder="Describe what you want to build..."
               rows="3"
               style="max-height: 200px;"></textarea>
             <div class="vs-prompt-toolbar">
-              <button id="btn-attach-image"
-                class="vs-prompt-attach-btn"
-                title="Attach images">
-                ${icons.image}
-              </button>
+              <div class="flex items-center gap-0.5">
+                <button id="btn-attach-image"
+                  class="vs-prompt-attach-btn"
+                  title="Attach images">
+                  ${icons.image}
+                </button>
+                <button id="btn-attach-website"
+                  class="vs-prompt-attach-btn"
+                  title="Use website as reference">
+                  ${icons.globe}
+                </button>
+              </div>
               <button id="btn-send"
                 class="vs-prompt-send"
                 title="Send (⌘+Enter)">
                 ${icons.send}
               </button>
+            </div>
+            <div id="website-ref-sheet" class="vs-website-ref-sheet" hidden>
+              <label class="vs-input-label">Reference URL</label>
+              <input type="url" id="website-ref-url"
+                class="vs-input"
+                placeholder="https://example.com"
+                autocomplete="off" />
+              <div id="website-ref-restyle-options" hidden>
+                <label class="vs-input-label" style="margin-top: 12px;">Current site content</label>
+                <select id="website-ref-mode" class="vs-input">
+                  <option value="keep" selected>Keep current content</option>
+                  <option value="adapt">Adapt content to fit the new design</option>
+                </select>
+              </div>
+              <p id="website-ref-helper" class="vs-website-ref-disclaimer">
+                Uses an existing website as design reference.
+              </p>
+              <div class="flex gap-2" style="margin-top: 12px;">
+                <button id="btn-website-ref-cancel" class="vs-btn vs-btn-ghost vs-btn-sm">Cancel</button>
+                <button id="btn-website-ref-confirm" class="vs-btn vs-btn-primary vs-btn-sm" style="flex: 1;">Attach</button>
+              </div>
             </div>
           </div>
           <div class="flex items-center justify-between mt-2 px-1">
@@ -532,6 +573,9 @@ function renderDashboardLayout() {
             </button>
             <button id="btn-refresh-preview" class="vs-btn vs-btn-ghost vs-btn-xs" title="Refresh Preview">
               ${icons.rotateCcw} Refresh
+            </button>
+            <button id="btn-save-design" class="vs-btn vs-btn-ghost vs-btn-xs" title="Save to Designs" disabled>
+              ${icons.save} Save
             </button>
             <div class="vs-topbar-divider"></div>
             <button id="btn-external-preview" class="vs-btn vs-btn-ghost vs-btn-icon" title="Open in new tab">
@@ -1021,19 +1065,24 @@ async function loadConversation(conversationId) {
   let hasStreamingPrompt = false;
 
   for (const prompt of prompts) {
-    // User message — parse embedded image thumbnails from [vx-img:...] markers
-    const { text: userText, images: userImages } = parseVxImages(prompt.user_prompt);
+    // User message — parse embedded markers: [vx-img:...] and [vx-ref:...]
+    const { text: userText, images: userImages, webRefUrl } = parseVxImages(prompt.user_prompt);
     const historyImagesHtml = userImages.length > 0
       ? `<div class="vs-msg-user-images">${userImages.map(src =>
           `<img src="${src}" class="vs-msg-user-image" />`
         ).join('')}</div>`
       : '';
 
+    const historyWebRefHtml = webRefUrl
+      ? `<div class="vs-msg-user-webref"><a href="${escapeAttr(webRefUrl)}" target="_blank" rel="noopener" title="${escapeAttr(webRefUrl)}">${icons.globe} <span>${escapeHtml(formatRefUrl(webRefUrl))}</span></a></div>`
+      : '';
+
     messagesHtml += `
       <div class="mb-5">
         <div class="text-xs text-vs-text-ghost mb-1 font-medium">You</div>
         ${historyImagesHtml}
-        <div class="text-sm text-vs-text-primary leading-relaxed">${escapeHtml(userText)}</div>
+        ${historyWebRefHtml}
+        ${userText ? `<div class="text-sm text-vs-text-primary leading-relaxed">${escapeHtml(userText)}</div>` : ''}
       </div>
     `;
 
@@ -1080,6 +1129,54 @@ async function loadConversation(conversationId) {
         }
       }
 
+      // Evaluation issues (persisted from evaluator)
+      let evalHtml = '';
+      if (prompt.evaluation_issues) {
+        try {
+          const issues = JSON.parse(prompt.evaluation_issues);
+          if (Array.isArray(issues) && issues.length > 0) {
+            const sevColor = (s) => s === 'error' ? '#ef4444' : s === 'warning' ? '#d97706' : '#6b7280';
+            const sevBg = (s) => s === 'error' ? 'rgba(239,68,68,0.1)' : s === 'warning' ? 'rgba(217,119,6,0.1)' : 'rgba(107,114,128,0.1)';
+            const counts = { error: 0, warning: 0, info: 0 };
+            issues.forEach(i => { counts[i.severity] = (counts[i.severity] || 0) + 1; });
+            const parts = [];
+            if (counts.error) parts.push(`${counts.error} error${counts.error > 1 ? 's' : ''}`);
+            if (counts.warning) parts.push(`${counts.warning} warning${counts.warning > 1 ? 's' : ''}`);
+            if (counts.info) parts.push(`${counts.info} suggestion${counts.info > 1 ? 's' : ''}`);
+            const highestSev = counts.error > 0 ? 'error' : counts.warning > 0 ? 'warning' : 'info';
+            const bannerBorder = highestSev === 'error' ? 'rgba(239,68,68,0.15)'
+              : highestSev === 'warning' ? 'rgba(217,119,6,0.15)' : 'var(--vs-border-subtle)';
+
+            const issueRows = issues.map(issue => `
+              <div style="padding: 8px 12px; border-bottom: 1px solid var(--vs-border-subtle);">
+                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
+                  <span style="font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 5px; border-radius: 3px; color: ${sevColor(issue.severity)}; background: ${sevBg(issue.severity)};">${escapeHtml(issue.severity)}</span>
+                  <span style="font-size: 11px; color: var(--vs-text-ghost);">${escapeHtml(issue.category || '')}</span>
+                  ${issue.file ? `<span style="font-size: 11px; color: var(--vs-text-ghost); margin-left: auto; font-family: 'SF Mono', monospace; opacity: 0.7;">${escapeHtml(issue.file)}${issue.line ? ':' + issue.line : ''}</span>` : ''}
+                </div>
+                <div style="font-size: 12px; color: var(--vs-text-secondary); line-height: 1.4;">${escapeHtml(issue.description || '')}</div>
+                ${issue.suggested_fix ? `<div style="font-size: 11px; color: var(--vs-text-ghost); margin-top: 6px; line-height: 1.3;">💡 ${escapeHtml(issue.suggested_fix)}</div>` : ''}
+              </div>
+            `).join('');
+
+            evalHtml = `
+              <details class="vs-eval-details" style="margin-top: 8px; border: 1px solid ${bannerBorder}; border-radius: var(--radius-md, 8px); overflow: hidden; background: var(--vs-bg-surface, var(--vs-bg-floating));">
+                <summary style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; user-select: none; font-size: 12px; color: var(--vs-text-secondary); list-style: none;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${sevColor(highestSev)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;">
+                    <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                  </svg>
+                  <span>Expert Review · ${parts.join(', ')}</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: auto; opacity: 0.4; flex-shrink: 0;"><polyline points="6 9 12 15 18 9"/></svg>
+                </summary>
+                <div style="border-top: 1px solid var(--vs-border-subtle);">
+                  <div style="padding: 6px 12px; font-size: 10px; color: var(--vs-text-ghost); border-bottom: 1px solid var(--vs-border-subtle); line-height: 1.4;">These are heuristic suggestions — verify before applying.</div>
+                  ${issueRows}
+                </div>
+              </details>`;
+          }
+        } catch (_) { /* evaluation_issues might not be valid JSON */ }
+      }
+
       const statusLabel = prompt.status === 'error'
         ? '<div class="mt-2 px-3 py-2 bg-vs-error-dim text-vs-error text-sm rounded-lg">This response encountered an error.</div>'
         : '';
@@ -1089,6 +1186,7 @@ async function loadConversation(conversationId) {
           <div class="text-xs text-vs-text-ghost mb-1 font-medium">VoxelSite</div>
           <div class="vs-msg-ai-bubble">${aiContent}</div>
           ${filesHtml}
+          ${evalHtml}
           ${statusLabel}
         </div>
       `;
@@ -3045,6 +3143,9 @@ function bindAppEvents() {
     });
   }
 
+  // ── Website Reference Attachment Events ──
+  bindWebsiteRefEvents();
+
   // Drag-and-drop on the prompt area
   const promptArea = document.querySelector('.vs-prompt-area');
   if (promptArea) {
@@ -3122,6 +3223,24 @@ function bindAppEvents() {
   const refreshPreviewBtn = document.getElementById('btn-refresh-preview');
   if (refreshPreviewBtn) {
     refreshPreviewBtn.addEventListener('click', () => refreshPreview());
+  }
+
+  // Save Design button — persistent toolbar entry for intentional saves
+  const saveDesignBtn = document.getElementById('btn-save-design');
+  if (saveDesignBtn) {
+    saveDesignBtn.addEventListener('click', () => {
+      if (demoGuard()) return;
+      if (viewerGuard()) return;
+      showSaveDesignModal();
+    });
+
+    // Reactive enable/disable based on whether a site exists
+    const updateSaveState = () => {
+      const pages = store.get('pages') || [];
+      saveDesignBtn.disabled = pages.length === 0;
+    };
+    updateSaveState(); // initial state
+    store.on('pages', updateSaveState);
   }
 
   // Device preview buttons (Desktop / Tablet / Mobile)
@@ -3306,8 +3425,8 @@ function showGeneratingOverlay() {
 
   const title = isNewSite ? 'Building your site' : 'Applying your changes';
   const subtitle = isNewSite
-    ? 'Generating a new website can take more than 5 minutes.<br>Please be patient while the AI works.'
-    : 'Your site is being updated.<br>This may take a few minutes.';
+    ? 'Generating a new website can take up to 10 minutes.<br>Please be patient while the AI works.'
+    : 'Small changes can take a minute, larger updates can take up to 10 minutes.';
 
   const overlay = document.createElement('div');
   overlay.className = 'vs-generating-overlay';
@@ -3320,7 +3439,7 @@ function showGeneratingOverlay() {
     <div class="vs-gen-title">${title}</div>
     <div class="vs-gen-subtitle">${subtitle}</div>
     <div class="vs-gen-note">Keep this page open — do not navigate away during generation.</div>
-    <div class="vs-gen-progress"><div class="vs-gen-progress-bar"></div></div>
+    <div class="vs-gen-metrics" id="overlay-metrics"></div>
   `;
 
   container.appendChild(overlay);
@@ -3858,18 +3977,31 @@ function schedulePublishStatePolling() {
  * Returns { text: string (clean text without markers), images: string[] (data URLs) }.
  */
 function parseVxImages(userPrompt) {
-  if (!userPrompt || !userPrompt.includes('[vx-img:')) {
-    return { text: userPrompt || '', images: [] };
+  if (!userPrompt) {
+    return { text: '', images: [], webRefUrl: null };
   }
 
-  const images = [];
-  // Match [vx-img:data:image/...;base64,...] markers
-  const cleaned = userPrompt.replace(/\[vx-img:(data:image\/[^;]+;base64,[A-Za-z0-9+/=]+)\]/g, (_, dataUrl) => {
-    images.push(dataUrl);
-    return '';
-  });
+  let webRefUrl = null;
+  let cleaned = userPrompt;
 
-  return { text: cleaned.trim(), images };
+  // Parse [vx-ref:url] marker (web reference)
+  if (cleaned.includes('[vx-ref:')) {
+    cleaned = cleaned.replace(/\[vx-ref:(https?:\/\/[^\]]+)\]/g, (_, url) => {
+      webRefUrl = url;
+      return '';
+    });
+  }
+
+  // Parse [vx-img:data:...] markers (image thumbnails)
+  const images = [];
+  if (cleaned.includes('[vx-img:')) {
+    cleaned = cleaned.replace(/\[vx-img:(data:image\/[^;]+;base64,[A-Za-z0-9+/=]+)\]/g, (_, dataUrl) => {
+      images.push(dataUrl);
+      return '';
+    });
+  }
+
+  return { text: cleaned.trim(), images, webRefUrl };
 }
 
 /**
@@ -3990,6 +4122,173 @@ function clearImageAttachments() {
   renderImageAttachments();
 }
 
+/**
+ * Adapt the website-reference sheet based on site state.
+ * Empty site = import mode (URL only, no dropdown).
+ * Existing site = restyle mode (URL + content handling dropdown).
+ */
+function updateGlobeSheet() {
+  const pages = store.get('pages') || [];
+  const hasSite = pages.length > 0;
+  const restyleOpts = document.getElementById('website-ref-restyle-options');
+  const helper = document.getElementById('website-ref-helper');
+  const confirmBtn = document.getElementById('btn-website-ref-confirm');
+
+  if (restyleOpts) restyleOpts.hidden = !hasSite;
+  if (helper) {
+    helper.textContent = hasSite
+      ? 'Use another website as design reference for your site.'
+      : 'Uses an existing website as design reference.';
+  }
+  if (confirmBtn) {
+    confirmBtn.textContent = hasSite ? 'Add' : 'Attach';
+  }
+}
+
+/**
+ * Clear the pending website reference.
+ */
+function clearWebsiteRef() {
+  pendingWebRef = null;
+  const chip = document.getElementById('website-ref-chip');
+  if (chip) chip.hidden = true;
+  const promptInput = document.getElementById('prompt-input');
+  if (promptInput) promptInput.placeholder = 'Describe what you want to build...';
+  // Remove active state from globe button
+  const globeBtn = document.getElementById('btn-attach-website');
+  if (globeBtn) globeBtn.classList.remove('is-active');
+}
+
+/**
+ * Bind website reference attachment events.
+ * Globe icon → sheet → confirm/cancel → chip → remove.
+ */
+function bindWebsiteRefEvents() {
+  const globeBtn = document.getElementById('btn-attach-website');
+  const sheet = document.getElementById('website-ref-sheet');
+  const urlInput = document.getElementById('website-ref-url');
+  const modeSelect = document.getElementById('website-ref-mode');
+  const confirmBtn = document.getElementById('btn-website-ref-confirm');
+  const cancelBtn = document.getElementById('btn-website-ref-cancel');
+  const chip = document.getElementById('website-ref-chip');
+  const chipLabel = document.getElementById('website-ref-chip-label');
+  const removeBtn = document.getElementById('btn-remove-website-ref');
+  const promptInput = document.getElementById('prompt-input');
+
+  // ── Contextual field error helpers ──
+  // All validation feedback flows through this single path:
+  // red input border + message below the field. No toasts.
+  function showUrlError(message) {
+    clearUrlError();
+    if (urlInput) urlInput.classList.add('vs-input-error');
+    if (urlInput) {
+      const el = document.createElement('div');
+      el.className = 'vs-field-error vs-ref-url-error';
+      el.textContent = message;
+      urlInput.insertAdjacentElement('afterend', el);
+    }
+  }
+
+  function clearUrlError() {
+    if (urlInput) urlInput.classList.remove('vs-input-error');
+    const el = sheet?.querySelector('.vs-ref-url-error');
+    if (el) el.remove();
+  }
+
+  if (globeBtn && sheet) {
+    globeBtn.addEventListener('click', () => {
+      if (demoGuard()) return;
+      if (viewerGuard()) return;
+      updateGlobeSheet();
+      clearUrlError();
+      sheet.hidden = !sheet.hidden;
+      // Active when sheet is open OR reference is attached
+      globeBtn.classList.toggle('is-active', !sheet.hidden || pendingWebRef !== null);
+      if (!sheet.hidden && urlInput) urlInput.focus();
+    });
+  }
+
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', async () => {
+      const url = urlInput?.value?.trim();
+
+      // Client-side format validation
+      if (!url || !url.match(/^https?:\/\/.+/)) {
+        showUrlError('Enter a valid URL starting with http:// or https://');
+        return;
+      }
+
+      // Show loading state
+      const originalText = confirmBtn.textContent;
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Checking…';
+      clearUrlError();
+
+      try {
+        const { ok, data, error } = await api.post('/ai/check-url', { url });
+
+        if (!ok) {
+          showUrlError(error?.message || 'Could not reach this URL.');
+          return;
+        }
+
+        // URL verified — attach it
+        const validatedUrl = data?.url || url;
+        const pages = store.get('pages') || [];
+        const hasSite = pages.length > 0;
+        pendingWebRef = {
+          url: validatedUrl,
+          contentMode: hasSite ? (modeSelect?.value || 'keep') : 'regenerate',
+          restyle: hasSite,
+        };
+
+        const chipPrefix = 'Design reference';
+        chipLabel.textContent = `${chipPrefix}: ${formatRefUrl(validatedUrl)}`;
+        chipLabel.title = validatedUrl;
+        if (chip) chip.hidden = false;
+        if (sheet) sheet.hidden = true;
+        // Keep globe active — reference is attached
+        if (globeBtn) globeBtn.classList.add('is-active');
+        if (promptInput) {
+          promptInput.placeholder = 'Describe what to change (optional)...';
+          promptInput.focus();
+        }
+      } catch {
+        showUrlError('Network error — please check your connection and try again.');
+      } finally {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = originalText;
+      }
+    });
+  }
+
+  if (cancelBtn && sheet) {
+    cancelBtn.addEventListener('click', () => {
+      clearUrlError();
+      sheet.hidden = true;
+      // Only remove active if no reference is attached
+      if (globeBtn && !pendingWebRef) globeBtn.classList.remove('is-active');
+    });
+  }
+
+  if (removeBtn) {
+    removeBtn.addEventListener('click', () => {
+      clearWebsiteRef();
+    });
+  }
+
+  // Enter to confirm, input edits clear errors
+  if (urlInput && confirmBtn) {
+    urlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        confirmBtn.click();
+      }
+    });
+    urlInput.addEventListener('input', clearUrlError);
+  }
+}
+
 // ═══════════════════════════════════════════
 //  Send Message Handler
 // ═══════════════════════════════════════════
@@ -4002,10 +4301,32 @@ async function handleSend() {
 
   const prompt = input.value.trim();
   const hasImages = pendingImages.length > 0;
-  if (!prompt && !hasImages) return;
+  const hasWebRef = pendingWebRef !== null;
+  if (!prompt && !hasImages && !hasWebRef) return;
 
   // Don't allow sending while streaming
   if (store.get('aiStreaming')) return;
+
+  // ── Pre-restyle safety: snapshot the current design BEFORE any UI mutations ──
+  // If this fails, we haven't touched the input, pending state, or chat DOM,
+  // so the user can simply retry.
+  if (pendingWebRef?.restyle) {
+    try {
+      const siteName = store.get('siteName') || 'Untitled';
+      const saveResult = await api.post('/designs', {
+        name: `${siteName} (before restyle)`,
+        description: `Automatic snapshot saved before restyling from ${pendingWebRef.url}`,
+        is_system_backup: true,
+      });
+      if (!saveResult.ok) {
+        showToast('Could not save your current design before restyling. Please try again.', 'error');
+        return;
+      }
+    } catch (saveError) {
+      showToast('Could not save your current design before restyling. Please try again.', 'error');
+      return;
+    }
+  }
 
   input.value = '';
   input.style.height = 'auto';
@@ -4017,6 +4338,10 @@ async function handleSend() {
   const sentImages = [...pendingImages];
   clearImageAttachments();
 
+  // Capture website reference before clearing
+  const sentWebRef = pendingWebRef;
+  clearWebsiteRef();
+
   // ── Show user message (right-aligned bubble) ──
   const imageThumbsHtml = sentImages.length > 0
     ? `<div class="vs-msg-user-images">${sentImages.map(img =>
@@ -4024,9 +4349,14 @@ async function handleSend() {
       ).join('')}</div>`
     : '';
 
+  const webRefBadgeHtml = sentWebRef
+    ? `<div class="vs-msg-user-webref"><a href="${escapeAttr(sentWebRef.url)}" target="_blank" rel="noopener" title="${escapeAttr(sentWebRef.url)}">${icons.globe} <span>${escapeHtml(formatRefUrl(sentWebRef.url))}</span></a></div>`
+    : '';
+
   const userMsgHtml = `
     <div class="vs-msg-user mb-6 mt-4">
       ${imageThumbsHtml}
+      ${webRefBadgeHtml}
       ${prompt ? `<div class="vs-msg-user-bubble">${escapeHtml(prompt)}</div>` : ''}
     </div>
   `;
@@ -4045,12 +4375,6 @@ async function handleSend() {
         <span class="vs-typing-dot"></span>
         <span class="vs-typing-dot"></span>
       </div>
-      <div data-role="status" hidden class="text-xs text-vs-text-tertiary mt-2 flex items-center gap-2">
-        <svg class="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-        <span data-role="status-text"></span>
-        <span data-role="status-timer" class="tabular-nums opacity-60"></span>
-        <button data-role="stop-btn" class="vs-btn vs-btn-ghost vs-btn-xs" style="margin-left: 4px; color: var(--vs-text-tertiary);">Stop</button>
-      </div>
       <div data-role="stream-content" hidden class="vs-msg-ai-bubble"></div>
       <div data-role="files-section" hidden class="vs-files-section">
         <div class="vs-files-header">
@@ -4062,6 +4386,11 @@ async function handleSend() {
         <div data-role="files-progress" class="vs-files-progress">
           <div class="vs-files-progress-bar"></div>
         </div>
+      </div>
+      <div data-role="status" class="text-xs text-vs-text-tertiary mt-2 flex items-center gap-2">
+        <svg class="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        <span data-role="status-timer" class="tabular-nums opacity-60"></span>
+        <button data-role="stop-btn" class="vs-btn vs-btn-ghost vs-btn-xs" style="margin-left: 4px; color: var(--vs-text-tertiary);">Stop</button>
       </div>
       <div data-role="error" hidden class="mt-3 px-4 py-3 bg-vs-error-dim text-vs-error text-sm rounded-xl border border-vs-error/10"></div>
     </div>
@@ -4100,7 +4429,6 @@ async function handleSend() {
 
   const typingEl = aiBlock.querySelector('[data-role="typing"]');
   const statusEl = aiBlock.querySelector('[data-role="status"]');
-  const statusTextEl = aiBlock.querySelector('[data-role="status-text"]');
   const contentEl = aiBlock.querySelector('[data-role="stream-content"]');
   const filesSectionEl = aiBlock.querySelector('[data-role="files-section"]');
   const filesEl = aiBlock.querySelector('[data-role="files"]');
@@ -4125,7 +4453,7 @@ async function handleSend() {
   let stallWarningShown = false;
   let streamDone = false; // Prevents onStatus from overriding finalized labels
 
-  // Update the timer every second
+  // Update the timer every second — both the chat status and the preview overlay
   const timerInterval = setInterval(() => {
     const elapsed = Math.floor((Date.now() - streamStartTime) / 1000);
     const mins = Math.floor(elapsed / 60);
@@ -4137,16 +4465,20 @@ async function handleSend() {
       timeStr += ` · ${streamTokenCount.toLocaleString()} tokens`;
     }
 
-    if (timerEl) timerEl.textContent = `· ${timeStr}`;
+    if (timerEl) timerEl.textContent = timeStr;
+
+    // Mirror metrics into the preview overlay (if visible)
+    const overlayMetrics = document.getElementById('overlay-metrics');
+    if (overlayMetrics) overlayMetrics.textContent = timeStr;
 
     // Stall detection: warn if no data for 5 minutes
     // Local models in particular may take a very long time.
     const silenceMs = Date.now() - lastDataTime;
     if (silenceMs > 300000 && !stallWarningShown) {
       stallWarningShown = true;
-      if (statusTextEl) {
-        statusTextEl.textContent = 'No data for 5 min — the model may have stalled';
-        statusTextEl.style.color = 'var(--vs-warning, #d97706)';
+      if (timerEl) {
+        timerEl.textContent = `${timeStr} · No data for 5 min — may have stalled`;
+        timerEl.style.color = 'var(--vs-warning, #d97706)';
       }
     }
   }, 1000);
@@ -4188,10 +4520,29 @@ async function handleSend() {
   }
 
   // ── Stream the AI response ──
-  // Embed tiny thumbnail markers in the prompt text for history persistence.
-  // Format: [vx-img:data:image/jpeg;base64,...] at the start of the string.
-  // These are ~3-5KB each (canvas-downsized), safe for DB text columns.
-  let promptForDb = prompt || '(see attached images)';
+  // Embed attachment markers in the prompt text for history persistence.
+  // Format: [vx-ref:url] for web references, [vx-img:data:...] for images.
+  // These are parsed back out on conversation reload to render badges.
+  let promptForDb = prompt || '';
+
+  // When there's no typed text, add a human-readable placeholder
+  if (!promptForDb) {
+    if (sentWebRef) {
+      try {
+        const display = formatRefUrl(sentWebRef.url);
+        promptForDb = sentWebRef.restyle ? `(restyle from: ${display})` : `(import from: ${display})`;
+      } catch { promptForDb = `(reference: ${sentWebRef.url})`; }
+    } else if (sentImages.length > 0) {
+      promptForDb = '(see attached images)';
+    }
+  }
+
+  // Prepend web ref marker (always, even when text exists)
+  if (sentWebRef) {
+    promptForDb = `[vx-ref:${sentWebRef.url}]` + promptForDb;
+  }
+
+  // Prepend image thumbnail markers
   if (sentImages.length > 0) {
     const markers = sentImages
       .map(img => `[vx-img:${img.thumbnail}]`)
@@ -4207,6 +4558,19 @@ async function handleSend() {
     action_data: actionData,
   };
 
+  // If a website reference is attached, override action type and data.
+  // Empty site = import_site (create from reference).
+  // Existing site = restyle_site (redesign from reference, keep content).
+  // Both force null page scope (always site-wide).
+  if (sentWebRef) {
+    requestBody.action_type = sentWebRef.restyle ? 'restyle_site' : 'import_site';
+    requestBody.action_data = {
+      url: sentWebRef.url,
+      content_mode: sentWebRef.contentMode,
+    };
+    requestBody.page_scope = null;
+  }
+
   // Include images if attached (send only data + media_type, not preview URLs)
   if (sentImages.length > 0) {
     requestBody.images = sentImages.map(img => ({
@@ -4214,6 +4578,7 @@ async function handleSend() {
       media_type: img.media_type,
     }));
   }
+
 
   await apiStream('/ai/prompt', requestBody, {
     signal: abortController.signal,
@@ -4230,10 +4595,6 @@ async function handleSend() {
       if (!streamDone && filesSectionEl && !filesSectionEl.hasAttribute('hidden') && filesLabelEl) {
         filesLabelEl.textContent = message;
       }
-      if (statusEl && statusTextEl) {
-        statusTextEl.textContent = message;
-        showEl(statusEl);
-      }
     },
 
     onToken(text) {
@@ -4241,7 +4602,7 @@ async function handleSend() {
       streamTokenCount += Math.ceil(text.length / 4); // rough token estimate
       lastDataTime = Date.now();
       stallWarningShown = false;
-      if (statusTextEl) statusTextEl.style.color = '';
+      if (timerEl) timerEl.style.color = '';
       const lead = streamedText.trimStart();
       if (!streamLooksStructured && lead.length > 0) {
         streamLooksStructured =
@@ -4287,7 +4648,8 @@ async function handleSend() {
         // Non-structured: show raw text as-is (plain conversation)
         showEl(contentEl);
         contentEl.innerHTML = renderAiResponseHtml(streamedText);
-        if (statusEl) hideEl(statusEl);
+        // Don't hide statusEl here — stream type may still switch to
+        // structured. statusEl is hidden in onDone for all responses.
       }
 
       scrollToBottomIfSticky();
@@ -4357,6 +4719,21 @@ async function handleSend() {
         hideEl(filesProgressEl);
         filesSectionEl.classList.add('vs-files-done');
         if (filesLabelEl) filesLabelEl.textContent = result.partial ? 'Files updated (partial)' : 'Files updated';
+
+        // ── "Save to Designs" action row ──
+        // Design Library saves are intentional, not automatic.
+        // Show this after any generation that wrote files.
+        const saveRow = document.createElement('div');
+        saveRow.className = 'vs-chat-action-row';
+        saveRow.innerHTML = `
+          <button class="vs-btn vs-btn-ghost vs-btn-xs vs-chat-save-btn" title="Save current design to the library">
+            ${icons.save} Save to Designs
+          </button>
+        `;
+        saveRow.querySelector('button').addEventListener('click', () => {
+          showSaveDesignModal();
+        });
+        filesSectionEl.insertAdjacentElement('afterend', saveRow);
       } else if (filesSectionEl && !filesSectionEl.hasAttribute('hidden')) {
         // Files section was shown (e.g. <file tag detected in stream) but
         // no actual files were reported — hide the section entirely.
@@ -4416,7 +4793,12 @@ async function handleSend() {
             }
 
             input.value = continuePrompt;
-            input.dataset.actionType = actionType;
+            // Continuation always uses free_prompt — the prompt is self-contained
+            // ("complete missing pages matching the existing design") and doesn't
+            // benefit from action-specific framing. Using the original action type
+            // is actively harmful for import_site (triggers redundant re-fetch with
+            // no URL) and wasteful for create_site (wraps in wizard framing).
+            input.dataset.actionType = 'free_prompt';
             handleSend();
           }
         }, 800);
@@ -4519,7 +4901,7 @@ async function handleSend() {
             ${issue.file ? `<span style="font-size: 11px; color: var(--vs-text-ghost); margin-left: auto; font-family: 'SF Mono', monospace; opacity: 0.7;">${escapeHtml(issue.file)}${issue.line ? ':' + issue.line : ''}</span>` : ''}
           </div>
           <div style="font-size: 12px; color: var(--vs-text-secondary); line-height: 1.4;">${escapeHtml(issue.description || '')}</div>
-          ${issue.suggested_fix ? `<div style="font-size: 11px; color: var(--vs-text-ghost); margin-top: 3px; line-height: 1.3;">💡 ${escapeHtml(issue.suggested_fix)}</div>` : ''}
+          ${issue.suggested_fix ? `<div style="font-size: 11px; color: var(--vs-text-ghost); margin-top: 6px; line-height: 1.3;">💡 ${escapeHtml(issue.suggested_fix)}</div>` : ''}
           <div style="margin-top: 4px; text-align: right;">
             <button class="vs-eval-add-to-chat" data-eval-idx="${idx}" style="
               background: none; border: none; cursor: pointer; padding: 2px 0;

@@ -58,9 +58,10 @@ class DesignManager
      * incomplete designs are silently skipped — a missing metadata
      * file or empty preview directory does not crash the gallery.
      *
+     * @param bool $includeSystemBackups If true, include system backups in list
      * @return array<int, array<string, mixed>> Sorted by updated_at DESC
      */
-    public function list(): array
+    public function list(bool $includeSystemBackups = false): array
     {
         if (!is_dir($this->designsDir)) {
             return [];
@@ -99,6 +100,13 @@ class DesignManager
             $designs[] = $meta;
         }
 
+        // Filter out system backups unless explicitly requested
+        if (!$includeSystemBackups) {
+            $designs = array_values(array_filter($designs, function (array $d): bool {
+                return empty($d['is_system_backup']);
+            }));
+        }
+
         // Sort by updated_at descending (newest first)
         usort($designs, function (array $a, array $b): int {
             return ($b['updated_at'] ?? '') <=> ($a['updated_at'] ?? '');
@@ -119,11 +127,12 @@ class DesignManager
      * style.css for the preview card. Captures the initial prompt
      * from settings for the card description.
      *
-     * @param string $name        Human-readable design name
-     * @param string $description Optional description
+     * @param string $name             Human-readable design name
+     * @param string $description      Optional description
+     * @param bool   $isSystemBackup   If true, mark as system backup (hidden from gallery)
      * @return array{ok: bool, design?: array<string, mixed>, error?: string}
      */
-    public function save(string $name, string $description = ''): array
+    public function save(string $name, string $description = '', bool $isSystemBackup = false): array
     {
         $id = $this->generateId();
         $designDir = $this->designsDir . '/' . $id;
@@ -175,6 +184,7 @@ class DesignManager
             'page_count'      => $pageCount,
             'file_count'      => $fileCount,
             'design_tokens'   => $designTokens,
+            'is_system_backup' => $isSystemBackup,
             'created_at'      => $now,
             'updated_at'      => $now,
         ];
@@ -226,7 +236,7 @@ class DesignManager
             $siteName = $this->settings->get('site_name', 'Untitled');
             $timestamp = date('M j, g:ia');
             $autoName = "Auto-saved — {$siteName}";
-            $autoResult = $this->save($autoName, "Auto-saved before switching designs ({$timestamp})");
+            $autoResult = $this->save($autoName, "Auto-saved before switching designs ({$timestamp})", true);
             if ($autoResult['ok']) {
                 $autoSave = $autoResult['design'];
             }
@@ -297,7 +307,7 @@ class DesignManager
         if (!$skipAutoSave && $this->hasActiveContent()) {
             $siteName = $this->settings->get('site_name', 'Untitled');
             $autoName = "Auto-saved — {$siteName}";
-            $autoResult = $this->save($autoName, 'Auto-saved before starting new design');
+            $autoResult = $this->save($autoName, 'Auto-saved before starting new design', true);
             if ($autoResult['ok']) {
                 $autoSave = $autoResult['design'];
             }

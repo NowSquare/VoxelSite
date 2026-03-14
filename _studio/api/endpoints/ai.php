@@ -210,7 +210,8 @@ if ($method === 'GET' && str_starts_with($path, '/ai/conversations/')) {
 
     $prompts = $db->query(
         "SELECT id, action_type, user_prompt, ai_response, files_modified,
-                tokens_input, tokens_output, cost_estimate, status, created_at
+                tokens_input, tokens_output, cost_estimate, status, evaluation_issues,
+                created_at
          FROM prompt_log
          WHERE conversation_id = ? AND user_id = ?
          ORDER BY created_at ASC
@@ -377,6 +378,39 @@ if ($method === 'GET' && $path === '/ai/diagnostics') {
     $diagnostics['paths']['log_dir_writable'] = is_dir($logDir) && is_writable($logDir);
 
     jsonResponse(['ok' => true, 'data' => $diagnostics]);
+    return;
+}
+
+// ═══════════════════════════════════════════
+//  POST /ai/check-url — Validate a reference URL before attaching
+// ═══════════════════════════════════════════
+
+if ($method === 'POST' && $path === '/ai/check-url') {
+    $body = getJsonBody();
+    $url = trim($body['url'] ?? '');
+
+    if ($url === '') {
+        jsonResponse(['ok' => false, 'error' => [
+            'code'    => 'validation',
+            'message' => 'URL is required.',
+        ]], 422);
+        return;
+    }
+
+    $importer = new \VoxelSite\SiteImporter();
+    $result = $importer->checkUrl($url);
+
+    if ($result['ok']) {
+        jsonResponse(['ok' => true, 'data' => [
+            'url'   => $result['url'],
+            'title' => $result['title'],
+        ]]);
+    } else {
+        jsonResponse(['ok' => false, 'error' => [
+            'code'    => 'unreachable',
+            'message' => $result['error'],
+        ]], 422);
+    }
     return;
 }
 

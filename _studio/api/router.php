@@ -71,6 +71,7 @@ $routes = [
     // AI
     ['POST',   '/ai/prompt',              'ai.php',            true],
     ['POST',   '/ai/cancel-generation',   'ai.php',            true],
+    ['POST',   '/ai/check-url',           'ai.php',            true],
     ['GET',    '/ai/actions',             'actions.php',       true],
     ['GET',    '/ai/actions/:id',         'actions.php',       true],
     ['GET',    '/ai/history',             'ai.php',            true],

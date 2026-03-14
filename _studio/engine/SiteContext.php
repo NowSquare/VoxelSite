@@ -56,6 +56,8 @@ class SiteContext
      * @param int|null $userId Scope conversation history to an owner
      * @param int $maxChars Maximum character budget. PromptEngine derives this
      *   from the model's actual context window. 0 = unlimited (legacy fallback).
+     * @param string|null $actionType The AI action being performed (e.g. 'restyle_site').
+     *   Used to tailor context — e.g. restyle strips component CSS to avoid anchoring.
      * @return array{context: string, metrics: array{
      *   total_chars: int,
      *   budget_chars: int,
@@ -70,7 +72,8 @@ class SiteContext
         ?string $focusPageSlug = null,
         ?string $conversationId = null,
         ?int $userId = null,
-        int $maxChars = 0
+        int $maxChars = 0,
+        ?string $actionType = null
     ): array
     {
         // Priority 1 (essential) — always included
@@ -114,7 +117,14 @@ class SiteContext
         // Priority 2 (important) — included if budget allows
         $important = [];
 
-        if ($focusPageSlug !== null) {
+        if ($focusPageSlug === '__all__') {
+            // Full-site context mode (restyle_site) — include ALL page files
+            // so the AI can preserve content while transforming design.
+            $allPages = $this->buildAllPages();
+            foreach ($allPages as $pageContext) {
+                $important[] = $pageContext;
+            }
+        } elseif ($focusPageSlug !== null) {
             $focusContext = $this->buildFocusPage($focusPageSlug);
             if ($focusContext !== null) {
                 $important[] = $focusContext;
@@ -163,7 +173,7 @@ class SiteContext
         // Priority 3 (nice to have) — dropped first when over budget
         $optional = [];
 
-        $optional[] = $this->buildGlobalCSS();
+        $optional[] = $this->buildGlobalCSS($actionType);
 
         // Collections disabled for v1.0.0 — ships in v1.1
         // $collections = $this->buildCollections();
@@ -441,8 +451,12 @@ class SiteContext
      * The AI needs the complete CSS to understand component
      * patterns, not just the tokens. For very large sites, we
      * fall back to tokens-only (see buildDesignTokens).
+     *
+     * For restyle_site: strips component classes to prevent the
+     * model from anchoring on the old architecture. Only `:root`
+     * tokens and structural CSS (mobile menu, nav) are preserved.
      */
-    private function buildGlobalCSS(): string
+    private function buildGlobalCSS(?string $actionType = null): string
     {
         $styleCss = $this->fileManager->readFile('assets/css/style.css');
         $tailwindCss = $this->fileManager->readFile('assets/css/tailwind.css');
@@ -462,6 +476,13 @@ class SiteContext
         }
 
         if ($styleCss !== null) {
+            // For restyle: strip component classes to avoid anchoring the
+            // model on the old CSS architecture. Only show :root tokens
+            // so the model understands the OLD design for comparison, but
+            // builds NEW CSS from scratch with Tailwind utilities.
+            if ($actionType === 'restyle_site') {
+                $styleCss = $this->extractRestyleCSS($styleCss);
+            }
             $sections[] = "/* assets/css/style.css */\n" . $styleCss;
         }
 
@@ -475,6 +496,85 @@ class SiteContext
         }
 
         return "=== GLOBAL CSS ===\n" . implode("\n\n", $sections);
+    }
+
+    /**
+     * For restyle operations: extract only the parts of style.css
+     * that the model needs, stripping component classes that would
+     * anchour the model on the old architecture.
+     *
+     * Preserves:
+     * - :root { ... } block (design tokens for comparison)
+     * - @keyframes blocks (animation definitions)
+     * - [data-reveal] rules (scroll animation)
+     * - .mobile-menu rules (structural nav)
+     * - .site-header / .nav-inner / .nav-toggle rules (nav layout)
+     * - .icon rules (icon sizing)
+     *
+     * Everything else (component classes) is stripped.
+     */
+    private function extractRestyleCSS(string $css): string
+    {
+        $preserved = [];
+        $preserved[] = "/* RESTYLE MODE: Component classes stripped. Only tokens and structural CSS shown. */";
+        $preserved[] = "/* Build a fresh style.css with new :root tokens from the reference site. */";
+        $preserved[] = "/* Move ALL component styling to Tailwind utility classes in HTML. */\n";
+
+        // Extract :root block (design tokens)
+        if (preg_match('/:root\s*\{([^}]*(?:\{[^}]*\}[^}]*)*)\}/s', $css, $m)) {
+            $preserved[] = "/* OLD design tokens (for reference — replace with new tokens from reference site) */";
+            $preserved[] = $m[0];
+        }
+
+        // Extract @keyframes blocks
+        if (preg_match_all('/@keyframes\s+[\w-]+\s*\{[^}]*(?:\{[^}]*\}[^}]*)*\}/s', $css, $m)) {
+            $preserved[] = "\n/* Animations (preserve and adapt as needed) */";
+            foreach ($m[0] as $keyframe) {
+                $preserved[] = $keyframe;
+            }
+        }
+
+        // Extract [data-reveal] rules
+        if (preg_match_all('/\[data-reveal[^{]*\{[^}]*\}/s', $css, $m)) {
+            $preserved[] = "\n/* Scroll reveal transitions (preserve) */";
+            foreach ($m[0] as $rule) {
+                $preserved[] = $rule;
+            }
+        }
+
+        // Extract .mobile-menu, .site-header, .nav- rules
+        $structuralPatterns = [
+            '/\.mobile-menu[^{]*\{[^}]*\}/s',
+            '/\.site-header[^{]*\{[^}]*\}/s',
+            '/\.nav-inner[^{]*\{[^}]*\}/s',
+            '/\.nav-toggle[^{]*\{[^}]*\}/s',
+            '/\.nav-desktop[^{]*\{[^}]*\}/s',
+            '/\.icon[^{]*\{[^}]*\}/s',
+        ];
+        $structuralRules = [];
+        foreach ($structuralPatterns as $pattern) {
+            if (preg_match_all($pattern, $css, $m)) {
+                foreach ($m[0] as $rule) {
+                    $structuralRules[] = $rule;
+                }
+            }
+        }
+        if (!empty($structuralRules)) {
+            $preserved[] = "\n/* Structural CSS (nav, mobile menu, icons — preserve) */";
+            foreach ($structuralRules as $rule) {
+                $preserved[] = $rule;
+            }
+        }
+
+        // Extract @media prefers-reduced-motion
+        if (preg_match_all('/@media\s*\(\s*prefers-reduced-motion[^)]*\)\s*\{[^}]*(?:\{[^}]*\}[^}]*)*\}/s', $css, $m)) {
+            $preserved[] = "\n/* Accessibility (preserve) */";
+            foreach ($m[0] as $rule) {
+                $preserved[] = $rule;
+            }
+        }
+
+        return implode("\n", $preserved);
     }
 
     /**
@@ -814,6 +914,43 @@ class SiteContext
     }
 
     /**
+     * Load ALL page file contents for full-site operations (restyle_site).
+     *
+     * Returns each page as a separate context item so the budget trimming
+     * logic can drop pages individually from the tail if space runs out.
+     * Pages are ordered by nav_order (homepage first) so the most important
+     * pages are always retained.
+     *
+     * @return string[] Array of labelled page context blocks
+     */
+    private function buildAllPages(): array
+    {
+        $pages = $this->db->query(
+            "SELECT slug FROM pages
+             ORDER BY nav_order IS NULL, nav_order ASC, title ASC"
+        );
+
+        if (empty($pages)) {
+            return [];
+        }
+
+        $contexts = [];
+        foreach ($pages as $page) {
+            $slug = $page['slug'];
+            $filename = $slug === 'index' ? 'index.php' : "{$slug}.php";
+            $content = $this->fileManager->readFile($filename);
+
+            if ($content === null) {
+                continue;
+            }
+
+            $contexts[] = "=== CURRENT PAGE: {$slug} ({$filename}) ===\n{$content}";
+        }
+
+        return $contexts;
+    }
+
+    /**
      * Provide a reference page when creating a NEW page.
      *
      * Without seeing an actual page's code, the AI has no concrete example
@@ -927,7 +1064,8 @@ class SiteContext
         $parser = new \VoxelSite\ResponseParser();
 
         foreach ($entries as $entry) {
-            $history .= "User: {$entry['user_prompt']}\n";
+            $cleanPrompt = \VoxelSite\PromptEngine::stripVxMarkers($entry['user_prompt']);
+            $history .= "User: {$cleanPrompt}\n";
 
             // Include a brief summary of what the AI did, not the full response
             if (!empty($entry['ai_response'])) {

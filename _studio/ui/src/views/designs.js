@@ -541,7 +541,7 @@ export function showSaveDesignModal() {
     <div class="vs-modal" style="max-width: 480px;">
       <div class="vs-modal-header">
         <h2 class="vs-modal-title">${icons.save} Save Design</h2>
-        <p class="vs-modal-desc">Save a snapshot of your current design. You can switch back to it anytime.</p>
+        <p class="vs-modal-desc">Save a snapshot of your current design to the library. Find and restore saved designs in the Designs tab.</p>
       </div>
       <div class="vs-modal-body">
         <div class="flex flex-col gap-4">

@@ -26,6 +26,7 @@ Full documentation: **[voxelsite.com/docs](https://voxelsite.com/docs)**
 - **Visual Editor** — click-to-edit text, swap images, adjust styles, reorder sections with ▲/▼ buttons, add new sections from a visual picker, and describe changes with AI — all directly on the live preview
 - **Live Preview** — see every change before publishing
 - **Undo/Redo** — full revision history with safe editing workflow
+- **Website References** — paste any public URL as design inspiration; create new sites or restyle existing ones based on real-world design language
 - **Snapshots** — save/restore entire site states
 - **Design Library** — save, compare, and switch between entirely different website designs
 - **Asset Manager** — upload images, files, and fonts

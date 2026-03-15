@@ -49,7 +49,7 @@ include '_partials/header.php';
       </div>
     </div>
     <div class="philosophy-image" data-reveal>
-      <img src="/assets/library/gallery/vs-gal_lake-ripples_abstract-minimal_cool_light-text.png"
+      <img src="/assets/library/gallery/vs-gal_lake-ripples_abstract-minimal_cool_light-text.jpeg"
            alt="Lake ripples — minimal abstract composition reflecting the Studioform approach"
            class="philosophy-img"
            width="800" height="800"

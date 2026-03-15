@@ -212,7 +212,7 @@ Every component should feel like it was designed by the same person:
 
   ```html
   <section class="relative min-h-[80vh] flex items-center justify-center overflow-hidden"
-           style="background-image: url(/assets/library/backgrounds/vs-bg_golden-clouds_atmosphere_warm_light_dark-text.png); background-size: cover; background-position: center;">
+           style="background-image: url(/assets/library/backgrounds/vs-bg_golden-clouds_atmosphere_warm_light_dark-text.jpeg); background-size: cover; background-position: center;">
     <div class="absolute inset-0 bg-black opacity-50"></div>
     <div class="relative z-10 text-center text-white px-4">
       <h1 class="text-5xl font-bold" style="text-shadow: 0 2px 20px rgba(0,0,0,0.3);">Your Headline</h1>
@@ -754,7 +754,7 @@ These rules prevent the most common AI generation errors.
 - **When no user-uploaded images exist:** Use images from the **built-in image library** at `/assets/library/`. The IMAGE LIBRARY section in context lists all available images with their tone, type, and keywords. Select images that match the site's color scheme and mood:
   - Hero sections, CTA sections → use **gradient** or **atmosphere** images
   - Content section backgrounds → use **texture** images with a semi-transparent overlay
-  - Gallery/portfolio sections → use **gallery** images (`vs-gal_{subject}_{categories}_{tone}_{contrast}.png`)
+  - Gallery/portfolio sections → use **gallery** images (`vs-gal_{subject}_{categories}_{tone}_{contrast}.jpeg`)
   - Match warm sites to warm-tone images, dark sites to dark-tone images
   - When using an image as a background, **always** add an overlay `<div class="absolute inset-0 bg-black opacity-50"></div>` (or `bg-white`, or a brand color) so users can adjust the `opacity-*` in the visual editor. Content uses `relative z-10`. Always add `text-shadow` on text over images.
 - User-uploaded images always take priority over library images. If the user has uploaded a hero image, use it — not a library image.

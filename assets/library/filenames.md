@@ -20,10 +20,10 @@ then read each field as a human-readable phrase.
 
 ## 2. Filename anatomy
 
-### Backgrounds (16:9, 1920×1080, PNG)
+### Backgrounds (16:9, 1920×1080, JPEG)
 
 ```
-vs-bg_{subject}_{type}_{mood}_{tone}_{contrast}.png
+vs-bg_{subject}_{type}_{mood}_{tone}_{contrast}.jpeg
 ```
 
 | # | Segment | What it encodes | Values |
@@ -35,10 +35,10 @@ vs-bg_{subject}_{type}_{mood}_{tone}_{contrast}.png
 | 5 | `tone` | Overall lightness | `light`, `dark`, `neutral`, `warm` |
 | 6 | `contrast` | Best text overlay colour | `dark-text`, `light-text` |
 
-### Gallery (1:1, 800×800, PNG)
+### Gallery (1:1, 800×800, JPEG)
 
 ```
-vs-gal_{subject}_{categories}_{tone}_{contrast}.png
+vs-gal_{subject}_{categories}_{tone}_{contrast}.jpeg
 ```
 
 | # | Segment | What it encodes | Values |

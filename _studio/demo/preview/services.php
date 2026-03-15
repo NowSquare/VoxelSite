@@ -24,7 +24,7 @@ include '_partials/header.php';
 <section class="service-detail service-detail--alt">
   <div class="service-detail-inner">
     <div class="service-detail-image" data-reveal>
-      <img src="/assets/library/gallery/vs-gal_prism-cube_abstract-creative_light_dark-text.png"
+      <img src="/assets/library/gallery/vs-gal_prism-cube_abstract-creative_light_dark-text.jpeg"
            alt="Prism cube — geometric abstraction representing brand identity systems"
            class="service-detail-img"
            width="800" height="800"
@@ -107,7 +107,7 @@ include '_partials/header.php';
       </ul>
     </div>
     <div class="service-detail-image" data-reveal>
-      <img src="/assets/library/gallery/vs-gal_concrete-frame_architecture-minimal_light_dark-text.png"
+      <img src="/assets/library/gallery/vs-gal_concrete-frame_architecture-minimal_light_dark-text.jpeg"
            alt="Concrete frame — structural clarity mirroring considered web design"
            class="service-detail-img"
            width="800" height="800"
@@ -120,7 +120,7 @@ include '_partials/header.php';
 <section class="service-detail service-detail--alt">
   <div class="service-detail-inner">
     <div class="service-detail-image" data-reveal>
-      <img src="/assets/library/gallery/vs-gal_open-notebook_professional-coaching_warm_dark-text.png"
+      <img src="/assets/library/gallery/vs-gal_open-notebook_professional-coaching_warm_dark-text.jpeg"
            alt="Open notebook with pen — the thoughtful, strategic process of Studioform"
            class="service-detail-img"
            width="800" height="800"

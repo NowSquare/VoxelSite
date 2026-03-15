@@ -38,7 +38,7 @@ include '_partials/header.php';
     <article class="portfolio-item" data-category="identity">
       <a href="#" class="portfolio-item-link" aria-label="View Søren &amp; Co. — Brand Identity">
         <div class="portfolio-item-image-wrap">
-          <img src="/assets/library/gallery/vs-gal_shell-spiral_architecture-abstract_light_dark-text.png"
+          <img src="/assets/library/gallery/vs-gal_shell-spiral_architecture-abstract_light_dark-text.jpeg"
                alt="Shell spiral form — Søren and Co. brand identity project"
                class="portfolio-item-image"
                width="800" height="800"
@@ -55,7 +55,7 @@ include '_partials/header.php';
     <article class="portfolio-item" data-category="web">
       <a href="#" class="portfolio-item-link" aria-label="View Meridian Architects — Website &amp; Identity">
         <div class="portfolio-item-image-wrap">
-          <img src="/assets/library/gallery/vs-gal_sunlit-stairwell_architecture-interior_light_dark-text.png"
+          <img src="/assets/library/gallery/vs-gal_sunlit-stairwell_architecture-interior_light_dark-text.jpeg"
                alt="Sunlit architectural stairwell — Meridian Architects digital identity"
                class="portfolio-item-image"
                width="800" height="800"
@@ -73,7 +73,7 @@ include '_partials/header.php';
     <article class="portfolio-item portfolio-item--wide" data-category="strategy">
       <a href="#" class="portfolio-item-link" aria-label="View Atelier Roux — Creative Strategy">
         <div class="portfolio-item-image-wrap">
-          <img src="/assets/library/gallery/vs-gal_arched-doorway_architecture-interior_warm_dark-text.png"
+          <img src="/assets/library/gallery/vs-gal_arched-doorway_architecture-interior_warm_dark-text.jpeg"
                alt="Arched doorway interior — Atelier Roux gallery strategic rebrand"
                class="portfolio-item-image"
                width="800" height="800"
@@ -90,7 +90,7 @@ include '_partials/header.php';
     <article class="portfolio-item" data-category="identity">
       <a href="#" class="portfolio-item-link" aria-label="View Forma Skincare — Brand Strategy">
         <div class="portfolio-item-image-wrap">
-          <img src="/assets/library/gallery/vs-gal_serum-bottle_beauty-retail_light_dark-text.png"
+          <img src="/assets/library/gallery/vs-gal_serum-bottle_beauty-retail_light_dark-text.jpeg"
                alt="Serum bottle — Forma Skincare brand identity and strategy"
                class="portfolio-item-image"
                width="800" height="800"
@@ -108,7 +108,7 @@ include '_partials/header.php';
     <article class="portfolio-item" data-category="identity">
       <a href="#" class="portfolio-item-link" aria-label="View Vance Studio — Brand Identity">
         <div class="portfolio-item-image-wrap">
-          <img src="/assets/library/gallery/vs-gal_wooden-bowl_craft-artisan_light_dark-text.png"
+          <img src="/assets/library/gallery/vs-gal_wooden-bowl_craft-artisan_light_dark-text.jpeg"
                alt="Turned wooden bowl — Vance Studio craft brand identity"
                class="portfolio-item-image"
                width="800" height="800"
@@ -125,7 +125,7 @@ include '_partials/header.php';
     <article class="portfolio-item" data-category="web">
       <a href="#" class="portfolio-item-link" aria-label="View Croft House — Website Design">
         <div class="portfolio-item-image-wrap">
-          <img src="/assets/library/gallery/vs-gal_window-drape_interior-editorial_light_dark-text.png"
+          <img src="/assets/library/gallery/vs-gal_window-drape_interior-editorial_light_dark-text.jpeg"
                alt="Draped window interior — Croft House residential website"
                class="portfolio-item-image"
                width="800" height="800"
@@ -142,7 +142,7 @@ include '_partials/header.php';
     <article class="portfolio-item" data-category="strategy">
       <a href="#" class="portfolio-item-link" aria-label="View Parallel Press — Creative Strategy">
         <div class="portfolio-item-image-wrap">
-          <img src="/assets/library/gallery/vs-gal_desk-journal_professional-coaching_warm_dark-text.png"
+          <img src="/assets/library/gallery/vs-gal_desk-journal_professional-coaching_warm_dark-text.jpeg"
                alt="Desk journal — Parallel Press editorial strategy project"
                class="portfolio-item-image"
                width="800" height="800"
@@ -160,7 +160,7 @@ include '_partials/header.php';
     <article class="portfolio-item portfolio-item--featured" data-category="identity">
       <a href="#" class="portfolio-item-link" aria-label="View Concentric — Brand Identity System">
         <div class="portfolio-item-image-wrap">
-          <img src="/assets/library/gallery/vs-gal_concentric-rings_architecture-abstract_light_dark-text.png"
+          <img src="/assets/library/gallery/vs-gal_concentric-rings_architecture-abstract_light_dark-text.jpeg"
                alt="Concentric architectural rings — visual identity system study"
                class="portfolio-item-image"
                width="800" height="800"

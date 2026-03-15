@@ -28,7 +28,7 @@ include '_partials/header.php';
     </div>
     <div class="hero-aside" data-reveal>
       <div class="hero-image-wrap">
-        <img src="/assets/library/gallery/vs-gal_concrete-frame_architecture-minimal_light_dark-text.png"
+        <img src="/assets/library/gallery/vs-gal_concrete-frame_architecture-minimal_light_dark-text.jpeg"
              alt="Minimal concrete frame — a study in proportion and light"
              class="hero-image"
              width="800" height="800">
@@ -66,7 +66,7 @@ include '_partials/header.php';
   <!-- Project 01 — Large hero project -->
   <article class="project-hero" data-reveal>
     <a href="/work" class="project-hero-image-wrap" aria-label="View Søren &amp; Co. — Brand Identity case study">
-      <img src="/assets/library/gallery/vs-gal_shell-spiral_architecture-abstract_light_dark-text.png"
+      <img src="/assets/library/gallery/vs-gal_shell-spiral_architecture-abstract_light_dark-text.jpeg"
            alt="Shell spiral — abstract architectural geometry, Søren and Co brand study"
            class="project-hero-image"
            width="800" height="800"
@@ -95,7 +95,7 @@ include '_partials/header.php';
 
     <article class="project-card">
       <a href="/work" class="project-card-image-wrap" aria-label="View Meridian Architects case study">
-        <img src="/assets/library/gallery/vs-gal_sunlit-stairwell_architecture-interior_light_dark-text.png"
+        <img src="/assets/library/gallery/vs-gal_sunlit-stairwell_architecture-interior_light_dark-text.jpeg"
              alt="Sunlit stairwell interior — Meridian Architects identity project"
              class="project-card-image"
              width="800" height="800"
@@ -114,7 +114,7 @@ include '_partials/header.php';
 
     <article class="project-card">
       <a href="/work" class="project-card-image-wrap" aria-label="View Forma Skincare case study">
-        <img src="/assets/library/gallery/vs-gal_serum-bottle_beauty-retail_light_dark-text.png"
+        <img src="/assets/library/gallery/vs-gal_serum-bottle_beauty-retail_light_dark-text.jpeg"
              alt="Serum bottle — Forma Skincare brand identity"
              class="project-card-image"
              width="800" height="800"
@@ -136,7 +136,7 @@ include '_partials/header.php';
   <!-- Project 04 — Wide banner -->
   <article class="project-banner" data-reveal>
     <a href="/work" class="project-banner-image-wrap" aria-label="View Atelier Roux case study">
-      <img src="/assets/library/gallery/vs-gal_arched-doorway_architecture-interior_warm_dark-text.png"
+      <img src="/assets/library/gallery/vs-gal_arched-doorway_architecture-interior_warm_dark-text.jpeg"
            alt="Arched doorway interior — Atelier Roux cultural identity"
            class="project-banner-image"
            width="800" height="800"
@@ -281,7 +281,7 @@ include '_partials/header.php';
   <div class="about-inner">
     <div class="about-image-col" data-reveal>
       <div class="about-image-wrap">
-        <img src="/assets/library/gallery/vs-gal_open-notebook_professional-coaching_warm_dark-text.png"
+        <img src="/assets/library/gallery/vs-gal_open-notebook_professional-coaching_warm_dark-text.jpeg"
              alt="Open notebook — the considered, craft-led approach of the Studioform practice"
              class="about-image"
              width="800" height="800"

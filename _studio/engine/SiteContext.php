@@ -1645,7 +1645,7 @@ class SiteContext
         $lines = [];
         $lines[] = '=== IMAGE LIBRARY ===';
         $lines[] = "{$totalFiles} built-in images. Use when user has no uploaded photos.";
-        $lines[] = 'Backgrounds: 16:9, 1920×1080. Gallery: 1:1, 800×800. All PNG.';
+        $lines[] = 'Backgrounds: 16:9, 1920×1080. Gallery: 1:1, 800×800. All JPEG.';
         $lines[] = '';
 
         // Type labels for prompt clarity

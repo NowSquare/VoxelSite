@@ -715,7 +715,7 @@ if (str_starts_with($path, '/designs/') && str_ends_with($path, '/preview')) {
 </nav>
 
 <section class="hero">
-  <div class="hero-img"><img src="{$img}/vs-gal_golden-pane_interior-editorial_warm_dark-text.png" alt="Light installation"></div>
+  <div class="hero-img"><img src="{$img}/vs-gal_golden-pane_interior-editorial_warm_dark-text.jpeg" alt="Light installation"></div>
   <div class="hero-content">
     <div class="hero-line"></div>
     <h1>Light as a<br>spatial event</h1>
@@ -726,9 +726,9 @@ if (str_starts_with($path, '/designs/') && str_ends_with($path, '/preview')) {
 <section style="padding: 120px 48px;">
   <div class="section-label">Selected Work</div>
   <div class="gallery">
-    <div class="gallery-item"><img src="{$img}/vs-gal_concentric-rings_architecture-abstract_light_dark-text.png" alt="Museum installation"></div>
-    <div class="gallery-item"><img src="{$img}/vs-gal_diagonal-rails_interior-editorial_cool_dark-text.png" alt="Gallery lighting"></div>
-    <div class="gallery-item"><img src="{$img}/vs-gal_golden-orb_abstract-creative_dark_light-text.png" alt="Light sculpture"></div>
+    <div class="gallery-item"><img src="{$img}/vs-gal_concentric-rings_architecture-abstract_light_dark-text.jpeg" alt="Museum installation"></div>
+    <div class="gallery-item"><img src="{$img}/vs-gal_diagonal-rails_interior-editorial_cool_dark-text.jpeg" alt="Gallery lighting"></div>
+    <div class="gallery-item"><img src="{$img}/vs-gal_golden-orb_abstract-creative_dark_light-text.jpeg" alt="Light sculpture"></div>
   </div>
 </section>
 
@@ -849,7 +849,7 @@ HTML;
     <p>Twelve rooms in a converted townhouse. Vintage furniture, original mouldings, contemporary art, and a courtyard garden where guests take breakfast in summer.</p>
     <a href="#" class="hero-cta">View Rooms</a>
   </div>
-  <div class="hero-img"><img src="{$img}/vs-gal_arched-courtyard_architecture-hospitality_warm_dark-text.png" alt="Hotel courtyard"></div>
+  <div class="hero-img"><img src="{$img}/vs-gal_arched-courtyard_architecture-hospitality_warm_dark-text.jpeg" alt="Hotel courtyard"></div>
 </section>
 
 <section class="features">
@@ -871,9 +871,9 @@ HTML;
 </section>
 
 <section class="gallery-strip">
-  <div class="gallery-strip-item"><img src="{$img}/vs-gal_narrow-passage_architecture-hospitality_warm_dark-text.png" alt="Hotel corridor"></div>
-  <div class="gallery-strip-item"><img src="{$img}/vs-gal_stone-colonnade_architecture-hospitality_warm_dark-text.png" alt="Hotel exterior"></div>
-  <div class="gallery-strip-item"><img src="{$img}/vs-gal_blue-shutters_vintage-architecture_warm_dark-text.png" alt="Room window"></div>
+  <div class="gallery-strip-item"><img src="{$img}/vs-gal_narrow-passage_architecture-hospitality_warm_dark-text.jpeg" alt="Hotel corridor"></div>
+  <div class="gallery-strip-item"><img src="{$img}/vs-gal_stone-colonnade_architecture-hospitality_warm_dark-text.jpeg" alt="Hotel exterior"></div>
+  <div class="gallery-strip-item"><img src="{$img}/vs-gal_blue-shutters_vintage-architecture_warm_dark-text.jpeg" alt="Room window"></div>
 </section>
 
 <section class="quote">
@@ -975,10 +975,10 @@ HTML;
 </section>
 
 <div class="project-grid">
-  <div class="project-large"><img src="{$img}/vs-gal_concrete-frame_architecture-minimal_light_dark-text.png" alt="Coastal home"></div>
+  <div class="project-large"><img src="{$img}/vs-gal_concrete-frame_architecture-minimal_light_dark-text.jpeg" alt="Coastal home"></div>
   <div class="project-stack">
-    <div class="project-stack-item"><img src="{$img}/vs-gal_sunlit-stairwell_architecture-interior_light_dark-text.png" alt="Interior stairwell"></div>
-    <div class="project-stack-item"><img src="{$img}/vs-gal_arched-doorway_architecture-interior_warm_dark-text.png" alt="Stone renovation"></div>
+    <div class="project-stack-item"><img src="{$img}/vs-gal_sunlit-stairwell_architecture-interior_light_dark-text.jpeg" alt="Interior stairwell"></div>
+    <div class="project-stack-item"><img src="{$img}/vs-gal_arched-doorway_architecture-interior_warm_dark-text.jpeg" alt="Stone renovation"></div>
   </div>
 </div>
 
@@ -1119,13 +1119,13 @@ HTML;
     <p>Everything is made to order. No catalogue, no off-the-shelf. The process starts with a conversation and ends with something built to last decades.</p>
     <a href="#" class="hero-cta">Start a Commission</a>
   </div>
-  <div class="hero-img"><img src="{$img}/vs-gal_brushed-steel_industrial-metalwork_cool_light-text.png" alt="Steel fabrication"></div>
+  <div class="hero-img"><img src="{$img}/vs-gal_brushed-steel_industrial-metalwork_cool_light-text.jpeg" alt="Steel fabrication"></div>
 </section>
 
 <section class="portfolio">
-  <div class="portfolio-item"><img src="{$img}/vs-gal_rusted-beam_industrial-metalwork_dark_light-text.png" alt="Custom railings"><div class="portfolio-label">Railings</div></div>
-  <div class="portfolio-item"><img src="{$img}/vs-gal_weld-seam_industrial-metalwork_dark_light-text.png" alt="Furniture"><div class="portfolio-label">Furniture</div></div>
-  <div class="portfolio-item"><img src="{$img}/vs-gal_rusty-handle_vintage-craft_warm_dark-text.png" alt="Architectural details"><div class="portfolio-label">Details</div></div>
+  <div class="portfolio-item"><img src="{$img}/vs-gal_rusted-beam_industrial-metalwork_dark_light-text.jpeg" alt="Custom railings"><div class="portfolio-label">Railings</div></div>
+  <div class="portfolio-item"><img src="{$img}/vs-gal_weld-seam_industrial-metalwork_dark_light-text.jpeg" alt="Furniture"><div class="portfolio-label">Furniture</div></div>
+  <div class="portfolio-item"><img src="{$img}/vs-gal_rusty-handle_vintage-craft_warm_dark-text.jpeg" alt="Architectural details"><div class="portfolio-label">Details</div></div>
 </section>
 
 <section class="process">
@@ -1141,11 +1141,11 @@ HTML;
 
 <section class="materials">
   <div class="material">
-    <img src="{$img}/vs-gal_stacked-plates_craft-artisan_warm_dark-text.png" alt="Raw steel">
+    <img src="{$img}/vs-gal_stacked-plates_craft-artisan_warm_dark-text.jpeg" alt="Raw steel">
     <div class="material-overlay"><h3>Raw Steel</h3><p>Hot-rolled, mill-scale, Corten</p></div>
   </div>
   <div class="material">
-    <img src="{$img}/vs-gal_clay-pot_craft-artisan_warm_dark-text.png" alt="Bronze & brass">
+    <img src="{$img}/vs-gal_clay-pot_craft-artisan_warm_dark-text.jpeg" alt="Bronze & brass">
     <div class="material-overlay"><h3>Bronze & Brass</h3><p>Cast, patinated, hand-finished</p></div>
   </div>
 </section>
@@ -1273,7 +1273,7 @@ HTML;
 </nav>
 
 <section class="hero">
-  <div class="hero-img"><img src="{$img}/vs-gal_cafe-cortado_food-coffee_dark_light-text.png" alt="Coffee"></div>
+  <div class="hero-img"><img src="{$img}/vs-gal_cafe-cortado_food-coffee_dark_light-text.jpeg" alt="Coffee"></div>
   <div class="hero-text">
     <div class="hero-badge">Specialty Coffee · Honest Food</div>
     <h1>Slow roasts.<br><em>Good company.</em></h1>
@@ -1305,9 +1305,9 @@ HTML;
 </section>
 
 <section class="gallery-row">
-  <div class="gallery-row-item"><img src="{$img}/vs-gal_crema-topdown_food-coffee_dark_light-text.png" alt="Latte art"></div>
-  <div class="gallery-row-item"><img src="{$img}/vs-gal_golden-croissant_food-bakery_warm_dark-text.png" alt="Pastries"></div>
-  <div class="gallery-row-item"><img src="{$img}/vs-gal_marble-latte_food-coffee_light_dark-text.png" alt="Interior"></div>
+  <div class="gallery-row-item"><img src="{$img}/vs-gal_crema-topdown_food-coffee_dark_light-text.jpeg" alt="Latte art"></div>
+  <div class="gallery-row-item"><img src="{$img}/vs-gal_golden-croissant_food-bakery_warm_dark-text.jpeg" alt="Pastries"></div>
+  <div class="gallery-row-item"><img src="{$img}/vs-gal_marble-latte_food-coffee_light_dark-text.jpeg" alt="Interior"></div>
 </section>
 
 <section class="quote">
@@ -1428,10 +1428,10 @@ if ($path === '/assets') {
 
     // 4 curated gallery images as demo assets
     $galleryImages = [
-        'vs-gal_concrete-frame_architecture-minimal_light_dark-text.png',
-        'vs-gal_arched-courtyard_architecture-hospitality_warm_dark-text.png',
-        'vs-gal_balanced-cairn_wellness-zen_cool_light-text.png',
-        'vs-gal_cafe-cortado_food-coffee_dark_light-text.png',
+        'vs-gal_concrete-frame_architecture-minimal_light_dark-text.jpeg',
+        'vs-gal_arched-courtyard_architecture-hospitality_warm_dark-text.jpeg',
+        'vs-gal_balanced-cairn_wellness-zen_cool_light-text.jpeg',
+        'vs-gal_cafe-cortado_food-coffee_dark_light-text.jpeg',
     ];
 
     if (!$category || $category === 'images') {

@@ -80,6 +80,12 @@ let pendingWebRef = null; // { url: string, contentMode: 'regenerate'|'preserve'
 /** Demo mode flag — read once from the server-rendered data attribute */
 const IS_DEMO = document.documentElement.dataset.demo === 'true';
 
+/** Hide demo banners/badges — demo enforcement stays active, only presentation is suppressed */
+const HIDE_DEMO_BANNER = document.documentElement.dataset.demoHideBanner === 'true';
+
+/** Whether to show demo chrome (badge, login banner, pre-filled credentials) */
+const SHOW_DEMO_CHROME = IS_DEMO && !HIDE_DEMO_BANNER;
+
 /** Mobile breakpoint — matches CSS @media (max-width: 767px) */
 const MOBILE_MQ = window.matchMedia('(max-width: 767px)');
 
@@ -384,7 +390,7 @@ function renderTopBar() {
           <nav class="flex items-center gap-0.5" aria-label="Studio navigation">
             ${navHtml}
           </nav>
-          ${IS_DEMO ? `
+          ${SHOW_DEMO_CHROME ? `
             <span class="vs-demo-badge" title="Read-only preview — install your own copy to get started.">
               ${icons.eye} Demo
             </span>
@@ -5064,11 +5070,11 @@ function renderLoginRedirect() {
               <path d="m3.3 7 8.7 5 8.7-5"/>
               <path d="M12 22V12"/>
             </svg>
-            <h1 class="vs-login-title">${IS_DEMO ? 'Welcome to the Demo' : 'Enter the Studio'}</h1>
-            <p class="vs-login-subtitle">${IS_DEMO ? 'Explore freely — this is a live preview.' : 'Resume construction.'}</p>
+            <h1 class="vs-login-title">${SHOW_DEMO_CHROME ? 'Welcome to the Demo' : 'Enter the Studio'}</h1>
+            <p class="vs-login-subtitle">${SHOW_DEMO_CHROME ? 'Explore freely — this is a live preview.' : 'Resume construction.'}</p>
           </div>
 
-          ${IS_DEMO ? `
+          ${SHOW_DEMO_CHROME ? `
             <div class="vs-demo-login-banner">
               <strong>Demo Mode</strong>
               <span>Browse everything. Changes won\u2019t be saved.</span>
@@ -5083,19 +5089,19 @@ function renderLoginRedirect() {
               <input id="login-email" type="email" required
                 class="vs-input"
                 placeholder="you@example.com"
-                ${IS_DEMO ? 'value="demo@example.com"' : ''}>
+                ${SHOW_DEMO_CHROME ? 'value="demo@example.com"' : ''}>
             </div>
 
             <div>
               <div class="vs-login-field-header">
                 <label class="vs-input-label">Password</label>
-                ${IS_DEMO ? '' : '<button type="button" id="btn-forgot" class="vs-login-forgot">Forgot?</button>'}
+                ${SHOW_DEMO_CHROME ? '' : '<button type="button" id="btn-forgot" class="vs-login-forgot">Forgot?</button>'}
               </div>
               <div class="vs-login-password-wrap">
                 <input id="login-password" type="password" required
                   class="vs-input"
                   placeholder="Your password"
-                  ${IS_DEMO ? 'value="welcome3210"' : ''}>
+                  ${SHOW_DEMO_CHROME ? 'value="welcome3210"' : ''}>
                 <button type="button" id="btn-toggle-pw" class="vs-login-eye" title="Show password">
                   ${icons.eye}
                 </button>
@@ -5103,12 +5109,12 @@ function renderLoginRedirect() {
             </div>
 
             <button type="submit" class="vs-btn vs-btn-primary vs-login-submit">
-              ${IS_DEMO ? 'Enter Demo' : 'Open Studio'}
+              ${SHOW_DEMO_CHROME ? 'Enter Demo' : 'Open Studio'}
             </button>
           </form>
 
           <div class="vs-login-footer">
-            <p>${IS_DEMO ? 'Read-only preview \u2014 install your own copy to get started.' : 'Your files. Your server. Your website.'}</p>
+            <p>${SHOW_DEMO_CHROME ? 'Read-only preview \u2014 install your own copy to get started.' : 'Your files. Your server. Your website.'}</p>
           </div>
         </div>
 

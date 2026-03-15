@@ -8,8 +8,11 @@ namespace VoxelSite;
  * Demo Mode — read-only experience layer.
  *
  * Activated by the presence of a `.demo` file in the project root
- * (next to index.php and _studio/). The file may be empty — its
- * existence alone is the signal. No database setting, no UI toggle.
+ * (next to index.php and _studio/). An empty file activates demo mode
+ * with default behavior. The file contents may optionally contain
+ * key=value pairs (one per line) to configure demo presentation:
+ *
+ *   hide_banner=true    Hide the DEMO badge and banners (for screenshots)
  *
  * When active:
  * - All write API endpoints return 403 with a demo-mode message
@@ -24,6 +27,9 @@ class DemoMode
 {
     /** Cached result so we only hit the filesystem once per request */
     private static ?bool $active = null;
+
+    /** Cached options parsed from .demo file contents */
+    private static ?array $options = null;
 
     // ═══════════════════════════════════════════
     //  Synthetic Auth Constants
@@ -84,6 +90,63 @@ class DemoMode
         self::$active = file_exists($projectRoot . '/.demo');
 
         return self::$active;
+    }
+
+    /**
+     * Read an option from the `.demo` file.
+     *
+     * The file supports simple key=value pairs, one per line.
+     * Lines starting with # are comments. Whitespace is trimmed.
+     * Returns null if the key is not set or demo mode is inactive.
+     *
+     * Parsed once per request, cached for subsequent calls.
+     */
+    public static function option(string $key): ?string
+    {
+        if (!self::isActive()) {
+            return null;
+        }
+
+        if (self::$options === null) {
+            self::$options = [];
+            $path = dirname(__DIR__, 2) . '/.demo';
+            $contents = @file_get_contents($path);
+
+            if ($contents !== false && trim($contents) !== '') {
+                foreach (explode("\n", $contents) as $line) {
+                    $line = trim($line);
+                    if ($line === '' || $line[0] === '#') {
+                        continue;
+                    }
+                    $eqPos = strpos($line, '=');
+                    if ($eqPos !== false) {
+                        $k = trim(substr($line, 0, $eqPos));
+                        $v = trim(substr($line, $eqPos + 1));
+                        if ($k !== '') {
+                            self::$options[$k] = $v;
+                        }
+                    }
+                }
+            }
+        }
+
+        return self::$options[$key] ?? null;
+    }
+
+    /**
+     * Whether to hide demo banners and badges.
+     *
+     * When true, the Studio DEMO badge, the login page demo chrome,
+     * and the root demo site banner are suppressed. All read-only
+     * enforcement, fixture data, and write blocking remain active.
+     *
+     * Useful for taking clean screenshots or recording demos.
+     *
+     * Set by adding `hide_banner=true` to the `.demo` file.
+     */
+    public static function hideBanner(): bool
+    {
+        return self::option('hide_banner') === 'true';
     }
 
 

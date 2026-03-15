@@ -33,9 +33,10 @@ try {
 // ── Resolve asset paths relative to _studio ──
 $basePath = '/_studio';
 $isDemo = \VoxelSite\DemoMode::isActive();
+$hideBanner = $isDemo && \VoxelSite\DemoMode::hideBanner();
 ?>
 <!DOCTYPE html>
-<html lang="en" data-theme="dark"<?= $isDemo ? ' data-demo="true"' : '' ?>>
+<html lang="en" data-theme="dark"<?= $isDemo ? ' data-demo="true"' : '' ?><?= $hideBanner ? ' data-demo-hide-banner="true"' : '' ?>>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">

@@ -424,14 +424,14 @@ async function loadFormSubmissions(formId, page = 1) {
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                 View
               </button>
-              <select class="vs-sub-status-select vs-input-compact" data-sub-id="${sub.id}" style="font-size: 11px; height: 26px; padding: 2px 8px;">
+              <select class="vs-sub-status-select vs-input-compact" data-sub-id="${sub.id}" style="font-size: 11px; height: 26px; padding: 2px 8px;" ${window.IS_DEMO ? 'disabled title="Demo mode — read-only"' : ''}>
                 ${Object.entries(SUBMISSION_STATUS_COLORS).map(([key, conf]) =>
                   `<option value="${key}" ${sub.status === key ? 'selected' : ''}>${conf.label}</option>`
                 ).join('')}
               </select>
-              <button class="vs-btn-ghost vs-btn-sm vs-sub-delete-btn" data-sub-id="${sub.id}" title="Delete submission" style="color: var(--vs-text-ghost);">
+              ${window.IS_DEMO ? '' : `<button class="vs-btn-ghost vs-btn-sm vs-sub-delete-btn" data-sub-id="${sub.id}" title="Delete submission" style="color: var(--vs-text-ghost);">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              </button>
+              </button>`}
             </div>
           </div>
         `;
@@ -467,6 +467,8 @@ function bindSubmissionEvents(formId, currentPage) {
   // Status selects → update status inline
   document.querySelectorAll('.vs-sub-status-select').forEach(sel => {
     sel.addEventListener('change', async () => {
+      if (demoGuard()) { sel.value = sel.dataset.originalValue || sel.querySelector('[selected]')?.value || 'new'; return; }
+      if (viewerGuard()) return;
       const subId = sel.dataset.subId;
       const { ok } = await api.put(`/forms/${encodeURIComponent(formId)}/submissions/${subId}`, { status: sel.value });
       if (ok) {
@@ -492,6 +494,8 @@ function bindSubmissionEvents(formId, currentPage) {
   // Delete buttons
   document.querySelectorAll('.vs-sub-delete-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
+      if (demoGuard()) return;
+      if (viewerGuard()) return;
       const subId = btn.dataset.subId;
       const confirmed = await showConfirmModal({
         title: 'Delete Submission',
@@ -555,21 +559,23 @@ async function openSubmissionDetail(formId, subId) {
     formSchema.fields.forEach(f => { fieldLabels[f.name] = f.label || f.name; });
   }
 
-  // Auto-mark as read if new
-  if (sub.status === 'new') {
-    await api.put(`/forms/${encodeURIComponent(formId)}/submissions/${subId}`, { status: 'read' });
-    sub.status = 'read';
-    // Update inline status in the list
-    const sel = document.querySelector(`.vs-sub-status-select[data-sub-id="${subId}"]`);
-    if (sel) sel.value = 'read';
-    const card = document.querySelector(`.vs-submission-card[data-sub-id="${subId}"]`);
-    if (card) {
-      card.style.borderLeftColor = SUBMISSION_STATUS_COLORS.read.text;
-      const pill = card.querySelector('.vs-status-pill');
-      if (pill) {
-        pill.style.background = SUBMISSION_STATUS_COLORS.read.bg;
-        pill.style.color = SUBMISSION_STATUS_COLORS.read.text;
-        pill.textContent = 'Read';
+  // Auto-mark as read if new (skip in demo — prevents false state mutation)
+  if (sub.status === 'new' && !window.IS_DEMO) {
+    const { ok: markOk } = await api.put(`/forms/${encodeURIComponent(formId)}/submissions/${subId}`, { status: 'read' });
+    if (markOk) {
+      sub.status = 'read';
+      // Update inline status in the list
+      const sel = document.querySelector(`.vs-sub-status-select[data-sub-id="${subId}"]`);
+      if (sel) sel.value = 'read';
+      const card = document.querySelector(`.vs-submission-card[data-sub-id="${subId}"]`);
+      if (card) {
+        card.style.borderLeftColor = SUBMISSION_STATUS_COLORS.read.text;
+        const pill = card.querySelector('.vs-status-pill');
+        if (pill) {
+          pill.style.background = SUBMISSION_STATUS_COLORS.read.bg;
+          pill.style.color = SUBMISSION_STATUS_COLORS.read.text;
+          pill.textContent = 'Read';
+        }
       }
     }
   }
@@ -635,13 +641,13 @@ async function openSubmissionDetail(formId, subId) {
         <div class="vs-sub-detail-divider"></div>
 
         <h3 class="text-sm font-semibold text-vs-text-secondary mb-3">Internal Notes</h3>
-        <textarea id="sub-detail-notes" class="vs-input" style="min-height: 80px; resize: vertical;" placeholder="Add private notes about this submission...">${escapeHtml(sub.notes || '')}</textarea>
-        <button id="btn-save-sub-notes" class="vs-btn vs-btn-secondary vs-btn-sm" style="margin-top: 8px;">Save Notes</button>
+        <textarea id="sub-detail-notes" class="vs-input" style="min-height: 80px; resize: vertical;" placeholder="${window.IS_DEMO ? 'Notes are read-only in demo mode.' : 'Add private notes about this submission...'}" ${window.IS_DEMO ? 'readonly' : ''}>${escapeHtml(sub.notes || '')}</textarea>
+        ${window.IS_DEMO ? '' : '<button id="btn-save-sub-notes" class="vs-btn vs-btn-secondary vs-btn-sm" style="margin-top: 8px;">Save Notes</button>'}
 
         <div class="vs-sub-detail-divider"></div>
 
         <h3 class="text-sm font-semibold text-vs-text-secondary mb-3">Change Status</h3>
-        <select id="sub-detail-status" class="vs-input">
+        <select id="sub-detail-status" class="vs-input" ${window.IS_DEMO ? 'disabled title="Demo mode — read-only"' : ''}>
           ${Object.entries(SUBMISSION_STATUS_COLORS).map(([key, conf]) =>
             `<option value="${key}" ${sub.status === key ? 'selected' : ''}>${conf.label}</option>`
           ).join('')}
@@ -666,6 +672,8 @@ async function openSubmissionDetail(formId, subId) {
 
   // Save notes
   document.getElementById('btn-save-sub-notes')?.addEventListener('click', async () => {
+    if (demoGuard()) return;
+    if (viewerGuard()) return;
     const notes = document.getElementById('sub-detail-notes')?.value || '';
     const { ok } = await api.put(`/forms/${encodeURIComponent(formId)}/submissions/${subId}`, { notes });
     showToast(ok ? 'Notes saved' : 'Failed to save notes', ok ? 'success' : 'error');
@@ -673,6 +681,8 @@ async function openSubmissionDetail(formId, subId) {
 
   // Status change from detail panel
   document.getElementById('sub-detail-status')?.addEventListener('change', async (e) => {
+    if (demoGuard()) { e.target.value = sub.status; return; }
+    if (viewerGuard()) return;
     const newStatus = e.target.value;
     const { ok } = await api.put(`/forms/${encodeURIComponent(formId)}/submissions/${subId}`, { status: newStatus });
     if (ok) {

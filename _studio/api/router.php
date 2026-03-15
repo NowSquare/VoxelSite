@@ -161,6 +161,8 @@ $routes = [
     ['PUT',    '/agentic/actions/bar-settings',                    'agentic-actions.php', true],
     ['GET',    '/agentic/actions/templates',                       'agentic-actions.php', true],
     ['POST',   '/agentic/actions/manifest',                        'agentic-actions.php', true],
+    ['GET',    '/agentic/manifest',                                 'agentic-actions.php', true],  // Preview Actions Bar (GET variant)
+    ['POST',   '/agentic/demo-submit',                               'agentic-actions.php', false], // Demo-safe submit stub (no auth — public preview)
     ['GET',    '/agentic/actions/:id',                             'agentic-actions.php', true],
     ['PUT',    '/agentic/actions/:id',                             'agentic-actions.php', true],
     ['DELETE', '/agentic/actions/:id',                             'agentic-actions.php', true],
@@ -298,6 +300,69 @@ foreach ($routes as [$routeMethod, $routePattern, $endpointFile, $requiresAuth])
         $_REQUEST['_user'] = $user;
     }
 
+    // ── Demo login: synthetic response, no DB interaction ──
+    // When .demo is active and the submitted credentials match the
+    // pre-filled demo pair, bypass Auth::login() entirely. This avoids:
+    // - Creating a users row (no ensureDemoUser needed)
+    // - Creating a sessions row
+    // - Writing an audit log entry
+    // - Updating last_login_at
+    if ($method === 'POST' && $path === '/auth/login' && DemoMode::isActive()) {
+        $body = getJsonBody();
+        $email = strtolower(trim($body['email'] ?? ''));
+        $password = $body['password'] ?? '';
+
+        if ($email === DemoMode::DEMO_EMAIL && $password === DemoMode::DEMO_PASSWORD) {
+            $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                     || (int)($_SERVER['SERVER_PORT'] ?? 0) === 443;
+            setcookie('vs_session', DemoMode::DEMO_SESSION_TOKEN, [
+                'expires'  => time() + (30 * 86400),
+                'path'     => '/_studio/',
+                'secure'   => $isSecure,
+                'httponly'  => true,
+                'samesite' => 'Lax',
+            ]);
+
+            // Return role='owner' to the frontend — all UI role gates pass.
+            // The backend constant has role='demo' for defense-in-depth.
+            jsonResponse(['ok' => true, 'data' => [
+                'token' => DemoMode::DEMO_SESSION_TOKEN,
+                'user'  => [
+                    'id'    => DemoMode::DEMO_USER['id'],
+                    'email' => DemoMode::DEMO_USER['email'],
+                    'name'  => DemoMode::DEMO_USER['name'],
+                    'role'  => 'owner',
+                ],
+            ]]);
+            exit;
+        }
+
+        // Non-demo credentials during demo mode: fall through to normal login.
+        // A real owner can still log in with their actual credentials.
+    }
+
+    // ── Demo Actions Bar: fake submit, no DB interaction ──
+    // When the preview Actions Bar submits a form in demo mode, return a
+    // synthetic success response. Matches the shape actions-bar.js reads:
+    // { ok: true, data: { ok: true, confirmation_code: '...' } }
+    if ($method === 'POST' && $path === '/agentic/demo-submit' && DemoMode::isActive()) {
+        jsonResponse(['ok' => true, 'data' => [
+            'ok'                => true,
+            'message'           => 'Thank you for your submission!',
+            'confirmation_code' => 'DEMO-' . strtoupper(substr(md5(microtime()), 0, 6)),
+        ]]);
+        exit;
+    }
+
+    // ── Demo: override GET data ──
+    // Replace live data with demo fixtures/synthetic responses
+    // for all routes in the override matrix. GET-only.
+    if (DemoMode::isActive() && DemoMode::shouldOverride($method, $path)) {
+        require __DIR__ . '/endpoints/demo-handler.php';
+        exit;
+    }
+
+    // ── Normal dispatch ──
     require $endpointPath;
     exit;
 }

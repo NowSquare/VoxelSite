@@ -1366,8 +1366,25 @@ async function openCodeEditorModal(initialPath = '') {
     metaEl.textContent = `${file.path} • ${size} • ${modified}`;
   };
 
+  // Global demo/permission guard (checked once at modal creation)
+  const isGlobalReadOnly = window.IS_DEMO || !window.canWrite?.();
+
+  // Per-file readonly: checks both global flag and file-level readonly metadata
+  const isCurrentFileReadOnly = () => {
+    if (isGlobalReadOnly) return true;
+    const file = getSelectedMeta();
+    return file?.readonly === true;
+  };
+
   const updateSaveButton = () => {
     if (!saveBtn) return;
+    const ro = isCurrentFileReadOnly();
+    if (ro) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Read Only';
+      setStatus('Read-only mode', 'muted');
+      return;
+    }
     const dirty = isDirty();
     saveBtn.disabled = !dirty;
     saveBtn.textContent = dirty ? 'Save Changes' : 'Saved';
@@ -1411,6 +1428,11 @@ async function openCodeEditorModal(initialPath = '') {
     const language = fileMeta?.language || getCodeLanguage(state.path);
     if (state.editor.setLanguage) {
       state.editor.setLanguage(language);
+    }
+
+    // Update readOnly per the newly-selected file's metadata
+    if (state.editor.setReadOnly) {
+      state.editor.setReadOnly(isCurrentFileReadOnly());
     }
 
     updateMeta();
@@ -1584,6 +1606,7 @@ async function openCodeEditorModal(initialPath = '') {
         insertSpaces: true,
         scrollBeyondLastLine: false,
         wordWrap: 'on',
+        readOnly: isCurrentFileReadOnly(),
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
       });
 
@@ -1596,13 +1619,14 @@ async function openCodeEditorModal(initialPath = '') {
             monaco.editor.setModelLanguage(model, language);
           }
         },
+        setReadOnly: (readOnly) => monacoEditor.updateOptions({ readOnly }),
         dispose: () => monacoEditor.dispose(),
       };
       state.editorCleanup = monacoEditor.onDidChangeModelContent(() => {
         updateSaveButton();
       });
     } else {
-      hostEl.innerHTML = '<textarea id="vs-code-editor-fallback" class="vs-textarea vs-code-fallback-input" spellcheck="false"></textarea>';
+      hostEl.innerHTML = `<textarea id="vs-code-editor-fallback" class="vs-textarea vs-code-fallback-input" spellcheck="false"${isCurrentFileReadOnly() ? ' readonly' : ''}></textarea>`;
       const textarea = hostEl.querySelector('#vs-code-editor-fallback');
       const inputHandler = () => updateSaveButton();
       textarea?.addEventListener('input', inputHandler);
@@ -1614,6 +1638,7 @@ async function openCodeEditorModal(initialPath = '') {
           textarea.value = value;
         },
         setLanguage: () => {},
+        setReadOnly: (readOnly) => { if (textarea) textarea.readOnly = readOnly; },
         dispose: () => {
           textarea?.removeEventListener('input', inputHandler);
         },

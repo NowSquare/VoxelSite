@@ -2948,7 +2948,6 @@ function bindAppEvents() {
     applyPublishStateUi();
 
     publishBtn.addEventListener('click', async () => {
-      if (demoGuard()) return;
       const publishState = ensurePublishState();
       if (publishState.publishing) return;
 
@@ -2970,6 +2969,7 @@ function bindAppEvents() {
         snapshotDefault,
       });
       if (!result) return;
+      if (demoGuard()) return;
 
       // Persist the snapshot preference
       localStorage.setItem('vs_publish_snapshot', String(result.createSnapshot));
@@ -3010,7 +3010,6 @@ function bindAppEvents() {
   if (publishMenuBtn) {
     publishMenuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (demoGuard()) return;
 
       // Close any existing dropup
       const existing = document.querySelector('.vs-publish-dropup');
@@ -3042,6 +3041,7 @@ function bindAppEvents() {
           danger: true,
         });
         if (!confirmed) return;
+        if (demoGuard()) return;
 
         setStatusText('Unpublishing...');
         const { ok, data, error } = await api.post('/publish/unpublish');
@@ -4197,7 +4197,6 @@ function bindWebsiteRefEvents() {
 
   if (globeBtn && sheet) {
     globeBtn.addEventListener('click', () => {
-      if (demoGuard()) return;
       if (viewerGuard()) return;
       updateGlobeSheet();
       clearUrlError();
@@ -4210,6 +4209,7 @@ function bindWebsiteRefEvents() {
 
   if (confirmBtn) {
     confirmBtn.addEventListener('click', async () => {
+      if (demoGuard()) return;
       const url = urlInput?.value?.trim();
 
       // Client-side format validation

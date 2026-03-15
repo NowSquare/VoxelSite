@@ -10,6 +10,9 @@ import { escapeHtml, escapeAttr, formatRelativeTime } from '../helpers.js';
 import { showToast } from '../ui/toasts.js';
 import { showConfirmModal, closeModal, onBackdropClick } from '../ui/modals.js';
 
+const demoGuard = () => window.demoGuard?.() || false;
+const viewerGuard = () => window.viewerGuard?.() || false;
+
 
 /**
  * Status badge color map for action records.
@@ -1050,6 +1053,8 @@ async function loadActionDetail(actionId) {
 
     // Bind save (Identity & Config card)
     document.getElementById('btn-save-action')?.addEventListener('click', async () => {
+      if (demoGuard()) return;
+      if (viewerGuard()) return;
       const updated = { ...action };
       updated.name = document.getElementById('action-name')?.value || action.name;
       updated.bar_button_label = document.getElementById('action-button-label')?.value || '';
@@ -1639,6 +1644,8 @@ async function loadActionDetail(actionId) {
 
     // Bind toggle active
     document.getElementById('btn-toggle-active')?.addEventListener('click', async () => {
+      if (demoGuard()) return;
+      if (viewerGuard()) return;
       const updated = { ...action, active: !isActive };
       const { ok: toggleOk } = await api.put(`/agentic/actions/${encodeURIComponent(actionId)}`, updated);
       if (toggleOk) {
@@ -1651,6 +1658,8 @@ async function loadActionDetail(actionId) {
 
     // Bind duplicate
     document.getElementById('btn-duplicate-action')?.addEventListener('click', async () => {
+      if (demoGuard()) return;
+      if (viewerGuard()) return;
       const confirmed = await showConfirmModal({
         title: 'Duplicate Action',
         description: `Create a copy of "${action.name}"? The copy will start as a draft.`,
@@ -1668,6 +1677,8 @@ async function loadActionDetail(actionId) {
 
     // Bind delete
     document.getElementById('btn-delete-action')?.addEventListener('click', async () => {
+      if (demoGuard()) return;
+      if (viewerGuard()) return;
       const confirmed = await showConfirmModal({
         title: 'Delete Action',
         description: `Delete "${action.name}"? This will permanently remove the action definition. Existing records will remain in the database but will no longer be accessible.`,
@@ -1728,9 +1739,10 @@ async function loadActionRecords(actionId, page = 1) {
           <input type="text" id="action-filter-search" class="vs-input vs-input-compact" placeholder="Search records..." value="${escapeHtml(search)}" style="min-width: 180px;" />
         </div>
         <div class="flex items-center gap-2">
-          <button id="btn-purge-records" class="vs-btn vs-btn-secondary vs-btn-sm" title="Remove old records" ${total === 0 ? 'disabled style="opacity:0.4;pointer-events:none;"' : ''}>
+          ${window.IS_DEMO ? '' : `<button id="btn-purge-records" class="vs-btn vs-btn-secondary vs-btn-sm" title="Remove old records" ${total === 0 ? 'disabled style="opacity:0.4;pointer-events:none;"' : ''}>
             ${icons.trash} Purge Old
-          </button>
+          </button>`}
+
           <button id="btn-export-action-csv" class="vs-btn vs-btn-secondary vs-btn-sm" ${total === 0 ? 'disabled style="opacity:0.4;pointer-events:none;"' : ''} title="${total === 0 ? 'No records to export' : 'Download records as CSV'}">
             ${icons.download} Export CSV
           </button>
@@ -1784,7 +1796,7 @@ async function loadActionRecords(actionId, page = 1) {
                     <td style="padding: 8px 12px; font-family: var(--vs-font-mono); font-size: 12px; color: var(--vs-accent);">${escapeHtml(rec.confirmation_code || '—')}</td>
                     <td style="padding: 8px 12px; color: var(--vs-text-secondary); max-width: 280px; overflow: hidden; white-space: nowrap;"><span style="display: inline-flex; align-items: center; max-width: 100%;"><span style="overflow: hidden; text-overflow: ellipsis;">${escapeHtml(preview)}</span>${attachIcon}</span></td>
                     <td style="padding: 8px 12px;">
-                      <select class="vs-input vs-input-compact vs-action-status-select" data-record-id="${rec.id}" style="font-size: 12px; padding: 2px 8px; min-width: auto;">
+                      <select class="vs-input vs-input-compact vs-action-status-select" data-record-id="${rec.id}" style="font-size: 12px; padding: 2px 8px; min-width: auto;" ${window.IS_DEMO ? 'disabled title="Demo mode — read-only"' : ''}>
                         ${Object.entries(ACTION_STATUS_COLORS).map(([key, conf]) =>
                           `<option value="${key}" ${rec.status === key ? 'selected' : ''}>${conf.label}</option>`
                         ).join('')}
@@ -1792,7 +1804,7 @@ async function loadActionRecords(actionId, page = 1) {
                     </td>
                     <td style="padding: 8px 12px; font-size: 12px; color: var(--vs-text-ghost);">${sourceLabel}</td>
                     <td style="padding: 8px 12px; font-size: 12px; color: var(--vs-text-ghost);">${formatRelativeTime(rec.created_at)}</td>
-                    <td style="padding: 8px 4px; width: 32px; text-align: center;">
+                    ${window.IS_DEMO ? '<td style="width: 32px;"></td>' : `<td style="padding: 8px 4px; width: 32px; text-align: center;">
                       <button type="button" class="vs-record-delete" data-rid="${rec.id}" title="Delete record" style="
                         border: none; background: none; cursor: pointer; padding: 4px; color: var(--vs-text-ghost);
                         display: inline-flex; align-items: center; border-radius: var(--radius-md);
@@ -1800,7 +1812,7 @@ async function loadActionRecords(actionId, page = 1) {
                       " onmouseenter="this.style.background='rgba(239,68,68,0.08)';this.style.color='#ef4444';" onmouseleave="this.style.background='none';this.style.color='var(--vs-text-ghost)';">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                       </button>
-                    </td>
+                    </td>`}
                   </tr>
                   <tr class="vs-record-detail" data-detail-for="${rec.id}" style="display: none;">
                     <td colspan="7" style="padding: 0 12px 12px 44px; background: var(--vs-bg-recessed, var(--vs-bg-ghost));">
@@ -1886,6 +1898,8 @@ async function loadActionRecords(actionId, page = 1) {
 
   container.querySelectorAll('.vs-action-status-select').forEach(sel => {
     sel.addEventListener('change', async (e) => {
+      if (demoGuard()) { sel.value = sel.querySelector('[selected]')?.value || 'pending'; return; }
+      if (viewerGuard()) return;
       const recId = e.target.dataset.recordId;
       const newStatus = e.target.value;
       const { ok: updateOk } = await api.put(`/agentic/actions/${encodeURIComponent(actionId)}/records/${recId}`, { status: newStatus });
@@ -1894,6 +1908,8 @@ async function loadActionRecords(actionId, page = 1) {
   });
 
   document.getElementById('btn-purge-records')?.addEventListener('click', async () => {
+    if (demoGuard()) return;
+    if (viewerGuard()) return;
     const purgeOptions = [
       { label: 'Older than 3 days', days: 3 },
       { label: 'Older than 1 week', days: 7 },
@@ -1965,6 +1981,8 @@ async function loadActionRecords(actionId, page = 1) {
   // Delete single record
   container.querySelectorAll('.vs-record-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
+      if (demoGuard()) return;
+      if (viewerGuard()) return;
       const rid = btn.dataset.rid;
       const confirmed = await showConfirmModal({
         title: 'Delete Record',
@@ -1985,6 +2003,7 @@ async function loadActionRecords(actionId, page = 1) {
 
   // Bind Export CSV button (proper file download via fetch)
   document.getElementById('btn-export-action-csv')?.addEventListener('click', async () => {
+    if (demoGuard()) return;
     const btn = document.getElementById('btn-export-action-csv');
     const origHTML = btn.innerHTML;
     btn.innerHTML = `${icons.loader} Exporting...`;

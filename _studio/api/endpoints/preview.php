@@ -52,13 +52,38 @@ if ($method === 'GET' && $path === '/preview') {
     $previewDir = $studioDir . '/preview';        // _studio/preview/
     $assetsDir  = dirname($studioDir) . '/assets'; // /assets/
 
+    // ── Demo mode: swap to demo directories ──
+    // When .demo is active, serve from _studio/demo/preview/ and
+    // _studio/demo/assets/ (CSS, JS), falling back to the live /assets/
+    // for shared resources (images, fonts, library).
+    $isDemoPreview = \VoxelSite\DemoMode::isActive();
+    if ($isDemoPreview) {
+        $previewDir = $studioDir . '/demo/preview';
+        $demoAssetsDir = $studioDir . '/demo/assets';
+    }
+
     // Determine which directory to look in
     if (str_starts_with($requestedPath, 'assets/')) {
         // Asset files: CSS, JS, images, fonts
         // Strip the 'assets/' prefix since the assets dir IS /assets/
         $relativePath = substr($requestedPath, 7); // Remove 'assets/'
-        $absolutePath = $assetsDir . '/' . $relativePath;
-        $securityBase = $assetsDir;
+
+        if ($isDemoPreview) {
+            // Two-tier lookup: demo assets first, then live shared assets.
+            // Demo has its own css/ and js/ copies. Shared resources
+            // (images, fonts, library) live only at the project-level /assets/.
+            $demoCandidate = $demoAssetsDir . '/' . $relativePath;
+            if (file_exists($demoCandidate)) {
+                $absolutePath = $demoCandidate;
+                $securityBase = $demoAssetsDir;
+            } else {
+                $absolutePath = $assetsDir . '/' . $relativePath;
+                $securityBase = $assetsDir;
+            }
+        } else {
+            $absolutePath = $assetsDir . '/' . $relativePath;
+            $securityBase = $assetsDir;
+        }
     } else {
         // HTML and other preview files
         $absolutePath = $previewDir . '/' . $requestedPath;
@@ -157,6 +182,27 @@ if ($method === 'GET' && $path === '/preview') {
         // after the AI regenerates them, causing an unstyled flash.
         $content = bustAssetCache($content, $assetsDir);
 
+        // ── Demo mode: rewrite CSS/JS asset URLs to go through preview API ──
+        // Without this, <link href="/assets/css/style.css"> loads directly from
+        // the live webroot, bypassing demo asset isolation. We rewrite these to
+        // /_studio/api/router.php?_path=/preview&path=assets/css/style.css
+        // which hits the two-tier demo asset resolution in this file.
+        // This mirrors the exact approach designs.php uses for saved designs.
+        if ($isDemoPreview) {
+            $previewBase = '/_studio/api/router.php?_path=%2Fpreview&path=';
+            $content = preg_replace_callback(
+                '/(href|src)=["\']\/([^"\'?#]+\.(css|js))(?:\?[^"\']*)?["\']/',
+                function (array $m) use ($previewBase) {
+                    $path = $m[2];
+                    if (str_starts_with($path, 'assets/css/') || str_starts_with($path, 'assets/js/')) {
+                        return $m[1] . '="' . $previewBase . urlencode($path) . '"';
+                    }
+                    return $m[0]; // Leave other assets (images, fonts, CDNs) as-is
+                },
+                $content
+            ) ?? $content;
+        }
+
         // Inject hot-reload into rendered HTML
         $content = injectHotReload($content);
 
@@ -165,6 +211,21 @@ if ($method === 'GET' && $path === '/preview') {
 
         // Inject Actions Bar for preview (if active actions exist)
         $content = injectActionsBar($content);
+
+        // When loaded as an embedded preview (iframe thumbnail), inject CSS
+        // to disable reveal animations. The iframe sandbox blocks JS, so
+        // IntersectionObserver never fires and sections stay invisible at
+        // opacity:0. Mirrors designs.php:218-227.
+        if (isset($_GET['embed'])) {
+            $revealOverride = '<style>'
+                . '[data-reveal],[data-reveal-stagger],[data-reveal-stagger]>*,'
+                . '.reveal,.reveal-child,.animate-on-scroll,.scroll-reveal{'
+                . 'opacity:1!important;transform:none!important;'
+                . 'visibility:visible!important;transition:none!important;'
+                . '}'
+                . '</style>';
+            $content = str_replace('</head>', $revealOverride . '</head>', $content);
+        }
 
         echo $content;
     } elseif (isTextType($extension)) {
@@ -184,6 +245,17 @@ if ($method === 'GET' && $path === '/preview') {
 // ═══════════════════════════════════════════
 
 if ($method === 'GET' && $path === '/preview/diff') {
+    // In demo mode, there are no "pending publish changes"
+    if (\VoxelSite\DemoMode::isActive()) {
+        jsonResponse(['ok' => true, 'data' => [
+            'changes'     => [],
+            'counts'      => ['added' => 0, 'modified' => 0, 'deleted' => 0],
+            'has_changes' => false,
+            'message'     => 'No pending publish changes.',
+        ]]);
+        return;
+    }
+
     $studioDir = dirname(__DIR__, 2);
     $previewDir = $studioDir . '/preview';
     $docRoot = dirname($studioDir);
@@ -802,20 +874,26 @@ HTML;
  */
 function injectActionsBar(string $html): string
 {
-    // Quick check: do active actions exist?
-    $actionsDir = dirname(__DIR__, 2) . '/data/actions';
-    if (!is_dir($actionsDir)) {
-        return $html;
-    }
-
     $hasActive = false;
-    foreach (glob($actionsDir . '/*.json') as $file) {
-        $content = file_get_contents($file);
-        if ($content !== false) {
-            $def = json_decode($content, true);
-            if (is_array($def) && ($def['active'] ?? false)) {
-                $hasActive = true;
-                break;
+
+    if (\VoxelSite\DemoMode::isActive()) {
+        // Demo mode has active actions defined in demo-handler.php
+        $hasActive = true;
+    } else {
+        // Quick check: do active actions exist?
+        $actionsDir = dirname(__DIR__, 2) . '/data/actions';
+        if (!is_dir($actionsDir)) {
+            return $html;
+        }
+
+        foreach (glob($actionsDir . '/*.json') as $file) {
+            $content = file_get_contents($file);
+            if ($content !== false) {
+                $def = json_decode($content, true);
+                if (is_array($def) && ($def['active'] ?? false)) {
+                    $hasActive = true;
+                    break;
+                }
             }
         }
     }

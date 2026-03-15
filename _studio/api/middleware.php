@@ -36,6 +36,19 @@ function authenticateRequest(): ?array
         return null;
     }
 
+    // ── Demo fast path ──
+    // If the cookie matches the deterministic demo token AND .demo is active,
+    // return the synthetic demo user without any DB query.
+    // If .demo was removed, this falls through to null → the DB lookup below
+    // also finds no matching session → returns null → 401.
+    if ($sessionId === \VoxelSite\DemoMode::DEMO_SESSION_TOKEN) {
+        if (\VoxelSite\DemoMode::isActive()) {
+            return \VoxelSite\DemoMode::DEMO_USER;  // role='demo' (backend)
+        }
+        return null;  // .demo removed → reject immediately
+    }
+
+    // ── Normal DB-backed session lookup ──
     $db = Database::getInstance();
     $now = gmdate('Y-m-d\TH:i:s\Z');
 

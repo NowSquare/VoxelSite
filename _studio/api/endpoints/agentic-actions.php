@@ -609,7 +609,7 @@ if ($method === 'GET' && ($path === '/agentic/templates' || $path === '/agentic/
 //  POST /agentic/manifest — Generate manifest
 // ═══════════════════════════════════════════
 
-if ($method === 'POST' && ($path === '/agentic/manifest' || $path === '/agentic/actions/manifest')) {
+if (($method === 'POST' || $method === 'GET') && ($path === '/agentic/manifest' || $path === '/agentic/actions/manifest')) {
     $manifest = $manager->generateManifest();
     jsonResponse(['ok' => true, 'data' => $manifest]);
     return;

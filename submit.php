@@ -8,8 +8,9 @@
  * assets/forms/{form_id}.json. The AI defines forms via JSON schemas;
  * this file processes them generically.
  *
- * Flow: validate form_id → load schema → spam check → validate fields
- *       → handle file uploads → store in SQLite → send notification → respond
+ * Flow: validate method → demo check → validate form_id → load schema
+ *       → spam check → validate fields → handle file uploads
+ *       → store in SQLite → send notification → respond
  *
  * Validation logic is shared with the MCP server via FormValidator.
  * File uploads and spam protection are web-only (this file only).
@@ -52,7 +53,16 @@ class FormHandler
             return;
         }
 
-        // 2. Extract and validate form_id, load schema
+        // 2. Demo mode: block all form submissions at the server level.
+        //    The client-side guard in form-handler.js provides UX polish,
+        //    but this check is the real safety net — works without JS,
+        //    against direct POST requests, and via curl/bots.
+        if (file_exists(__DIR__ . '/.demo')) {
+            $this->respond(403, 'Form submissions are disabled in demo mode.');
+            return;
+        }
+
+        // 3. Extract and validate form_id, load schema
         $formId = $_POST['form_id'] ?? null;
         if (!$formId || !is_string($formId)) {
             $this->respond(400, 'Invalid form identifier');
@@ -75,17 +85,17 @@ class FormHandler
             'fields'     => array_keys($_POST),
         ]);
 
-        // 3. Spam protection (web-only — MCP has its own rate limiting)
+        // 4. Spam protection (web-only — MCP has its own rate limiting)
         $spamResult = $this->checkSpam($schema, $formId);
         if ($spamResult !== true) {
             $this->respond(429, $spamResult);
             return;
         }
 
-        // 4. Validate non-file fields via shared FormValidator
+        // 5. Validate non-file fields via shared FormValidator
         $result = $this->validator->validate($schema, $_POST);
 
-        // 5. Handle file uploads (web-only — MCP doesn't support file uploads)
+        // 6. Handle file uploads (web-only — MCP doesn't support file uploads)
         $fileData = $this->processFileUploads($schema);
         if (!empty($fileData['errors'])) {
             foreach ($fileData['errors'] as $name => $error) {
@@ -106,7 +116,7 @@ class FormHandler
         // Merge file paths into validated data
         $data = array_merge($result['data'], $fileData['paths']);
 
-        // 6. Store submission
+        // 7. Store submission
         $submissionId = $this->store($formId, $data, $schema);
 
         Logger::info('forms', 'Submission stored', [
@@ -115,10 +125,10 @@ class FormHandler
             'field_count'   => count($data),
         ]);
 
-        // 7. Send notification (best-effort)
+        // 8. Send notification (best-effort)
         $this->notify($schema, $data, $submissionId);
 
-        // 8. Respond
+        // 9. Respond
         $successMessage = $schema['submission']['success_message'] ?? 'Thank you for your submission.';
         $redirect = $schema['submission']['success_redirect'] ?? null;
 

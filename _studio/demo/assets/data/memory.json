@@ -1,0 +1,46 @@
+{
+    "business_name": {
+        "value": "Studioform",
+        "confidence": "stated"
+    },
+    "business_type": {
+        "value": "brand and digital design studio",
+        "confidence": "stated"
+    },
+    "location": {
+        "value": "London, with remote clients",
+        "confidence": "stated"
+    },
+    "services": {
+        "value": [
+            "brand identity systems",
+            "website design",
+            "creative strategy"
+        ],
+        "confidence": "stated"
+    },
+    "clients": {
+        "value": "startups, cultural organisations, product companies",
+        "confidence": "stated"
+    },
+    "recent_projects": {
+        "value": [
+            "Complete rebrand for a Scandinavian furniture maker",
+            "Website and visual identity for a London architecture practice",
+            "Brand strategy for a direct-to-consumer skincare line"
+        ],
+        "confidence": "stated"
+    },
+    "design_philosophy": {
+        "value": "Minimal, considered, built to last — no trends, no decoration for its own sake",
+        "confidence": "stated"
+    },
+    "studio_size": {
+        "value": "Small practice — principals do the work directly, no juniors or account managers",
+        "confidence": "stated"
+    },
+    "site_approach": {
+        "value": "Portfolio-first. Clean, confident, generous white space. The work speaks.",
+        "confidence": "stated"
+    }
+}

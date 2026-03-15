@@ -10,9 +10,133 @@
  *
  * Once the user publishes their first site, this file is overwritten
  * by the AI-generated index.php.
+ *
+ * When demo mode is active (.demo file present), this renders the demo
+ * preview site instead, so visitors see a real website at the root URL.
  */
 
 declare(strict_types=1);
+
+// ── Demo mode: serve the demo preview site at / ──
+// When .demo is active, render the demo preview's index.php in-place
+// using the same chdir+include pattern as preview.php. CSS/JS assets
+// are inlined directly into the HTML for server-agnostic compatibility
+// (works on Apache, Nginx, Herd — no special config needed).
+//
+// The .htaccess fallback sends all unmatched URLs to index.php, so
+// inner page links like /work, /services also arrive here. We resolve
+// the requested page from REQUEST_URI and serve from the demo preview.
+$demoFile = __DIR__ . '/.demo';
+$demoPreviewDir = __DIR__ . '/_studio/demo/preview';
+
+if (file_exists($demoFile) && is_dir($demoPreviewDir)) {
+    // Resolve which page to serve from the demo preview directory
+    $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+    $requestUri = rtrim($requestUri, '/') ?: '/';
+    $demoPage = ($requestUri === '/') ? 'index.php' : ltrim($requestUri, '/') . '.php';
+    $demoPagePath = $demoPreviewDir . '/' . $demoPage;
+
+    // Security: don't allow path traversal and only serve files that exist
+    if (str_contains($demoPage, '..') || !file_exists($demoPagePath)) {
+        $demoPagePath = $demoPreviewDir . '/index.php'; // Fallback to homepage
+    }
+
+    $originalCwd = getcwd();
+    chdir($demoPreviewDir);
+
+    // Bust opcache for demo preview files
+    if (function_exists('opcache_invalidate')) {
+        opcache_invalidate($demoPagePath, true);
+        $partialsDir = $demoPreviewDir . '/_partials';
+        if (is_dir($partialsDir)) {
+            foreach (glob($partialsDir . '/*.php') as $partial) {
+                opcache_invalidate($partial, true);
+            }
+        }
+    }
+
+    ob_start();
+    try {
+        include $demoPagePath;
+    } catch (Throwable $e) {
+        ob_end_clean();
+        chdir($originalCwd);
+        // Fall through to the default placeholder below
+        goto defaultPlaceholder;
+    }
+    $content = ob_get_clean();
+    chdir($originalCwd);
+
+    // Inline CSS/JS from demo assets directly into the HTML.
+    // We can't rewrite URLs to /_studio/demo/assets/ because many web servers
+    // (Nginx/Herd, some Apache configs) don't serve files from _studio/ directly.
+    // Inlining is server-agnostic (works on Apache, Nginx, Herd, any environment)
+    // and eliminates extra round-trip requests. Total demo assets ~58KB — acceptable.
+    $demoAssetsDir = __DIR__ . '/_studio/demo/assets';
+
+    // Inline CSS: replace <link> tags with <style> blocks
+    $content = preg_replace_callback(
+        '/<link[^>]+href=["\']\/assets\/(css\/[^"\'?#]+\.css)(?:\?[^"\']*)?["\'][^>]*>/i',
+        function (array $m) use ($demoAssetsDir) {
+            $cssFile = $demoAssetsDir . '/' . $m[1];
+            if (file_exists($cssFile)) {
+                return '<style>' . file_get_contents($cssFile) . '</style>';
+            }
+            return $m[0]; // Leave as-is if file doesn't exist
+        },
+        $content
+    ) ?? $content;
+
+    // Inline JS: replace <script src> tags with inline <script> blocks
+    $content = preg_replace_callback(
+        '/<script[^>]+src=["\']\/assets\/(js\/[^"\'?#]+\.js)(?:\?[^"\']*)?["\'][^>]*><\/script>/i',
+        function (array $m) use ($demoAssetsDir) {
+            $jsFile = $demoAssetsDir . '/' . $m[1];
+            if (file_exists($jsFile)) {
+                return '<script>' . file_get_contents($jsFile) . '</script>';
+            }
+            return $m[0]; // Leave as-is if file doesn't exist
+        },
+        $content
+    ) ?? $content;
+
+    // Force reveal animations to be visible (no IntersectionObserver-dependent fading)
+    $revealCss = '<style>'
+        . '[data-reveal],[data-reveal-stagger],[data-reveal-stagger]>*,'
+        . '.reveal,.reveal-child,.animate-on-scroll,.scroll-reveal{'
+        . 'opacity:1!important;transform:none!important;'
+        . 'visibility:visible!important;'
+        . '}'
+        . '</style>';
+
+    // Inject a small banner linking to the Studio
+    $demoBanner = '<div style="position:fixed;bottom:0;left:0;right:0;z-index:9999;'
+        . 'background:rgba(14,14,17,0.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);'
+        . 'border-top:1px solid rgba(255,255,255,0.08);padding:10px 20px;'
+        . 'display:flex;align-items:center;justify-content:center;gap:12px;'
+        . 'font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;color:rgba(232,230,225,0.7);">'
+        . '<span>This is a demo preview</span>'
+        . '<a href="/_studio/" style="display:inline-flex;align-items:center;gap:6px;'
+        . 'padding:6px 14px;border-radius:6px;background:rgba(244,160,36,0.15);'
+        . 'color:#f4a024;text-decoration:none;font-weight:500;font-size:12px;'
+        . 'border:1px solid rgba(244,160,36,0.25);transition:all 0.15s ease;" '
+        . 'onmouseover="this.style.background=\'rgba(244,160,36,0.25)\'" '
+        . 'onmouseout="this.style.background=\'rgba(244,160,36,0.15)\'">'
+        . 'Open Studio →</a></div>';
+
+    // Inject demo meta tag so form-handler.js can detect demo context
+    // and suppress form submissions (same pattern as Studio preview detection)
+    $demoMeta = '<meta name="voxelsite-demo" content="1">';
+    $content = str_replace('</head>', $demoMeta . $revealCss . '</head>', $content);
+    $content = str_replace('</body>', $demoBanner . '</body>', $content);
+
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-cache, no-store, must-revalidate');
+    echo $content;
+    exit;
+}
+
+defaultPlaceholder:
 
 // ── Try to load site name from Studio settings ──
 $siteName = 'VoxelSite';

@@ -1,0 +1,9 @@
+/* Preflight resets */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+a{color:inherit;text-decoration:none}
+ul,ol{list-style:none;margin:0;padding:0}
+img,svg,video,canvas{display:block;max-width:100%}
+h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}
+button,input,select,textarea{font:inherit;color:inherit}
+table{border-collapse:collapse;border-spacing:0}
+.flex{display:flex}.hidden{display:none}.items-center{align-items:center}.gap-10{gap:2.5rem}.bg-transparent{background-color:transparent}.border-0{border-width:0px}.cursor-pointer{cursor:pointer}

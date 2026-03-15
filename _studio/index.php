@@ -14,20 +14,24 @@ declare(strict_types=1);
 require_once __DIR__ . '/engine/bootstrap.php';
 
 // ── Redirect to installer if not set up ──
-if (!isInstalled()) {
+// Demo mode bypasses this check — it doesn't need a database.
+// All data comes from fixture files in _studio/demo/.
+if (!\VoxelSite\DemoMode::isActive() && !isInstalled()) {
     header('Location: /_studio/install.php');
     exit;
 }
 
 // ── Run pending migrations (auto-upgrade on first load after update) ──
-try {
-    $migrator = new \VoxelSite\Migrator();
-    $migrator->run();
-} catch (\Throwable $e) {
-    // Non-fatal: log but don't block Studio access
-    \VoxelSite\Logger::error('system', 'Auto-migration failed', [
-        'exception' => $e->getMessage(),
-    ]);
+if (!\VoxelSite\DemoMode::isActive()) {
+    try {
+        $migrator = new \VoxelSite\Migrator();
+        $migrator->run();
+    } catch (\Throwable $e) {
+        // Non-fatal: log but don't block Studio access
+        \VoxelSite\Logger::error('system', 'Auto-migration failed', [
+            'exception' => $e->getMessage(),
+        ]);
+    }
 }
 
 // ── Resolve asset paths relative to _studio ──

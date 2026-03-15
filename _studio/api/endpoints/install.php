@@ -22,8 +22,8 @@ use VoxelSite\Settings;
 $method = $_REQUEST['_route_method'];
 $path = $_REQUEST['_route_path'];
 
-// ── Guard: refuse if already installed ──
-if (isInstalled()) {
+// ── Guard: refuse if already installed or in demo mode ──
+if (\VoxelSite\DemoMode::isActive() || isInstalled()) {
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => ['code' => 'already_installed', 'message' => 'VoxelSite is already installed.']]);
     exit;

@@ -21,8 +21,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/engine/bootstrap.php';
 
-// ── Already installed? Get out. ──
-if (isInstalled()) {
+// ── Already installed or in demo mode? Get out. ──
+if (\VoxelSite\DemoMode::isActive() || isInstalled()) {
     header('Location: /_studio/');
     exit;
 }

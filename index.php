@@ -109,23 +109,14 @@ if (file_exists($demoFile) && is_dir($demoPreviewDir)) {
         . '}'
         . '</style>';
 
-    // Inject a small banner linking to the Studio
-    $demoBanner = '<div style="position:fixed;bottom:0;left:0;right:0;z-index:9999;'
-        . 'background:rgba(14,14,17,0.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);'
-        . 'border-top:1px solid rgba(255,255,255,0.08);padding:10px 20px;'
-        . 'display:flex;align-items:center;justify-content:center;gap:12px;'
-        . 'font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;color:rgba(232,230,225,0.7);">'
-        . '<span>This is a demo preview</span>'
-        . '<a href="/_studio/" style="display:inline-flex;align-items:center;gap:6px;'
-        . 'padding:6px 14px;border-radius:6px;background:rgba(244,160,36,0.15);'
-        . 'color:#f4a024;text-decoration:none;font-weight:500;font-size:12px;'
-        . 'border:1px solid rgba(244,160,36,0.25);transition:all 0.15s ease;" '
-        . 'onmouseover="this.style.background=\'rgba(244,160,36,0.25)\'" '
-        . 'onmouseout="this.style.background=\'rgba(244,160,36,0.15)\'">'
-        . 'Open Studio →</a></div>';
+    // Shared banner helper — single source of truth for hide_banner
+    // parsing and banner HTML across all root entrypoints.
+    require_once __DIR__ . '/_studio/data/demo-root-banner.php';
+    $hideBanner = vsDemoShouldHideBanner($demoFile);
+    $demoBanner = vsDemoRootBannerHtml($hideBanner);
 
     // Inject demo meta tag so form-handler.js can detect demo context
-    // and suppress form submissions (same pattern as Studio preview detection)
+    // and suppress form submissions (always injected, even when banner hidden)
     $demoMeta = '<meta name="voxelsite-demo" content="1">';
     $content = str_replace('</head>', $demoMeta . $revealCss . '</head>', $content);
     $content = str_replace('</body>', $demoBanner . '</body>', $content);

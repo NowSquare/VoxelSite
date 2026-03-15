@@ -23,9 +23,9 @@ declare(strict_types=1);
  */
 
 use VoxelSite\DemoMode;
+use VoxelSite\DemoDataProvider;
 
-// DemoDataProvider will be loaded when created.
-// For now, stub responses are inline until the full class is built.
+require_once dirname(__DIR__, 2) . '/engine/DemoDataProvider.php';
 
 $path   = $_REQUEST['_route_path'] ?? '';
 $params = $_REQUEST['_route_params'] ?? [];
@@ -42,7 +42,7 @@ if ($path === '/auth/session') {
         // ── Demo session: return synthetic data ──
         // No auth.php needed — there's no DB session to look up
         jsonResponse(['ok' => true, 'data' => [
-            'site_name' => 'Studioform',  // TODO: DemoDataProvider::siteName()
+            'site_name' => DemoDataProvider::siteName(),
             'user'      => [
                 'id'    => DemoMode::DEMO_USER['id'],
                 'email' => DemoMode::DEMO_USER['email'],
@@ -64,7 +64,7 @@ if ($path === '/auth/session') {
 
     $response = json_decode($output, true);
     if ($response && ($response['ok'] ?? false)) {
-        $response['data']['site_name'] = 'Studioform';  // TODO: DemoDataProvider::siteName()
+        $response['data']['site_name'] = DemoDataProvider::siteName();
         // Do NOT change the role — they're a real user
     }
 
@@ -2062,36 +2062,7 @@ if ($path === '/settings/logs/download') {
 // ═══════════════════════════════════════════
 
 if ($path === '/team') {
-    // TODO: Replace with DemoDataProvider::team()
-    $now = gmdate('Y-m-d\TH:i:s\Z');
-    jsonResponse(['ok' => true, 'data' => [
-        'members' => [
-            [
-                'id'            => 0,
-                'name'          => 'Demo User',
-                'email'         => 'demo@example.com',
-                'role'          => 'owner',
-                'created_at'    => $now,
-                'last_login_at' => $now,
-            ],
-            [
-                'id'            => 1,
-                'name'          => 'Lena Voss',
-                'email'         => 'lena@example.com',
-                'role'          => 'editor',
-                'created_at'    => gmdate('Y-m-d\TH:i:s\Z', time() - 86400 * 14),
-                'last_login_at' => gmdate('Y-m-d\TH:i:s\Z', time() - 3600 * 3),
-            ],
-            [
-                'id'            => 2,
-                'name'          => 'Marcus Chen',
-                'email'         => 'marcus@example.com',
-                'role'          => 'viewer',
-                'created_at'    => gmdate('Y-m-d\TH:i:s\Z', time() - 86400 * 7),
-                'last_login_at' => gmdate('Y-m-d\TH:i:s\Z', time() - 3600 * 8),
-            ],
-        ],
-    ]]);
+    jsonResponse(['ok' => true, 'data' => DemoDataProvider::team()]);
     return;
 }
 

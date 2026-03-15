@@ -3,6 +3,13 @@
  *
  * Team member management: list, add, edit, delete, password reset.
  * Includes role permissions modal. Owner-only access.
+ *
+ * Event architecture:
+ *   - initTeamView() attaches all listeners ONCE (topbar buttons,
+ *     modals, Escape key, delegated row-action handler on #team-list)
+ *   - loadTeamMembers() is fetch-and-render ONLY — no listener work
+ *   - Row buttons (Edit / Reset PW / Remove) use event delegation
+ *     on #team-list, so dynamically injected rows work immediately
  */
 
 import { api } from '../../api.js';
@@ -12,9 +19,16 @@ import { escapeHtml, generatePassword } from '../helpers.js';
 import { showToast } from '../ui/toasts.js';
 import { showConfirmModal } from '../ui/modals.js';
 
+/** Track whether initTeamView() has been called this mount cycle */
+let _teamInitialized = false;
+
 
 export function renderTeamView() {
-  setTimeout(() => loadTeamMembers(), 0);
+  _teamInitialized = false;
+  setTimeout(() => {
+    initTeamView();
+    loadTeamMembers();
+  }, 0);
 
   return `
     <div>
@@ -223,6 +237,10 @@ function renderTeamMember(member) {
   `;
 }
 
+
+/**
+ * Fetch and render team members. No event binding — that's initTeamView's job.
+ */
 async function loadTeamMembers() {
   const listEl = document.getElementById('team-list');
   if (!listEl) return;
@@ -241,69 +259,90 @@ async function loadTeamMembers() {
   } else {
     listEl.innerHTML = members.map(m => renderTeamMember(m)).join('');
   }
-
-  bindTeamEvents();
 }
 
-function bindTeamEvents() {
-  // Add member button
+
+/**
+ * One-time event setup. Called once per mount cycle.
+ *
+ * Uses event delegation on #team-list so dynamically inserted rows
+ * (after add/edit/delete) work immediately without rebinding.
+ */
+function initTeamView() {
+  if (_teamInitialized) return;
+  _teamInitialized = true;
+
+  // ── Topbar buttons (stable DOM, never replaced) ──
+
   document.getElementById('btn-add-member')?.addEventListener('click', () => {
     openTeamModal();
   });
 
-  // Show roles button
   document.getElementById('btn-show-roles')?.addEventListener('click', openRolesModal);
 
-  // Clickable role badges → open permissions modal
-  document.querySelectorAll('[data-role-info]').forEach(badge => {
-    badge.addEventListener('click', openRolesModal);
-  });
+  // ── Delegated row-action handler on #team-list ──
+  // Covers: edit, delete, password reset, role badge click
+  // These survive innerHTML replacement because the listener is on the container.
 
-  // Edit buttons
-  document.querySelectorAll('.team-edit-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset.id;
-      const { ok, data } = await api.get('/team');
-      if (ok) {
-        const member = data.members.find(m => m.id == id);
-        if (member) openTeamModal(member);
+  const listEl = document.getElementById('team-list');
+  if (listEl) {
+    listEl.addEventListener('click', async (e) => {
+      const target = /** @type {HTMLElement} */ (e.target);
+
+      // Role badge → permissions modal
+      const roleBadge = target.closest('[data-role-info]');
+      if (roleBadge) {
+        openRolesModal();
+        return;
+      }
+
+      // Edit button
+      const editBtn = target.closest('.team-edit-btn');
+      if (editBtn) {
+        const id = editBtn.dataset.id;
+        const { ok, data } = await api.get('/team');
+        if (ok) {
+          const member = data.members.find(m => m.id == id);
+          if (member) openTeamModal(member);
+        }
+        return;
+      }
+
+      // Delete button
+      const deleteBtn = target.closest('.team-delete-btn');
+      if (deleteBtn) {
+        const id = deleteBtn.dataset.id;
+        const name = deleteBtn.dataset.name;
+        const confirmed = await showConfirmModal({
+          title: 'Remove Team Member',
+          description: `Remove ${name} from the team? They will lose access to this Studio immediately.`,
+          confirmLabel: 'Remove',
+          danger: true,
+        });
+        if (!confirmed) return;
+        const { ok, error } = await api.delete(`/team/${id}`);
+        if (ok) {
+          showToast(`${name} has been removed.`, 'success');
+          await loadTeamMembers();
+        } else {
+          showToast(error?.message || 'Failed to remove member.', 'error');
+        }
+        return;
+      }
+
+      // Password reset button
+      const pwBtn = target.closest('.team-pw-btn');
+      if (pwBtn) {
+        const id = pwBtn.dataset.id;
+        const name = pwBtn.dataset.name;
+        openPasswordResetModal(id, name);
+        return;
       }
     });
-  });
+  }
 
-  // Delete buttons
-  document.querySelectorAll('.team-delete-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset.id;
-      const name = btn.dataset.name;
-      const confirmed = await showConfirmModal({
-        title: 'Remove Team Member',
-        description: `Remove ${name} from the team? They will lose access to this Studio immediately.`,
-        confirmLabel: 'Remove',
-        danger: true,
-      });
-      if (!confirmed) return;
-      const { ok, error } = await api.delete(`/team/${id}`);
-      if (ok) {
-        showToast(`${name} has been removed.`, 'success');
-        loadTeamMembers();
-      } else {
-        showToast(error?.message || 'Failed to remove member.', 'error');
-      }
-    });
-  });
+  // ── Modal overlay clicks — only close if mousedown AND click both land on backdrop ──
 
-  // Password reset buttons
-  document.querySelectorAll('.team-pw-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.id;
-      const name = btn.dataset.name;
-      openPasswordResetModal(id, name);
-    });
-  });
-
-  // Modal overlay clicks — only close if mousedown AND click both land on backdrop
-  // (prevents accidental close when selecting text and dragging outside)
   [
     ['[data-team-modal-overlay]', closeTeamModal],
     ['[data-team-pw-overlay]', closePasswordModal],
@@ -316,12 +355,14 @@ function bindTeamEvents() {
     el.addEventListener('click', (e) => { if (e.target === el && mdt === el) fn(); });
   });
 
-  // Modal buttons
+  // ── Modal buttons ──
+
   document.getElementById('btn-team-cancel')?.addEventListener('click', closeTeamModal);
   document.getElementById('btn-pw-cancel')?.addEventListener('click', closePasswordModal);
   document.getElementById('btn-roles-close')?.addEventListener('click', closeRolesModal);
 
-  // Generate password buttons
+  // ── Generate password buttons ──
+
   document.getElementById('btn-generate-password')?.addEventListener('click', () => {
     const input = document.getElementById('team-member-password');
     if (input) input.value = generatePassword();
@@ -331,13 +372,13 @@ function bindTeamEvents() {
     if (input) input.value = generatePassword();
   });
 
-  // Save member
-  document.getElementById('btn-team-save')?.addEventListener('click', saveTeamMember);
+  // ── Save handlers ──
 
-  // Save password
+  document.getElementById('btn-team-save')?.addEventListener('click', saveTeamMember);
   document.getElementById('btn-pw-save')?.addEventListener('click', saveTeamPassword);
 
-  // Escape key closes any open team modal
+  // ── Escape key (global, but only one listener) ──
+
   document.addEventListener('keydown', handleTeamEscape);
 }
 
@@ -470,7 +511,7 @@ async function saveTeamMember() {
   if (result.ok) {
     closeTeamModal();
     showToast(editId ? 'Member updated.' : `${name} has been added to the team.`, 'success');
-    loadTeamMembers();
+    await loadTeamMembers();
   } else {
     errorEl.textContent = result.error?.message || 'Something went wrong.';
     errorEl.classList.remove('hidden');
@@ -505,5 +546,3 @@ async function saveTeamPassword() {
     errorEl.classList.remove('hidden');
   }
 }
-
-

@@ -75,7 +75,7 @@ function renderEditorLayout() {
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
             </button>
             <!-- Tab Bar -->
-            <div id="editor-tab-bar" class="vs-editor-tabs" style="flex: 1; border-bottom: none; min-width: 0; scroll-behavior: auto;">
+            <div id="editor-tab-bar" class="vs-editor-tabs" style="flex: 1; min-width: 0; scroll-behavior: auto;">
               <div class="vs-editor-tab-empty"></div>
             </div>
             <!-- Scroll Right Button -->
@@ -106,7 +106,7 @@ function renderEditorLayout() {
             <div class="vs-empty-state-inner">
               <div class="vs-empty-state-icon">${icons.fileCode}</div>
               <p class="vs-empty-state-title">No file open</p>
-              <p class="vs-empty-state-desc">Select a file from the explorer to start editing, or create a new file.</p>
+              <p class="vs-empty-state-desc">Select a file from the explorer to start editing,<br>or create a new file.</p>
             </div>
           </div>
           <div id="editor-monaco-container" style="width:100%;height:100%;display:none;"></div>

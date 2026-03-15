@@ -85,6 +85,7 @@
   --color-vs-success: #16A34A;
   --color-vs-warning: #CA8A04;
   --color-vs-error: #DC2626;
+  --color-vs-info: #2563EB;
 
   --shadow-sm: none;
   --shadow-md: none;
@@ -127,9 +128,11 @@
   --vs-success: #16A34A;
   --vs-warning: #CA8A04;
   --vs-error: #DC2626;
+  --vs-info: #2563EB;
   --vs-success-dim: rgba(22, 163, 74, 0.07);
   --vs-warning-dim: rgba(202, 138, 4, 0.07);
   --vs-error-dim: rgba(220, 38, 38, 0.07);
+  --vs-info-dim: rgba(37, 99, 235, 0.07);
 
   --vs-shadow-sm: none;
   --vs-shadow-md: none;
@@ -180,9 +183,11 @@
   --vs-success: #4ADE80;
   --vs-warning: #FBBF24;
   --vs-error: #F87171;
+  --vs-info: #60A5FA;
   --vs-success-dim: rgba(74, 222, 128, 0.10);
   --vs-warning-dim: rgba(251, 191, 36, 0.10);
   --vs-error-dim: rgba(248, 113, 113, 0.10);
+  --vs-info-dim: rgba(96, 165, 250, 0.10);
 
   --vs-shadow-sm: none;
   --vs-shadow-md: none;
@@ -2476,23 +2481,164 @@ select.vs-input {
 
 .vs-toast {
   pointer-events: auto;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   background: var(--vs-bg-surface);
   border: 1px solid var(--vs-border-subtle);
   border-radius: var(--radius-xl);
-  padding: 12px 16px;
-  box-shadow: var(--vs-shadow-lg);
+  padding: 11px 36px 11px 14px;
+  /* Toast-specific shadow — intentionally not using global shadow tokens */
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.10),
+    0 1px 3px rgba(0, 0, 0, 0.06);
   font-size: var(--text-sm);
   color: var(--vs-text-primary);
-  animation: slide-in-right 300ms var(--ease-out) both;
-  max-width: 360px;
+  animation: vs-toast-in 280ms var(--ease-out) both;
+  max-width: 380px;
+  overflow: hidden;
+  line-height: 1.45;
 }
 
+[data-theme="dark"] .vs-toast {
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.30),
+    0 1px 4px rgba(0, 0, 0, 0.20);
+}
+
+@keyframes vs-toast-in {
+  from { opacity: 0; transform: translateX(16px) scale(0.96); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+.vs-toast-exit {
+  animation: vs-toast-out 200ms var(--ease-out) forwards;
+}
+
+@keyframes vs-toast-out {
+  from { opacity: 1; transform: translateX(0) scale(1); }
+  to   { opacity: 0; transform: translateX(8px) scale(0.97); }
+}
+
+/* ── Type variants — left accent border ── */
 .vs-toast-success { border-left: 3px solid var(--vs-success); }
 .vs-toast-error   { border-left: 3px solid var(--vs-error); }
 .vs-toast-warning { border-left: 3px solid var(--vs-warning); }
+.vs-toast-info    { border-left: 3px solid var(--vs-info); }
+
+/* ── Icon slot ── */
+.vs-toast-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.vs-toast-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.vs-toast-success .vs-toast-icon { color: var(--vs-success); }
+.vs-toast-error   .vs-toast-icon { color: var(--vs-error); }
+.vs-toast-warning .vs-toast-icon { color: var(--vs-warning); }
+.vs-toast-info    .vs-toast-icon { color: var(--vs-info); }
+
+/* ── Message slot ── */
+.vs-toast-message {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Dismiss button ── */
+.vs-toast-dismiss {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 100%;
+  background: none;
+  border: none;
+  color: var(--vs-text-ghost);
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.vs-toast:hover .vs-toast-dismiss {
+  opacity: 1;
+}
+
+.vs-toast-dismiss:hover {
+  color: var(--vs-text-primary);
+}
+
+.vs-toast-dismiss svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ── Action button ── */
+.vs-toast-action {
+  margin-left: 8px;
+  background: none;
+  border: none;
+  color: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-size: inherit;
+  padding: 0;
+  opacity: 0.85;
+  transition: opacity 120ms ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.vs-toast-action:hover {
+  opacity: 1;
+}
+
+/* ── Auto-dismiss progress bar ── */
+.vs-toast-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 0 0 0 var(--radius-xl);
+  animation: vs-toast-progress-shrink linear forwards;
+  will-change: width;
+}
+
+.vs-toast-success .vs-toast-progress { background: var(--vs-success); opacity: 0.35; }
+.vs-toast-error   .vs-toast-progress { background: var(--vs-error);   opacity: 0.35; }
+.vs-toast-warning .vs-toast-progress { background: var(--vs-warning); opacity: 0.35; }
+.vs-toast-info    .vs-toast-progress { background: var(--vs-info);    opacity: 0.35; }
+
+@keyframes vs-toast-progress-shrink {
+  from { width: 100%; }
+  to   { width: 0%; }
+}
+
+/* Pause progress on hover — gives the user time to read or click */
+.vs-toast:hover .vs-toast-progress {
+  animation-play-state: paused;
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .vs-toast { animation-duration: 0ms; }
+  .vs-toast-exit { animation-duration: 0ms; }
+  .vs-toast-progress { animation-duration: 0ms !important; }
+}
 
 
 /* ═══════════════════════════════════════════ */
@@ -6149,7 +6295,6 @@ select.vs-input {
    is multiplicative and can't be overridden on children. */
 .vx-editing .vs-preview-toolbar { pointer-events: none; }
 .vx-editing .vs-device-toggle,
-.vx-editing #btn-edit-code,
 .vx-editing #btn-refresh-preview,
 .vx-editing #btn-save-design,
 .vx-editing #btn-external-preview { opacity: 0.35; }
@@ -6168,7 +6313,6 @@ select.vs-input {
 .vs-ai-streaming .vs-statusbar { pointer-events: none; opacity: 0.5; transition: opacity 200ms ease; }
 .vs-ai-streaming .vs-preview-toolbar { pointer-events: none; }
 .vs-ai-streaming .vs-device-toggle,
-.vs-ai-streaming #btn-edit-code,
 .vs-ai-streaming #btn-refresh-preview,
 .vs-ai-streaming #btn-save-design,
 .vs-ai-streaming #btn-external-preview,

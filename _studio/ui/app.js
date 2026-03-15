@@ -29,7 +29,7 @@ import { initVisualEditor, toggleVisualEditor, deactivateVisualEditor, isVisualE
 // ═══════════════════════════════════════════
 
 import { icons } from './src/icons.js';
-import { renderEditorLayout, initEditorPage, monacoThemeForCurrentUi, ensureMonacoReady, openCodeEditorModal } from './src/views/editor.js';
+import { renderEditorLayout, initEditorPage, monacoThemeForCurrentUi, ensureMonacoReady } from './src/views/editor.js';
 import { renderSettingsView, loadSettings, confirmUnsavedChanges, bindSettingsEvents, bindEmailSettingsEvents } from './src/views/settings.js';
 import { renderActionsView, renderActionDetailView } from './src/views/actions.js';
 import { renderFormsView, renderFormDetailView } from './src/views/forms.js';
@@ -565,12 +565,10 @@ function renderDashboardLayout() {
             <button class="vs-device-btn" data-device="mobile" title="Mobile">${icons.smartphone}</button>
           </div>
           <div class="flex items-center gap-1">
-            <button id="btn-visual-editor" class="vs-btn vs-btn-ghost vs-btn-xs" title="Visual editor (V)">
-              ${icons.pencil} Visual
+            <button id="btn-visual-editor" class="vs-btn vs-btn-ghost vs-btn-xs" title="Enter visual editor (V)">
+              ${icons.pencil} Edit
             </button>
-            <button id="btn-edit-code" class="vs-btn vs-btn-ghost vs-btn-xs" title="Source code editor">
-              ${icons.fileCode} Code
-            </button>
+            <div class="vs-topbar-divider"></div>
             <button id="btn-refresh-preview" class="vs-btn vs-btn-ghost vs-btn-xs" title="Refresh Preview">
               ${icons.rotateCcw} Refresh
             </button>
@@ -3208,15 +3206,6 @@ function bindAppEvents() {
   const visualEditorBtn = document.getElementById('btn-visual-editor');
   if (visualEditorBtn) {
     visualEditorBtn.addEventListener('click', () => toggleVisualEditor());
-  }
-
-  // Edit Code button (opens current preview page in code editor)
-  const editCodeBtn = document.getElementById('btn-edit-code');
-  if (editCodeBtn) {
-    editCodeBtn.addEventListener('click', () => {
-      const currentPath = window.__vsCurrentPreviewPath || 'index.php';
-      openCodeEditorModal(currentPath);
-    });
   }
 
   // Refresh Preview button

@@ -2616,7 +2616,8 @@ function updateEditorUI() {
   const btn = document.getElementById('btn-visual-editor');
   if (btn) {
     btn.classList.toggle('vx-editor-active', editorActive);
-    btn.title = editorActive ? 'Exit visual editor (V)' : 'Visual editor (V)';
+    btn.title = editorActive ? 'Exit visual editor (V)' : 'Enter visual editor (V)';
+    btn.setAttribute('aria-pressed', String(editorActive));
   }
   document.body.classList.toggle('vx-editing', editorActive);
 }

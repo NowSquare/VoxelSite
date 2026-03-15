@@ -83,6 +83,22 @@ Your content, settings, and data are preserved automatically.
 - Keep regular backups of `_studio/data/`, `assets/`, and `_data/`
 - Do not remove the shipped `.htaccess` files — they protect the Studio, data, and uploaded files
 
+## Demo Mode
+
+Show the Studio to others without giving them real access:
+
+1. Create an empty `.demo` file in the project root: `touch .demo`
+2. The login page pre-fills demo credentials (`demo@example.com` / `welcome3210`)
+3. The Studio runs in **read-only mode** — write operations (publish, delete, AI generation) are blocked. The preview Actions Bar remains interactive but uses a safe stub that does not write real data
+4. A persistent DEMO badge appears in the top bar
+5. Your website's root URL serves the **demo preview site** (a complete, styled website) with a subtle "Open Studio →" banner
+6. The Designs gallery shows 6 curated designs with unique, industry-specific landing page previews
+7. To disable: `rm .demo` (instant, no restart needed)
+
+Demo mode does not modify your live workspace. It reads from shipped fixture data for Code Editor, Forms, Actions, Assets, Settings, Designs, and Team. AI Chat and snapshot history show empty states. Real owner login still works alongside the demo session.
+
+> **The `.demo` file is an installation-wide switch.** When it exists, all Studio API writes and all form submissions via `submit.php` are blocked — not just the demo preview. If your site is published, unpublish it first so the default `index.php` (which includes demo detection) is restored and live forms are not silently disabled.
+
 ## Support
 
 Full documentation at **[voxelsite.com/docs](https://voxelsite.com/docs)**

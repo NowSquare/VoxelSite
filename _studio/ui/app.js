@@ -1968,8 +1968,9 @@ function bindMobileEvents() {
     mobileLogoutBtn.addEventListener('click', async () => {
       closeMoreSheet();
       await api.post('/auth/logout');
-      store.set('user', null);
-      window.location.reload();
+      // Full navigation ensures clean SPA bootstrap — the router,
+      // store, and all event listeners start fresh.
+      window.location.href = '/_studio/';
     });
   }
 }
@@ -2877,8 +2878,9 @@ function bindAppEvents() {
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
       await api.post('/auth/logout');
-      store.set('user', null);
-      window.location.reload();
+      // Full navigation ensures clean SPA bootstrap — the router,
+      // store, and all event listeners start fresh.
+      window.location.href = '/_studio/';
     });
   }
 

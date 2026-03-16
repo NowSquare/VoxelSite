@@ -453,7 +453,15 @@
     e.preventDefault(); e.stopPropagation();
     const el = findEditableAncestor(e.target);
     if (!el) return;
-    if (selectedEl && selectedEl !== el) deselectElement();
+
+    // Toggle: clicking the already-selected element deselects it
+    if (selectedEl === el) {
+      deselectElement();
+      notifyParent({ type: 'vx-editor:deselect' });
+      return;
+    }
+
+    if (selectedEl) deselectElement();
     originalClasses = null;
     selectedEl = el;
     updateSelectionHighlight(el);

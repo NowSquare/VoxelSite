@@ -259,8 +259,10 @@ if ($method === 'POST' && $path === '/publish') {
                 }
             }
 
-            // Inject bar references into published pages
+            // Inject bar references into published pages (production footer)
             $fileManager->injectActionsBarIntoFooter($docRoot);
+            // Also inject into preview footer so diff reports zero changes
+            $fileManager->injectActionsBarIntoFooter(null);
         }
     } catch (\Throwable $e) {
         $errors[] = 'Actions Bar deployment: ' . $e->getMessage();

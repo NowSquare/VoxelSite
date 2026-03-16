@@ -203,6 +203,22 @@ if ($method === 'GET' && $path === '/preview') {
             ) ?? $content;
         }
 
+        // ── Prevent Flash of Unstyled Content (demo mode) ──
+        // In demo mode, CSS is routed through the PHP API (slower than
+        // static file serving). The browser may render the HTML before
+        // the stylesheet response arrives. Hide <body> until CSS loads.
+        // Skip for ?embed=1 thumbnails — they use sandboxed iframes
+        // without allow-scripts, so the reveal <script> would never run
+        // and the body would stay invisible forever.
+        if ($isDemoPreview && !isset($_GET['embed'])) {
+            $foucStyle = '<style id="vs-fouc-guard">body{opacity:0!important}</style>';
+            $foucReveal = '<script>document.getElementById("vs-fouc-guard")?.remove()</script>';
+            $content = str_replace('</head>', $foucStyle . '</head>', $content);
+            // Place the reveal right before </body> — at this point all
+            // render-blocking stylesheets have been parsed.
+            $content = str_replace('</body>', $foucReveal . '</body>', $content);
+        }
+
         // Inject hot-reload into rendered HTML
         $content = injectHotReload($content);
 

@@ -341,6 +341,30 @@ foreach ($routes as [$routeMethod, $routePattern, $endpointFile, $requiresAuth])
         // A real owner can still log in with their actual credentials.
     }
 
+    // ── Demo logout: clear cookie, no DB interaction ──
+    // The demo session is synthetic — there's no row in the sessions table.
+    // Auth::logout() tries to delete from the DB, which may crash if the
+    // database isn't fully set up (fresh demo deploy, no installer run).
+    // Clear the cookie directly and skip auth.php entirely.
+    if ($method === 'POST' && $path === '/auth/logout' && DemoMode::isActive()) {
+        $cookie = $_COOKIE['vs_session'] ?? null;
+        if ($cookie === DemoMode::DEMO_SESSION_TOKEN) {
+            $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                     || (int)($_SERVER['SERVER_PORT'] ?? 0) === 443;
+            setcookie('vs_session', '', [
+                'expires'  => time() - 3600,
+                'path'     => '/_studio/',
+                'secure'   => $isSecure,
+                'httponly'  => true,
+                'samesite' => 'Lax',
+            ]);
+            jsonResponse(['ok' => true, 'data' => ['message' => 'Signed out.']]);
+            exit;
+        }
+        // Non-demo cookie during demo mode: fall through to normal logout.
+        // A real owner's session is still DB-backed.
+    }
+
     // ── Demo Actions Bar: fake submit, no DB interaction ──
     // When the preview Actions Bar submits a form in demo mode, return a
     // synthetic success response. Matches the shape actions-bar.js reads:

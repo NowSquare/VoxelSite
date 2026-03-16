@@ -689,9 +689,13 @@ class Auth
      */
     private function clearSessionCookie(): void
     {
+        $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                 || (int)($_SERVER['SERVER_PORT'] ?? 0) === 443;
+
         setcookie('vs_session', '', [
             'expires'  => time() - 3600,
             'path'     => '/_studio/',
+            'secure'   => $isSecure,
             'httponly'  => true,
             'samesite' => 'Lax',
         ]);

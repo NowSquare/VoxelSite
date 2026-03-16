@@ -316,6 +316,7 @@ CSS;
         // switch them to double-quoted strings (safe for HTML content).
         if (str_ends_with($path, '.php')) {
             $content = $this->fixPhpApostrophes($content);
+            $content = $this->fixPreEncodedHtmlEntities($content);
         }
 
         // CSS: Fix .root { → :root { (variables on class instead of pseudo-class)
@@ -939,6 +940,58 @@ SAFETY;
 
             $lines[$i] = $before . ' "' . $value . '"' . $after;
             $changed = true;
+        }
+
+        return $changed ? implode("\n", $lines) : $content;
+    }
+
+    /**
+     * Decode pre-encoded HTML entities inside PHP page metadata strings.
+     *
+     * AI models sometimes output HTML entities inside PHP string literals:
+     *   'title' => 'Brand &amp; Digital Design Practice',
+     *
+     * Since header.php already calls htmlspecialchars() on $page['title'],
+     * the pre-encoded &amp; gets double-encoded to &amp;amp; in the output.
+     *
+     * Fix: decode common entities (&amp; &lt; &gt; &quot; &#039;) back to
+     * their plain-text equivalents in 'title' and 'description' values.
+     * Only targets lines matching 'key' => 'value' patterns.
+     */
+    private function fixPreEncodedHtmlEntities(string $content): string
+    {
+        // Target specific metadata keys — these are the values that
+        // header.php passes through htmlspecialchars()
+        $keys = ['title', 'description'];
+
+        $changed = false;
+        $lines = explode("\n", $content);
+
+        foreach ($lines as $i => $line) {
+            // Quick pre-check: must contain => and one of the target keys
+            if (!str_contains($line, '=>')) {
+                continue;
+            }
+
+            // Match: 'title' => '...' or "title" => '...' (with optional whitespace)
+            foreach ($keys as $key) {
+                $pattern = "/(['\"]" . preg_quote($key) . "['\"])\\s*=>\\s*['\"](.+?)['\"]/";
+                if (!preg_match($pattern, $line, $m)) {
+                    continue;
+                }
+
+                $value = $m[2];
+                // Only decode if it actually contains HTML entities
+                if (!str_contains($value, '&') || !preg_match('/&(?:amp|lt|gt|quot|#0?39);/', $value)) {
+                    continue;
+                }
+
+                $decoded = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                if ($decoded !== $value) {
+                    $lines[$i] = str_replace($value, $decoded, $line);
+                    $changed = true;
+                }
+            }
         }
 
         return $changed ? implode("\n", $lines) : $content;

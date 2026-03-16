@@ -136,9 +136,9 @@ class DemoMode
     /**
      * Whether to hide demo banners and badges.
      *
-     * When true, the Studio DEMO badge, the login page demo chrome,
-     * and the root demo site banner are suppressed. All read-only
-     * enforcement, fixture data, and write blocking remain active.
+     * When true, the Studio DEMO badge and the login page demo chrome
+     * are suppressed. All read-only enforcement, fixture data, and
+     * write blocking remain active.
      *
      * Useful for taking clean screenshots or recording demos.
      *

@@ -91,11 +91,11 @@ Show the Studio to others without giving them real access:
 2. The login page pre-fills demo credentials (`demo@example.com` / `welcome3210`)
 3. The Studio runs in **read-only mode** — write operations (publish, delete, AI generation) are blocked. The preview Actions Bar remains interactive but uses a safe stub that does not write real data
 4. A persistent DEMO badge appears in the top bar
-5. Your website's root URL serves the **demo preview site** (a complete, styled website) with a subtle "Open Studio →" banner
+5. Your website's root URL serves the **demo preview site** (a complete, styled website) with an interactive Actions Bar
 6. The Designs gallery shows 6 curated designs with unique, industry-specific landing page previews
 7. To disable: `rm .demo` (instant, no restart needed)
 
-**Hide banners for screenshots:** Add `hide_banner=true` to the `.demo` file to suppress the DEMO badge, login page demo chrome, and root site banner while keeping all read-only enforcement active.
+**Hide banners for screenshots:** Add `hide_banner=true` to the `.demo` file to suppress the DEMO badge and login page demo chrome while keeping all read-only enforcement active.
 
 Demo mode does not modify your live workspace. It reads from shipped fixture data for Code Editor, Forms, Actions, Assets, Settings, Designs, and Team. AI Chat and snapshot history show empty states. Real owner login still works alongside the demo session.
 

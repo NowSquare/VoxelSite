@@ -111,6 +111,10 @@ if (file_exists($demoFile) && is_dir($demoPreviewDir)) {
     $hideBanner = vsDemoShouldHideBanner($demoFile);
     $demoBanner = vsDemoRootBannerHtml($hideBanner);
 
+    // Inject Actions Bar (same interactive forms as the Studio preview)
+    require_once __DIR__ . '/_studio/data/demo-root-actions-bar.php';
+    $content = vsDemoInjectActionsBar($content);
+
     $demoMeta = '<meta name="voxelsite-demo" content="1">';
     $content = str_replace('</head>', $demoMeta . $revealCss . '</head>', $content);
     $content = str_replace('</body>', $demoBanner . '</body>', $content);

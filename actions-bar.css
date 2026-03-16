@@ -1,0 +1,995 @@
+/**
+ * VoxelSite Actions Bar — Shipped CSS
+ *
+ * Self-contained styles for the Actions Bar and form panels.
+ * Uses CSS variables with fallbacks so it works on ANY site design.
+ * Scoped with vs-actions- prefix to prevent collisions.
+ *
+ * Not compiled via Tailwind — plain CSS only.
+ */
+
+/* ── CSS Variable Fallbacks ── */
+:root {
+  --vs-actions-font: var(--font-body, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif);
+  --vs-actions-primary: var(--color-primary, #EA580C);
+  --vs-actions-primary-hover: var(--color-primary-light, #C2410C);
+  --vs-actions-bg: var(--color-bg, #ffffff);
+  --vs-actions-text: var(--color-text, #09090B);
+  --vs-actions-text-muted: #71717A;
+  --vs-actions-border: #E4E4E7;
+  --vs-actions-radius: 10px;
+  --vs-actions-success: #16A34A;
+  --vs-actions-error: #DC2626;
+}
+
+/* ── Bottom Bar ── */
+.vs-actions-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 99990;
+  font-family: var(--vs-actions-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+.vs-actions-bar[data-variant="bottom-bar"] {
+  background: var(--vs-actions-bg);
+  border-top: 1px solid var(--vs-actions-border);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.vs-actions-bar-inner {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 16px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.vs-actions-bar-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  border-radius: var(--vs-actions-radius);
+  cursor: pointer;
+  color: var(--vs-actions-text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition: all 150ms ease-out;
+  min-width: 64px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vs-actions-bar-btn:hover {
+  color: var(--vs-actions-primary);
+  background: color-mix(in srgb, var(--vs-actions-primary) 8%, transparent);
+}
+
+.vs-actions-bar-btn:active {
+  transform: scale(0.95);
+}
+
+.vs-actions-bar-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.vs-actions-bar-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.vs-actions-bar-label {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
+
+/* ── Floating FAB Variant ── */
+.vs-actions-bar[data-variant="floating-fab"] {
+  left: auto;
+  right: 20px;
+  bottom: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  width: auto;
+  background: none;
+  border: none;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.vs-actions-bar[data-variant="floating-fab"] .vs-actions-bar-inner {
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 0;
+  gap: 8px;
+  max-width: none;
+}
+
+.vs-actions-bar[data-variant="floating-fab"] .vs-actions-bar-btn {
+  flex-direction: row;
+  gap: 8px;
+  padding: 0 16px;
+  height: 48px;
+  min-width: auto;
+  border-radius: 24px;
+  background: var(--vs-actions-bg);
+  color: var(--vs-actions-text);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08);
+  border: 1px solid var(--vs-actions-border);
+  opacity: 0;
+  transform: translateY(12px) scale(0.9);
+  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.vs-actions-bar[data-variant="floating-fab"].is-expanded .vs-actions-bar-btn {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.vs-actions-bar[data-variant="floating-fab"] .vs-actions-bar-btn:hover {
+  box-shadow: 0 6px 20px rgba(0,0,0,0.16), 0 2px 6px rgba(0,0,0,0.1);
+}
+
+.vs-actions-bar[data-variant="floating-fab"] .vs-actions-bar-label {
+  max-width: 120px;
+}
+
+.vs-actions-bar[data-variant="floating-fab"] .vs-actions-fab-trigger {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--vs-actions-primary);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  align-self: flex-end;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vs-actions-bar[data-variant="floating-fab"] .vs-actions-fab-trigger:hover {
+  transform: scale(1.08);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.22);
+}
+
+.vs-actions-bar[data-variant="floating-fab"] .vs-actions-fab-trigger:active {
+  transform: scale(0.96);
+}
+
+.vs-actions-bar[data-variant="floating-fab"] .vs-actions-fab-trigger svg {
+  width: 24px;
+  height: 24px;
+  transition: transform 200ms ease;
+}
+
+.vs-actions-bar[data-variant="floating-fab"].is-expanded .vs-actions-fab-trigger svg {
+  transform: rotate(45deg);
+}
+
+/* ── Minimal Pill Variant ── */
+.vs-actions-bar[data-variant="minimal-pill"] {
+  left: 50%;
+  right: auto;
+  bottom: 20px;
+  width: auto;
+  transform: translateX(-50%);
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+.vs-actions-bar[data-variant="minimal-pill"] .vs-actions-bar-inner {
+  background: var(--vs-actions-bg);
+  border-radius: 28px;
+  padding: 6px 8px;
+  gap: 2px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06);
+  border: 1px solid var(--vs-actions-border);
+  max-width: none;
+}
+
+.vs-actions-bar[data-variant="minimal-pill"] .vs-actions-bar-btn {
+  flex-direction: row;
+  gap: 6px;
+  padding: 8px 14px;
+  min-width: auto;
+  border-radius: 22px;
+  font-size: 12px;
+}
+
+.vs-actions-bar[data-variant="minimal-pill"] .vs-actions-bar-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.vs-actions-bar[data-variant="minimal-pill"] .vs-actions-bar-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.vs-actions-bar[data-variant="minimal-pill"] .vs-actions-bar-label {
+  max-width: 100px;
+}
+
+/* ── Overlay ── */
+.vs-actions-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99991;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.vs-actions-overlay.is-visible {
+  opacity: 1;
+}
+
+/* ── Form Panel ── */
+.vs-actions-panel {
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  background: var(--vs-actions-bg);
+  border-radius: 16px 16px 0 0;
+  overflow-y: auto;
+  transform: translateY(100%);
+  transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: var(--vs-actions-font);
+}
+
+.vs-actions-panel.is-open {
+  transform: translateY(0);
+}
+
+.vs-actions-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 12px;
+  position: sticky;
+  top: 0;
+  background: var(--vs-actions-bg);
+  z-index: 1;
+}
+
+.vs-actions-panel-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--vs-actions-text);
+  margin: 0;
+}
+
+.vs-actions-panel-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--vs-actions-text-muted);
+  border-radius: 8px;
+  transition: all 150ms ease-out;
+}
+
+.vs-actions-panel-close:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--vs-actions-text);
+}
+
+.vs-actions-panel-close svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ── Form ── */
+.vs-actions-form {
+  padding: 0 24px 24px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+.vs-actions-form-group {
+  margin-bottom: 16px;
+}
+
+.vs-actions-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vs-actions-text);
+  margin-bottom: 6px;
+}
+
+.vs-actions-required {
+  color: var(--vs-actions-error);
+}
+
+.vs-actions-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--vs-actions-text);
+  background: transparent;
+  border: 1px solid var(--vs-actions-border);
+  border-radius: var(--vs-actions-radius);
+  outline: none;
+  transition: all 150ms ease-out;
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+textarea.vs-actions-input {
+  height: auto;
+  padding: 10px 14px;
+  resize: vertical;
+  min-height: 80px;
+}
+
+select.vs-actions-input {
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+.vs-actions-input::placeholder {
+  color: var(--vs-actions-text-muted);
+  opacity: 0.55;
+}
+
+.vs-actions-input:hover {
+  border-color: #A1A1AA;
+}
+
+.vs-actions-input:focus {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--vs-actions-primary);
+}
+
+.vs-actions-input.has-error {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--vs-actions-error);
+}
+
+/* Error state wins over focus — no brand color bleed */
+.vs-actions-input.has-error:focus {
+  box-shadow: 0 0 0 2px var(--vs-actions-error);
+}
+
+/* ── Number Stepper ── */
+.vs-actions-stepper {
+  display: inline-flex;
+  height: 40px;
+}
+
+.vs-actions-stepper-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--vs-actions-border);
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--vs-actions-text);
+  transition: background 150ms ease-out;
+  font-family: inherit;
+}
+
+.vs-actions-stepper-btn:first-child {
+  border-radius: var(--vs-actions-radius) 0 0 var(--vs-actions-radius);
+}
+
+.vs-actions-stepper-btn:last-child {
+  border-radius: 0 var(--vs-actions-radius) var(--vs-actions-radius) 0;
+}
+
+.vs-actions-stepper-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.vs-actions-stepper-input {
+  width: 56px;
+  height: 40px;
+  text-align: center;
+  border: 1px solid var(--vs-actions-border);
+  border-left: none;
+  border-right: none;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--vs-actions-text);
+  background: transparent;
+  outline: none;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.vs-actions-stepper-input::-webkit-inner-spin-button,
+.vs-actions-stepper-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* ── Radio ── */
+.vs-actions-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vs-actions-radio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--vs-actions-text);
+  cursor: pointer;
+}
+
+.vs-actions-radio {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.vs-actions-radio-dot {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--vs-actions-border);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 150ms ease-out;
+}
+
+.vs-actions-radio-dot::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vs-actions-primary);
+  transform: scale(0);
+  transition: transform 150ms ease-out;
+}
+
+.vs-actions-radio:checked + .vs-actions-radio-dot {
+  border-color: var(--vs-actions-primary);
+}
+
+.vs-actions-radio:checked + .vs-actions-radio-dot::after {
+  transform: scale(1);
+}
+
+.vs-actions-radio:focus-visible + .vs-actions-radio-dot {
+  box-shadow: 0 0 0 2px var(--vs-actions-primary);
+}
+
+.vs-actions-radio-label:hover .vs-actions-radio-dot {
+  border-color: var(--vs-actions-primary);
+}
+
+/* ── Checkbox ── */
+.vs-actions-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--vs-actions-text);
+  cursor: pointer;
+}
+
+.vs-actions-checkbox {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.vs-actions-checkbox-box {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--vs-actions-border);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 150ms ease-out;
+}
+
+.vs-actions-checkbox:checked + .vs-actions-checkbox-box {
+  background: var(--vs-actions-primary);
+  border-color: var(--vs-actions-primary);
+}
+
+.vs-actions-checkbox:checked + .vs-actions-checkbox-box::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E") center/contain no-repeat;
+}
+
+.vs-actions-checkbox:focus-visible + .vs-actions-checkbox-box {
+  box-shadow: 0 0 0 2px var(--vs-actions-primary);
+}
+
+/* ── Multi-select (checkbox group) ── */
+.vs-actions-multiselect-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vs-actions-multiselect-option {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.vs-actions-multiselect-option:checked + .vs-actions-checkbox-box {
+  background: var(--vs-actions-primary);
+  border-color: var(--vs-actions-primary);
+}
+
+.vs-actions-multiselect-option:checked + .vs-actions-checkbox-box::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E") center/contain no-repeat;
+}
+
+.vs-actions-multiselect-option:focus-visible + .vs-actions-checkbox-box {
+  box-shadow: 0 0 0 2px var(--vs-actions-primary);
+}
+
+/* ── File Upload Drop Zone ── */
+.vs-actions-file-drop {
+  border: 2px dashed var(--vs-actions-border);
+  border-radius: var(--vs-actions-radius);
+  padding: 20px 16px;
+  position: relative;
+  transition: all 200ms ease-out;
+}
+
+.vs-actions-file-drop.is-dragover {
+  border-color: var(--vs-actions-primary);
+  background: color-mix(in srgb, var(--vs-actions-primary) 6%, transparent);
+}
+
+.vs-actions-file-drop.has-error {
+  border-color: var(--vs-actions-error);
+}
+
+.vs-actions-file-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.vs-actions-file-drop-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--vs-actions-text-muted);
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.vs-actions-file-drop-label svg {
+  width: 24px;
+  height: 24px;
+  opacity: 0.5;
+}
+
+.vs-actions-file-drop:hover .vs-actions-file-drop-label svg {
+  opacity: 0.7;
+}
+
+.vs-actions-file-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.vs-actions-file-preview-name {
+  font-size: 13px;
+  color: var(--vs-actions-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.vs-actions-file-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--vs-actions-text-muted);
+  border-radius: 4px;
+  flex-shrink: 0;
+  padding: 0;
+  transition: all 150ms ease-out;
+}
+
+.vs-actions-file-remove:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--vs-actions-error);
+}
+
+.vs-actions-file-remove svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ── Field Description / Help Text ── */
+.vs-actions-field-desc {
+  font-size: 12px;
+  color: var(--vs-actions-text-secondary, rgba(0,0,0,0.45));
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* ── Error ── */
+.vs-actions-field-error {
+  font-size: 12px;
+  color: var(--vs-actions-error);
+  margin-top: 4px;
+  min-height: 0;
+}
+
+/* ── Submit Button ── */
+.vs-actions-form-actions {
+  margin-top: 24px;
+}
+
+.vs-actions-submit {
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--vs-actions-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--vs-actions-radius);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vs-actions-submit:hover {
+  background: var(--vs-actions-primary-hover);
+}
+
+.vs-actions-submit:active {
+  transform: scale(0.98);
+}
+
+.vs-actions-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.vs-actions-submit-loading svg {
+  width: 18px;
+  height: 18px;
+  animation: vs-actions-spin 1s linear infinite;
+}
+
+@keyframes vs-actions-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ── Result ── */
+.vs-actions-result {
+  margin: 0 !important;
+  padding: 16px 24px !important;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  gap: 10px !important;
+  align-items: center !important;
+  font-family: var(--vs-actions-font);
+  box-sizing: border-box;
+}
+
+.vs-actions-result.is-success {
+  background: rgba(22, 163, 74, 0.06);
+}
+
+.vs-actions-result.is-error {
+  background: rgba(220, 38, 38, 0.04);
+}
+
+.vs-actions-result-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vs-actions-result-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.vs-actions-result.is-success .vs-actions-result-icon {
+  color: var(--vs-actions-success);
+}
+
+.vs-actions-result.is-error .vs-actions-result-icon {
+  color: var(--vs-actions-error);
+}
+
+.vs-actions-result-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.vs-actions-result-message {
+  font-size: 14px;
+  color: var(--vs-actions-text);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.vs-actions-result-code {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--vs-actions-primary);
+  margin: 6px 0 0;
+  font-family: var(--font-mono, 'SF Mono', 'Cascadia Code', monospace);
+}
+
+/* ── Focus Ring ── */
+.vs-actions-input:focus-visible,
+.vs-actions-stepper-btn:focus-visible,
+.vs-actions-submit:focus-visible,
+.vs-actions-bar-btn:focus-visible,
+.vs-actions-panel-close:focus-visible {
+  outline: 2px solid var(--vs-actions-primary);
+  outline-offset: 2px;
+}
+
+.vs-actions-input:focus:not(:focus-visible),
+.vs-actions-stepper-btn:focus:not(:focus-visible),
+.vs-actions-submit:focus:not(:focus-visible),
+.vs-actions-bar-btn:focus:not(:focus-visible),
+.vs-actions-panel-close:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Touch Targets ── */
+@media (pointer: coarse) {
+  .vs-actions-bar-btn {
+    min-width: 56px;
+    min-height: 44px;
+  }
+
+  .vs-actions-input {
+    height: 44px;
+    font-size: 16px; /* Prevents iOS zoom */
+  }
+
+  .vs-actions-submit {
+    height: 48px;
+  }
+}
+
+/* ── Reduced Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .vs-actions-panel,
+  .vs-actions-overlay,
+  .vs-actions-bar-btn,
+  .vs-actions-input,
+  .vs-actions-submit,
+  .vs-actions-radio-dot,
+  .vs-actions-radio-dot::after,
+  .vs-actions-checkbox-box {
+    transition: none !important;
+  }
+
+  .vs-actions-submit-loading svg {
+    animation: none !important;
+  }
+}
+
+/* ── Desktop (wider bar) ── */
+@media (min-width: 768px) {
+  .vs-actions-panel {
+    max-width: 440px;
+    margin: 0 auto;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .vs-actions-bar-inner {
+    gap: 8px;
+  }
+
+  .vs-actions-bar-btn {
+    padding: 10px 20px;
+  }
+}
+
+/* ── Dark Scheme ── */
+.vs-actions-bar[data-scheme="dark"],
+.vs-actions-bar[data-scheme="dark"] ~ .vs-actions-overlay .vs-actions-panel {
+  --vs-actions-bg: #1C1C1E;
+  --vs-actions-text: #F5F5F7;
+  --vs-actions-text-muted: #98989F;
+  --vs-actions-text-secondary: rgba(255,255,255,0.45);
+  --vs-actions-border: #38383A;
+}
+
+.vs-actions-bar[data-scheme="dark"] {
+  background: #1C1C1E;
+  border-top-color: #38383A;
+}
+
+.vs-actions-bar[data-scheme="dark"] .vs-actions-bar-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Dark FAB variant */
+.vs-actions-bar[data-scheme="dark"][data-variant="floating-fab"] {
+  background: none;
+}
+
+.vs-actions-bar[data-scheme="dark"][data-variant="floating-fab"] .vs-actions-bar-btn {
+  background: #2C2C2E;
+  color: #F5F5F7;
+  border-color: #48484A;
+}
+
+.vs-actions-bar[data-scheme="dark"][data-variant="floating-fab"] .vs-actions-fab-trigger {
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+}
+
+/* Dark pill variant */
+.vs-actions-bar[data-scheme="dark"][data-variant="minimal-pill"] {
+  background: none;
+}
+
+.vs-actions-bar[data-scheme="dark"][data-variant="minimal-pill"] .vs-actions-bar-inner {
+  background: #1C1C1E;
+  border-color: #38383A;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+}
+
+.vs-actions-overlay[data-scheme="dark"] {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.vs-actions-overlay[data-scheme="dark"] .vs-actions-panel {
+  --vs-actions-bg: #1C1C1E;
+  --vs-actions-text: #F5F5F7;
+  --vs-actions-text-muted: #98989F;
+  --vs-actions-border: #38383A;
+  background: #1C1C1E;
+}
+
+.vs-actions-overlay[data-scheme="dark"] .vs-actions-panel-header {
+  background: #1C1C1E;
+}
+
+.vs-actions-overlay[data-scheme="dark"] .vs-actions-panel-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.vs-actions-overlay[data-scheme="dark"] .vs-actions-input:hover {
+  border-color: #636366;
+}
+
+.vs-actions-overlay[data-scheme="dark"] .vs-actions-stepper-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Auto scheme — follows user's system preference */
+@media (prefers-color-scheme: dark) {
+  .vs-actions-bar[data-scheme="auto"],
+  .vs-actions-bar[data-scheme="auto"] ~ .vs-actions-overlay .vs-actions-panel {
+    --vs-actions-bg: #1C1C1E;
+    --vs-actions-text: #F5F5F7;
+    --vs-actions-text-muted: #98989F;
+    --vs-actions-border: #38383A;
+  }
+
+  .vs-actions-bar[data-scheme="auto"] {
+    background: #1C1C1E;
+    border-top-color: #38383A;
+  }
+
+  .vs-actions-bar[data-scheme="auto"] .vs-actions-bar-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .vs-actions-overlay[data-scheme="auto"] {
+    background: rgba(0, 0, 0, 0.6);
+  }
+
+  .vs-actions-overlay[data-scheme="auto"] .vs-actions-panel {
+    --vs-actions-bg: #1C1C1E;
+    --vs-actions-text: #F5F5F7;
+    --vs-actions-text-muted: #98989F;
+    --vs-actions-border: #38383A;
+    background: #1C1C1E;
+  }
+
+  .vs-actions-overlay[data-scheme="auto"] .vs-actions-panel-header {
+    background: #1C1C1E;
+  }
+
+  .vs-actions-overlay[data-scheme="auto"] .vs-actions-panel-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .vs-actions-overlay[data-scheme="auto"] .vs-actions-input:hover {
+    border-color: #636366;
+  }
+
+  .vs-actions-overlay[data-scheme="auto"] .vs-actions-stepper-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}

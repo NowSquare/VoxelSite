@@ -90,9 +90,13 @@ if (file_exists($demoFile) && is_dir($demoPreviewDir)) {
 
     // Shared banner helper — single source of truth for hide_banner
     // parsing and banner HTML across all root entrypoints.
-    require_once __DIR__ . '/demo-root-banner.php';
+    require_once __DIR__ . '/_studio/data/demo-root-banner.php';
     $hideBanner = vsDemoShouldHideBanner($demoFile);
     $demoBanner = vsDemoRootBannerHtml($hideBanner);
+
+    // Inject Actions Bar (same interactive forms as the Studio preview)
+    require_once __DIR__ . '/_studio/data/demo-root-actions-bar.php';
+    $content = vsDemoInjectActionsBar($content);
 
     $demoMeta = '<meta name="voxelsite-demo" content="1">';
     $content = str_replace('</head>', $demoMeta . $revealCss . '</head>', $content);

@@ -161,7 +161,7 @@ $routes = [
     ['PUT',    '/agentic/actions/bar-settings',                    'agentic-actions.php', true],
     ['GET',    '/agentic/actions/templates',                       'agentic-actions.php', true],
     ['POST',   '/agentic/actions/manifest',                        'agentic-actions.php', true],
-    ['GET',    '/agentic/manifest',                                 'agentic-actions.php', true],  // Preview Actions Bar (GET variant)
+    ['GET',    '/agentic/manifest',                                 'agentic-actions.php', false], // Public — read-only schema, needed by root demo site + published sites
     ['POST',   '/agentic/demo-submit',                               'agentic-actions.php', false], // Demo-safe submit stub (no auth — public preview)
     ['GET',    '/agentic/actions/:id',                             'agentic-actions.php', true],
     ['PUT',    '/agentic/actions/:id',                             'agentic-actions.php', true],

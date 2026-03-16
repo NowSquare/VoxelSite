@@ -1366,7 +1366,10 @@
         height: 12px;
       }
       .vx-section-divider-label {
-        position: relative;
+        position: absolute;
+        left: calc(50% + 48px);
+        top: 50%;
+        transform: translateY(-50%);
         white-space: nowrap;
         font: 500 10px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         letter-spacing: 0.02em;
@@ -1375,7 +1378,6 @@
         border-radius: 4px;
         pointer-events: none;
         transition: all 180ms ease;
-        margin-left: 2px;
       }
       .vx-section-divider:hover .vx-section-divider-label {
         color: rgba(255,255,255,0.85);

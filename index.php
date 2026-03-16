@@ -20,8 +20,7 @@ declare(strict_types=1);
 // ── Demo mode: serve the demo preview site at / ──
 // When .demo is active, render the demo preview's index.php in-place
 // using the same chdir+include pattern as preview.php. CSS/JS assets
-// are inlined directly into the HTML for server-agnostic compatibility
-// (works on Apache, Nginx, Herd — no special config needed).
+// are inlined directly into the HTML for server-agnostic compatibility.
 //
 // The .htaccess fallback sends all unmatched URLs to index.php, so
 // inner page links like /work, /services also arrive here. We resolve
@@ -68,10 +67,7 @@ if (file_exists($demoFile) && is_dir($demoPreviewDir)) {
     chdir($originalCwd);
 
     // Inline CSS/JS from demo assets directly into the HTML.
-    // We can't rewrite URLs to /_studio/demo/assets/ because many web servers
-    // (Nginx/Herd, some Apache configs) don't serve files from _studio/ directly.
-    // Inlining is server-agnostic (works on Apache, Nginx, Herd, any environment)
-    // and eliminates extra round-trip requests. Total demo assets ~58KB — acceptable.
+    // Server-agnostic: works on Apache, Nginx, Herd, any environment.
     $demoAssetsDir = __DIR__ . '/_studio/demo/assets';
 
     // Inline CSS: replace <link> tags with <style> blocks
@@ -82,7 +78,7 @@ if (file_exists($demoFile) && is_dir($demoPreviewDir)) {
             if (file_exists($cssFile)) {
                 return '<style>' . file_get_contents($cssFile) . '</style>';
             }
-            return $m[0]; // Leave as-is if file doesn't exist
+            return $m[0];
         },
         $content
     ) ?? $content;
@@ -95,12 +91,12 @@ if (file_exists($demoFile) && is_dir($demoPreviewDir)) {
             if (file_exists($jsFile)) {
                 return '<script>' . file_get_contents($jsFile) . '</script>';
             }
-            return $m[0]; // Leave as-is if file doesn't exist
+            return $m[0];
         },
         $content
     ) ?? $content;
 
-    // Force reveal animations to be visible (no IntersectionObserver-dependent fading)
+    // Force reveal animations to be visible
     $revealCss = '<style>'
         . '[data-reveal],[data-reveal-stagger],[data-reveal-stagger]>*,'
         . '.reveal,.reveal-child,.animate-on-scroll,.scroll-reveal{'
@@ -109,17 +105,12 @@ if (file_exists($demoFile) && is_dir($demoPreviewDir)) {
         . '}'
         . '</style>';
 
-    // Shared banner helper — single source of truth for hide_banner
-    // parsing and banner HTML across all root entrypoints.
-    require_once __DIR__ . '/_studio/data/demo-root-banner.php';
-    $hideBanner = vsDemoShouldHideBanner($demoFile);
-    $demoBanner = vsDemoRootBannerHtml($hideBanner);
+    // Inject Actions Bar (same interactive forms as the Studio preview)
+    require_once __DIR__ . '/_studio/data/demo-root-actions-bar.php';
+    $content = vsDemoInjectActionsBar($content);
 
-    // Inject demo meta tag so form-handler.js can detect demo context
-    // and suppress form submissions (always injected, even when banner hidden)
     $demoMeta = '<meta name="voxelsite-demo" content="1">';
     $content = str_replace('</head>', $demoMeta . $revealCss . '</head>', $content);
-    $content = str_replace('</body>', $demoBanner . '</body>', $content);
 
     header('Content-Type: text/html; charset=utf-8');
     header('Cache-Control: no-cache, no-store, must-revalidate');

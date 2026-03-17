@@ -84,6 +84,9 @@ $requiredFiles = [
     '_studio/engine/PublishService.php',
     '_studio/engine/AgentAuth.php',
     '_studio/api/endpoints/api-keys.php',
+    '_studio/api/agent/v1/prompt.php',
+    '_studio/worker/prompt-runner.php',
+    '_studio/engine/migrations/004_add_prompt_api_support.php',
 ];
 
 foreach ($requiredFiles as $f) {
@@ -111,6 +114,8 @@ $expectedRoutes = [
     "'/submissions'" => 'Submissions route',
     "'/assets'" => 'Assets route',
     "'/tools'" => 'Tools route',
+    "'/prompt'" => 'Prompt route',
+    "'/prompt/:id'" => 'Prompt poll route',
 ];
 
 foreach ($expectedRoutes as $pattern => $label) {
@@ -478,6 +483,7 @@ assert_contains($rootDir . '/_studio/api/agent/v1/pages.php', "Logger::exception
 //  13. Role contract (code/UI/docs consistency)
 // ═══════════════════════════════════════════
 
+
 echo "\n▸ Role Contract\n";
 
 $authPhp = file_get_contents($rootDir . '/_studio/engine/AgentAuth.php');
@@ -504,6 +510,11 @@ if (isset($m[1]) && !str_contains($m[1], 'settings:write')) {
 
 // UI must NOT claim the old "full page & publish access" (too vague)
 assert_not_contains($rootDir . '/_studio/ui/src/views/settings.js', 'full page & publish access', 'UI no longer uses old Agent description');
+// UI has prompt:execute opt-in toggle using design system checkbox
+assert_contains($rootDir . '/_studio/ui/src/views/settings.js', 'gen-key-prompt-execute', 'Key modal has prompt:execute checkbox');
+assert_contains($rootDir . '/_studio/ui/src/views/settings.js', 'vs-checkbox', 'Key modal uses vs-checkbox pattern');
+assert_contains($rootDir . '/_studio/ui/src/views/settings.js', 'AgentAuth_ROLE_DEFAULTS', 'UI has client-side role defaults map');
+assert_contains($rootDir . '/_studio/ui/src/views/settings.js', "prompt:execute", 'UI includes prompt:execute in scope construction');
 
 // ═══════════════════════════════════════════
 //  14. Log channel consistency (single channel: agent-api)
@@ -518,6 +529,62 @@ assert_contains($rootDir . '/_studio/engine/AgentAuth.php', "'agent-api', 'API k
 assert_contains($rootDir . '/_studio/engine/AgentAuth.php', "'agent-api', 'Authentication failed: invalid key'", 'AgentAuth: auth failure uses agent-api channel');
 assert_contains($rootDir . '/_studio/engine/AgentAuth.php', "'agent-api', 'Rate limited'", 'AgentAuth: rate limit uses agent-api channel');
 assert_contains($rootDir . '/_studio/engine/AgentAuth.php', "'agent-api', 'Scope denied'", 'AgentAuth: scope denied uses agent-api channel');
+
+// ═══════════════════════════════════════════
+//  15. Prompt Execution Feature
+// ═══════════════════════════════════════════
+
+echo "\n▸ Prompt Execution Feature\n";
+
+// prompt:execute must be in ALL_SCOPES
+assert_contains($rootDir . '/_studio/engine/AgentAuth.php', "'prompt:execute'", 'AgentAuth declares prompt:execute scope');
+
+// prompt:execute must NOT be in any ROLE_DEFAULTS (opt-in)
+$authContent = file_get_contents($rootDir . '/_studio/engine/AgentAuth.php');
+if (preg_match('/private const ROLE_DEFAULTS = \[.*?\];/s', $authContent, $rdMatch)) {
+    if (!str_contains($rdMatch[0], 'prompt:execute')) {
+        pass('prompt:execute is NOT in ROLE_DEFAULTS (opt-in)');
+    } else {
+        fail('prompt:execute should NOT be in ROLE_DEFAULTS');
+    }
+} else {
+    fail('Could not find ROLE_DEFAULTS in AgentAuth');
+}
+
+// OPT_IN_SCOPES must exist as a role-gated map, with eligible roles
+assert_contains($rootDir . '/_studio/engine/AgentAuth.php', 'OPT_IN_SCOPES', 'AgentAuth declares OPT_IN_SCOPES constant');
+assert_contains($rootDir . '/_studio/engine/AgentAuth.php', 'self::OPT_IN_SCOPES', 'createKey ceiling includes OPT_IN_SCOPES');
+// prompt:execute must be gated to write-capable roles (not viewer)
+assert_contains($rootDir . '/_studio/engine/AgentAuth.php', "'prompt:execute' => ['owner', 'editor', 'agent']", 'prompt:execute gated to write roles');
+assert_contains($rootDir . '/_studio/engine/AgentAuth.php', '$eligibleRoles', 'createKey filters opt-in by role eligibility');
+// UI mirrors the eligibility map
+assert_contains($rootDir . '/_studio/ui/src/views/settings.js', 'AgentAuth_OPT_IN_ELIGIBLE', 'UI has opt-in eligibility map');
+assert_contains($rootDir . '/_studio/ui/src/views/settings.js', 'updatePromptEligibility', 'UI disables prompt for ineligible roles');
+
+// Router has prompt:execute scope
+assert_contains($rootDir . '/_studio/api/agent/v1/router.php', "'prompt:execute'", 'Router uses prompt:execute scope');
+
+// Worker
+assert_contains($rootDir . '/_studio/worker/prompt-runner.php', '#!/usr/bin/env php', 'Worker has PHP shebang');
+assert_contains($rootDir . '/_studio/worker/prompt-runner.php', '--job=', 'Worker accepts --job argument');
+assert_contains($rootDir . '/_studio/worker/prompt-runner.php', "'headless'", 'Worker passes headless flag to PromptEngine');
+assert_contains($rootDir . '/_studio/worker/prompt-runner.php', 'page_scope FROM conversations', 'Worker reads page_scope from conversations');
+
+// Schema
+assert_contains($rootDir . '/_studio/api/agent/v1/_schema-handler.php', 'x-capabilities', 'Schema includes x-capabilities extension');
+assert_contains($rootDir . '/_studio/api/agent/v1/_schema-handler.php', 'prompt_execution', 'Schema declares prompt_execution capability');
+assert_contains($rootDir . '/_studio/api/agent/v1/_schema-handler.php', 'PromptResult', 'Schema defines PromptResult component');
+assert_contains($rootDir . '/_studio/api/agent/v1/_schema-handler.php', 'queuePrompt', 'Schema defines queuePrompt operation');
+assert_contains($rootDir . '/_studio/api/agent/v1/_schema-handler.php', 'getPromptStatus', 'Schema defines getPromptStatus operation');
+
+// PromptEngine headless mode
+assert_contains($rootDir . '/_studio/engine/PromptEngine.php', 'headless', 'PromptEngine has headless mode');
+assert_contains($rootDir . '/_studio/engine/PromptEngine.php', 'writeHeadlessHeartbeat', 'PromptEngine writes heartbeat in headless mode');
+
+// Migration 004
+assert_contains($rootDir . '/_studio/engine/migrations/004_add_prompt_api_support.php', '_prompt_log_new', 'Migration uses create-new-first pattern');
+assert_not_contains($rootDir . '/_studio/engine/migrations/004_add_prompt_api_support.php', '_prompt_log_old', 'Migration does NOT rename-old-first (FK safe)');
+assert_contains($rootDir . '/_studio/engine/migrations/004_add_prompt_api_support.php', 'foreign_key_check', 'Migration verifies FK integrity');
 
 // ═══════════════════════════════════════════
 //  Results

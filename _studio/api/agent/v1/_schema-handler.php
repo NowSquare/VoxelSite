@@ -7,6 +7,11 @@ declare(strict_types=1);
  *
  * GET /_studio/api/agent/v1/schema  (canonical; /schema.php also accepted)
  *
+ * File is named _schema-handler.php (with underscore prefix) so Nginx's
+ * try_files cannot match it when the URL "/schema" is requested. Without the
+ * prefix, Nginx resolves "schema" → "schema.php" and serves the raw PHP
+ * source as application/octet-stream instead of routing through PHP-FPM.
+ *
  * Returns a machine-readable JSON schema describing the full Agent API surface.
  * This is the tool-calling contract: every endpoint, every parameter, every
  * response shape, every error code — verified against the live router.

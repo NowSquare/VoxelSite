@@ -100,7 +100,7 @@ if (str_ends_with($earlyPathClean, '.php')) {
     $earlyPathClean = substr($earlyPathClean, 0, -4);
 }
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && $earlyPathClean === 'schema') {
-    require __DIR__ . '/schema.php';
+    require __DIR__ . '/_schema-handler.php';
     exit;
 }
 

@@ -384,11 +384,11 @@ assert_contains($rootDir . '/_studio/api/agent/v1/router.php', "\$earlyPathClean
 // Router schema gate must use REQUEST_URI fallback (same as main router)
 assert_contains($rootDir . '/_studio/api/agent/v1/router.php', '/_studio/api/agent/v1', 'Schema gate has REQUEST_URI fallback');
 
-// schema.php file must exist
-if (file_exists($rootDir . '/_studio/api/agent/v1/schema.php')) {
-    pass('schema.php endpoint file exists');
+// _schema-handler.php file must exist
+if (file_exists($rootDir . '/_studio/api/agent/v1/_schema-handler.php')) {
+    pass('_schema-handler.php endpoint file exists');
 } else {
-    fail('schema.php endpoint file missing');
+    fail('_schema-handler.php endpoint file missing');
 }
 
 // Public docs must use /schema, not /schema.php
@@ -416,7 +416,7 @@ if (str_contains($studioRouter, "str_starts_with(\$path, '/agent/v1/')") &&
 }
 
 // Schema helpers must be prefixed to avoid collision with Studio router's jsonResponse()
-$schemaPhp = file_get_contents($rootDir . '/_studio/api/agent/v1/schema.php');
+$schemaPhp = file_get_contents($rootDir . '/_studio/api/agent/v1/_schema-handler.php');
 if (!preg_match('/^function jsonResponse\b/m', $schemaPhp) &&
     str_contains($schemaPhp, 'function schema_jsonResponse')) {
     pass('Schema helpers prefixed (no jsonResponse collision)');

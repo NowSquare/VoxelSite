@@ -38,11 +38,19 @@ $schema = [
     'openapi'  => '3.0.3',
     'info'     => [
         'title'       => 'VoxelSite Agent API',
-        'description' => 'REST API for external AI agents, automation tools, and CI/CD pipelines to manage a VoxelSite installation. Supports page CRUD, asset management, CSS compilation, site publishing, form submissions, settings, and tool invocation.',
+        'description' => 'REST API for external AI agents, automation tools, and CI/CD pipelines to manage a VoxelSite installation. Supports page CRUD, asset management, CSS compilation, site publishing, form submissions, settings, tool invocation, and asynchronous AI prompt execution.',
         'version'     => '1.0.0',
         'contact'     => [
             'name' => 'VoxelSite',
             'url'  => 'https://voxelsite.com',
+        ],
+        'x-capabilities' => [
+            'prompt_execution' => [
+                'available'   => function_exists('exec'),
+                'description' => 'AI prompt execution via background CLI worker. Requires exec() on the server.',
+                'scope'       => 'prompt:execute',
+                'note'        => 'This scope is opt-in — not included in any role defaults.',
+            ],
         ],
     ],
     'servers'  => [
@@ -138,6 +146,35 @@ function schema_buildComponentSchemas(): array
                 ],
             ],
             'required' => ['name', 'description', 'inputSchema'],
+        ],
+        'PromptResult' => [
+            'type' => 'object',
+            'properties' => [
+                'id'              => ['type' => 'integer', 'description' => 'Prompt log ID'],
+                'conversation_id' => ['type' => 'string', 'description' => 'Conversation UUID'],
+                'action_type'     => ['type' => 'string', 'description' => 'Action type (e.g. free_prompt, edit_page)'],
+                'prompt'          => ['type' => 'string', 'description' => 'The original user prompt text'],
+                'status'          => [
+                    'type' => 'string',
+                    'enum' => ['queued', 'streaming', 'success', 'partial', 'error'],
+                    'description' => 'Current execution status',
+                ],
+                'status_message'  => ['type' => 'string', 'nullable' => true, 'description' => 'Human-readable progress message'],
+                'ai_provider'     => ['type' => 'string'],
+                'ai_model'        => ['type' => 'string'],
+                'files_modified'  => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'File paths modified (only in terminal states)'],
+                'tokens'          => [
+                    'type' => 'object',
+                    'properties' => [
+                        'input'  => ['type' => 'integer', 'nullable' => true],
+                        'output' => ['type' => 'integer', 'nullable' => true],
+                    ],
+                ],
+                'cost_estimate'   => ['type' => 'number', 'nullable' => true, 'description' => 'Estimated cost in USD'],
+                'duration_ms'     => ['type' => 'integer', 'nullable' => true],
+                'error_message'   => ['type' => 'string', 'nullable' => true],
+                'created_at'      => ['type' => 'string', 'format' => 'date-time'],
+            ],
         ],
     ];
 }
@@ -491,6 +528,61 @@ function schema_buildPaths(): array
                 '404' => schema_errorRef('Tool not found'),
                 '422' => schema_errorRef('Validation failed'),
                 '429' => schema_errorRef('Rate limited (for submit_form)'),
+            ],
+        ],
+    ];
+
+    // ── Prompt Execution ──
+    $paths['/prompt'] = [
+        'post' => [
+            'operationId' => 'queuePrompt',
+            'summary'     => 'Queue an AI prompt for background execution',
+            'description' => 'Submits a prompt for AI processing. The prompt runs in a detached background worker. Returns immediately with a 202 Accepted and a poll URL. Requires the opt-in `prompt:execute` scope.',
+            'tags'        => ['Prompt'],
+            'requestBody' => schema_jsonBody([
+                'prompt'      => ['type' => 'string', 'description' => 'The user prompt text. This is what the AI will process.'],
+                'action_type' => [
+                    'type' => 'string',
+                    'enum' => ['free_prompt', 'edit_page', 'change_design', 'add_section', 'section_edit', 'optimize_aeo', 'inline_edit'],
+                    'default' => 'free_prompt',
+                    'description' => 'The type of AI action to perform.',
+                ],
+                'action_data' => ['type' => 'object', 'description' => 'Additional data for the action (e.g. page slug for edit_page)'],
+                'page_scope'  => ['type' => 'string', 'nullable' => true, 'description' => 'Scope the prompt to a specific page slug'],
+                'continue_from' => ['type' => 'integer', 'nullable' => true, 'description' => 'Prompt ID to continue from (uses its conversation). Must belong to the same API key.'],
+            ], ['prompt']),
+            'responses' => [
+                '202' => schema_jsonResponse('Prompt queued', [
+                    'data' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'id'              => ['type' => 'integer', 'description' => 'Prompt log ID'],
+                            'conversation_id' => ['type' => 'string', 'description' => 'Conversation UUID'],
+                            'status'          => ['type' => 'string', 'enum' => ['queued']],
+                            'poll_url'        => ['type' => 'string', 'description' => 'URL to poll for status'],
+                        ],
+                    ],
+                ]),
+                '422' => schema_errorRef('Validation error'),
+                '503' => schema_errorRef('exec() not available'),
+            ],
+        ],
+    ];
+
+    $paths['/prompt/{id}'] = [
+        'get' => [
+            'operationId' => 'getPromptStatus',
+            'summary'     => 'Poll prompt execution status',
+            'description' => 'Returns the current status of a prompt. Includes results (files modified, tokens, cost) when the prompt has completed. Per-key isolated: only returns prompts created by the authenticated key.',
+            'tags'        => ['Prompt'],
+            'parameters'  => [
+                schema_param('id', 'path', 'integer', 'Prompt log ID', true),
+            ],
+            'responses' => [
+                '200' => schema_jsonResponse('Prompt status', [
+                    'data' => ['$ref' => '#/components/schemas/PromptResult'],
+                ]),
+                '404' => schema_errorRef('Prompt not found or belongs to a different key'),
             ],
         ],
     ];

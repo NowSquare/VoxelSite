@@ -31,6 +31,8 @@ class PromptEngine
     private RevisionManager $revisionManager;
     private SiteContext $siteContext;
     private ActionRegistry $actionRegistry;
+    private bool $headless = false;
+    private int $headlessJobId = 0;
 
     public function __construct(
         ?Database $db = null,
@@ -81,10 +83,18 @@ class PromptEngine
         $actionData = $request['action_data'] ?? [];
         $conversationId = $request['conversation_id'] ?? null;
         $images = $request['images'] ?? [];
-        $promptLogId = null;
+        $promptLogId = $request['prompt_log_id'] ?? null;
 
-        // ── Set up SSE ──
-        $this->beginSSE();
+        // Headless mode: used by the CLI prompt-runner for Agent API.
+        // Skips SSE output, uses pre-allocated prompt_log_id, writes
+        // heartbeats to last_progress_at instead of streaming to browser.
+        $this->headless = !empty($request['headless']);
+        $this->headlessJobId = (int) ($request['prompt_log_id'] ?? 0);
+
+        // ── Set up SSE (skipped in headless mode) ──
+        if (!$this->headless) {
+            $this->beginSSE();
+        }
 
         Logger::info('ai', 'AI stream started', [
             'action_type'     => $actionType,
@@ -93,6 +103,7 @@ class PromptEngine
             'conversation_id' => $conversationId,
             'user_id'         => $userId,
             'image_count'     => count($images),
+            'headless'        => $this->headless,
         ]);
 
         // ── Shutdown safety net ──
@@ -177,19 +188,23 @@ class PromptEngine
             }
             $configuredModel = $this->getConfiguredModel($this->provider->getId());
 
-            // Create a prompt row immediately so refresh/disconnect won't
+            // In headless mode, the prompt_log row was pre-allocated by the API
+            // endpoint with status 'queued' — we just need to update it.
+            // In interactive mode, create it now so refresh/disconnect won't
             // lose the fact that generation started.
-            $promptLogId = $this->db->insert('prompt_log', [
-                'conversation_id' => $conversationId,
-                'user_id'         => $userId,
-                'action_type'     => $actionType,
-                'action_data'     => !empty($actionData) ? json_encode($actionData) : null,
-                'user_prompt'     => $userPrompt,
-                'ai_provider'     => $this->provider->getId(),
-                'ai_model'        => $configuredModel !== '' ? $configuredModel : 'unknown',
-                'status'          => 'streaming',
-                'created_at'      => now(),
-            ]);
+            if ($promptLogId === null) {
+                $promptLogId = $this->db->insert('prompt_log', [
+                    'conversation_id' => $conversationId,
+                    'user_id'         => $userId,
+                    'action_type'     => $actionType,
+                    'action_data'     => !empty($actionData) ? json_encode($actionData) : null,
+                    'user_prompt'     => $userPrompt,
+                    'ai_provider'     => $this->provider->getId(),
+                    'ai_model'        => $configuredModel !== '' ? $configuredModel : 'unknown',
+                    'status'          => 'streaming',
+                    'created_at'      => now(),
+                ]);
+            }
 
             // ── Load system prompt with context budget awareness ──
             // Use the model's actual context window for budget calculations,
@@ -1693,11 +1708,31 @@ class PromptEngine
      * All output is wrapped in error suppression so the AI stream and
      * file writes continue uninterrupted even after the client disconnects.
      *
+     * In headless mode (Agent API worker): SSE output is skipped entirely.
+     * Instead, periodic heartbeats are written to prompt_log.last_progress_at
+     * so the polling endpoint can detect stale workers.
+     *
      * @param string $type Event type (token, status, file_complete, warning, done, error)
      * @param array  $data Event payload
      */
     private function emitSSE(string $type, array $data): void
     {
+        // In headless mode, skip SSE output but write heartbeat.
+        // Heartbeat fires on ALL events (including tokens) so the polling
+        // endpoint's stale detection never misclassifies a healthy long-running
+        // prompt as dead. The 3-second throttle in writeHeadlessHeartbeat()
+        // prevents database write amplification.
+        if ($this->headless) {
+            // Only write status_message for meaningful events, not every token
+            $statusMessage = null;
+            if ($type !== 'token') {
+                $statusMessage = $data['message']
+                    ?? ($type === 'file_complete' ? 'Writing ' . ($data['path'] ?? '') : null);
+            }
+            $this->writeHeadlessHeartbeat($statusMessage);
+            return;
+        }
+
         static $outputFailed = false;
 
         $data['type'] = $type;
@@ -1726,6 +1761,39 @@ class PromptEngine
                     'error'      => $e->getMessage(),
                 ]);
             }
+        }
+    }
+
+    /**
+     * Write a heartbeat timestamp and optional status message to prompt_log.
+     *
+     * Used in headless mode to signal liveness. The GET /prompt/:id polling
+     * endpoint reads last_progress_at to detect stale workers:
+     * - queued jobs older than 60s → spawn failed
+     * - streaming jobs older than 300s → worker died
+     */
+    private function writeHeadlessHeartbeat(?string $statusMessage = null): void
+    {
+        // Throttle: don't write more than once every 3 seconds
+        static $lastHeartbeat = 0;
+        $now = microtime(true);
+        if ($now - $lastHeartbeat < 3.0) {
+            return;
+        }
+        $lastHeartbeat = $now;
+
+        try {
+            $data = ['last_progress_at' => now()];
+            if ($statusMessage !== null) {
+                $data['status_message'] = mb_substr($statusMessage, 0, 200);
+            }
+            // Use the prompt_log_id from the request context.
+            // In headless mode this is always set by the worker.
+            $this->db->update('prompt_log', $data, 'id = ? AND status = ?', [
+                $this->headlessJobId ?? 0, 'streaming',
+            ]);
+        } catch (\Throwable) {
+            // Best-effort — don't crash the generation over a heartbeat write
         }
     }
 

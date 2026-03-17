@@ -209,6 +209,10 @@ $routes = [
     // Tools
     ['GET',    '/tools',         'tools.php',       'tools:invoke'],
     ['POST',   '/tools/invoke',  'tools.php',       'tools:invoke'],
+
+    // Prompt execution (opt-in scope — not in any role's defaults)
+    ['POST',   '/prompt',        'prompt.php',      'prompt:execute'],
+    ['GET',    '/prompt/:id',    'prompt.php',      'prompt:execute'],
 ];
 
 $matched = false;

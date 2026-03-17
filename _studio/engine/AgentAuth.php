@@ -62,6 +62,23 @@ class AgentAuth
         'assets:read',
         'assets:write',
         'tools:invoke',
+        'prompt:execute',
+    ];
+
+    /**
+     * Opt-in scopes: explicitly grantable capabilities that are NOT part
+     * of any role's defaults. The site owner must grant them when creating
+     * a key. Each scope maps to the roles eligible to receive it.
+     *
+     * prompt:execute is restricted to write-capable roles because the
+     * PromptEngine has full workspace write access — granting it to a
+     * viewer would silently break the read-only contract.
+     *
+     * The ceiling check in createKey() merges eligible opt-in scopes
+     * with ROLE_DEFAULTS when validating requested scopes.
+     */
+    private const OPT_IN_SCOPES = [
+        'prompt:execute' => ['owner', 'editor', 'agent'],
     ];
 
     /** Default scopes per role — principle of least privilege */
@@ -109,7 +126,7 @@ class AgentAuth
     // ═══════════════════════════════════════════
 
     /**
-     * Generate a new API key.
+     * Create a new API key.
      *
      * Returns the plaintext key (displayed once to the user) and
      * the key metadata. The plaintext key is NEVER stored — only
@@ -137,8 +154,19 @@ class AgentAuth
             throw new RuntimeException('Invalid scopes: ' . implode(', ', $invalid));
         }
 
-        // Enforce role ceiling — can't grant scopes beyond what the role allows
-        $allowed = self::ROLE_DEFAULTS[$role] ?? [];
+        // Enforce role ceiling — can't grant scopes beyond what the role allows.
+        // Opt-in scopes (like prompt:execute) are added to the ceiling only if
+        // the current role is eligible for them.
+        $eligibleOptIn = [];
+        foreach (self::OPT_IN_SCOPES as $scope => $eligibleRoles) {
+            if (in_array($role, $eligibleRoles, true)) {
+                $eligibleOptIn[] = $scope;
+            }
+        }
+        $allowed = array_merge(
+            self::ROLE_DEFAULTS[$role] ?? [],
+            $eligibleOptIn
+        );
         $exceeding = array_diff($scopes, $allowed);
         if (!empty($exceeding)) {
             throw new RuntimeException(

@@ -361,6 +361,7 @@ async function loadSettings() {
         </div>
         </div>
       </div>
+      </div>
       <div class="vs-settings-card-footer">
         <span id="save-mail-status" class="text-xs text-vs-text-ghost hidden"></span>
         <button id="btn-save-mail" class="vs-btn vs-btn-primary vs-btn-sm">
@@ -2111,6 +2112,22 @@ function bindApiAccessEvents(s) {
     });
   }
 }
+// Role default scopes — must match AgentAuth::ROLE_DEFAULTS in AgentAuth.php.
+// Used by the key generation modal to construct the scopes array when the
+// user opts in to optional capabilities like prompt:execute.
+const AgentAuth_ROLE_DEFAULTS = {
+  owner:  ['pages:read', 'pages:write', 'settings:read', 'settings:write', 'compile:trigger', 'publish:trigger', 'submissions:read', 'assets:read', 'assets:write', 'tools:invoke'],
+  editor: ['pages:read', 'pages:write', 'compile:trigger', 'submissions:read', 'assets:read', 'assets:write', 'tools:invoke'],
+  agent:  ['pages:read', 'pages:write', 'settings:read', 'compile:trigger', 'publish:trigger', 'submissions:read', 'assets:read', 'assets:write', 'tools:invoke'],
+  viewer: ['pages:read', 'settings:read', 'submissions:read', 'assets:read'],
+};
+
+// Opt-in scope eligibility — must match AgentAuth::OPT_IN_SCOPES in AgentAuth.php.
+// Maps each opt-in scope to the roles that may receive it. Viewer is excluded from
+// prompt:execute because the PromptEngine has full workspace write access.
+const AgentAuth_OPT_IN_ELIGIBLE = {
+  'prompt:execute': ['owner', 'editor', 'agent'],
+};
 
 async function loadApiKeys() {
   const container = document.getElementById('api-keys-list');
@@ -2141,6 +2158,8 @@ async function loadApiKeys() {
           const created = new Date(k.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
           const roleColors = { agent: 'var(--vs-accent)', editor: '#3b82f6', viewer: 'var(--vs-text-ghost)', owner: '#8b5cf6' };
           const roleColor = roleColors[k.role] || 'var(--vs-text-ghost)';
+          const scopes = Array.isArray(k.scopes) ? k.scopes : (typeof k.scopes === 'string' ? JSON.parse(k.scopes || '[]') : []);
+          const hasPrompt = scopes.includes('prompt:execute');
           return `
             <div class="vs-api-key-row" style="display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid var(--vs-border-subtle); border-radius: var(--radius-lg); background: var(--vs-bg-base); transition: border-color 0.15s ease, box-shadow 0.2s ease;">
               <div style="width: 36px; height: 36px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: color-mix(in srgb, ${roleColor} 10%, var(--vs-bg-surface)); border: 1px solid color-mix(in srgb, ${roleColor} 18%, transparent);">
@@ -2149,9 +2168,10 @@ async function loadApiKeys() {
                 </svg>
               </div>
               <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1;">
-                <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                   <span style="font-size: 13px; font-weight: 600; color: var(--vs-text-primary); letter-spacing: -0.01em;">${escapeHtml(k.label || 'Unnamed')}</span>
                   <span style="font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: var(--radius-full); color: ${roleColor}; background: color-mix(in srgb, ${roleColor} 10%, var(--vs-bg-surface)); border: 1px solid color-mix(in srgb, ${roleColor} 20%, transparent); text-transform: capitalize;">${escapeHtml(k.role || 'agent')}</span>
+                  ${hasPrompt ? '<span style="font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: var(--radius-full); color: var(--vs-accent); background: color-mix(in srgb, var(--vs-accent) 8%, var(--vs-bg-surface)); border: 1px solid color-mix(in srgb, var(--vs-accent) 20%, transparent); letter-spacing: 0.5px;">AI</span>' : ''}
                 </div>
                 <div style="font-size: 11px; color: var(--vs-text-ghost); display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                   <code style="font-size: 10px; font-family: var(--font-mono); background: var(--vs-bg-inset); padding: 1px 5px; border-radius: var(--radius-xs); border: 1px solid var(--vs-border-subtle);">${escapeHtml(k.key_prefix || '???')}…</code>
@@ -2222,6 +2242,17 @@ function showGenerateKeyModal() {
               <option value="viewer">Viewer — read-only access</option>
             </select>
           </div>
+          <div style="border-top: 1px solid var(--vs-border-subtle); padding-top: 14px; margin-top: 2px;">
+            <div style="font-size: 11px; font-weight: 600; color: var(--vs-text-ghost); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;">Optional capabilities</div>
+            <label id="gen-key-prompt-toggle" class="vs-checkbox-label" style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid var(--vs-border-subtle); background: var(--vs-bg-base); transition: border-color 0.15s ease, background 0.15s ease; position: relative;">
+              <input type="checkbox" id="gen-key-prompt-execute" class="vs-checkbox" />
+              <span class="vs-checkbox-box" style="margin-top: 1px;"></span>
+              <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0;">
+                <span style="font-size: 13px; font-weight: 500; color: var(--vs-text-primary);">AI Prompt Execution</span>
+                <span style="font-size: 11px; color: var(--vs-text-ghost); line-height: 1.4;">Allow this key to run AI prompts that can create pages, edit content, and modify your site. Requires exec() on the server.</span>
+              </div>
+            </label>
+          </div>
         </div>
       </div>
       <div class="vs-modal-footer">
@@ -2262,9 +2293,51 @@ function showGenerateKeyModal() {
     }
   });
 
+  // Interactive highlight on the prompt toggle container
+  const promptToggle = backdrop.querySelector('#gen-key-prompt-execute');
+  const promptLabel = backdrop.querySelector('#gen-key-prompt-toggle');
+  const promptCheckbox = promptToggle;
+  const promptDesc = promptLabel?.querySelector('span[style*="font-size: 11px"]');
+
+  // Disable prompt:execute for roles that aren't eligible (e.g. viewer)
+  const updatePromptEligibility = (role) => {
+    const eligible = (AgentAuth_OPT_IN_ELIGIBLE['prompt:execute'] || []).includes(role);
+    if (!eligible) {
+      promptCheckbox.checked = false;
+      promptCheckbox.disabled = true;
+      promptLabel.style.opacity = '0.45';
+      promptLabel.style.cursor = 'not-allowed';
+      promptLabel.style.borderColor = 'var(--vs-border-subtle)';
+      promptLabel.style.background = 'var(--vs-bg-base)';
+      if (promptDesc) promptDesc.textContent = 'Not available for read-only roles. Prompt execution requires write access.';
+    } else {
+      promptCheckbox.disabled = false;
+      promptLabel.style.opacity = '1';
+      promptLabel.style.cursor = 'pointer';
+      if (promptDesc) promptDesc.textContent = 'Allow this key to run AI prompts that can create pages, edit content, and modify your site. Requires exec() on the server.';
+    }
+  };
+
+  // Listen for role changes
+  const roleSelect = backdrop.querySelector('#gen-key-role');
+  roleSelect?.addEventListener('change', () => updatePromptEligibility(roleSelect.value));
+  // Set initial state
+  updatePromptEligibility(roleSelect?.value || 'agent');
+
+  promptToggle?.addEventListener('change', () => {
+    if (promptToggle.checked) {
+      promptLabel.style.borderColor = 'color-mix(in srgb, var(--vs-accent) 40%, transparent)';
+      promptLabel.style.background = 'color-mix(in srgb, var(--vs-accent) 4%, var(--vs-bg-base))';
+    } else {
+      promptLabel.style.borderColor = 'var(--vs-border-subtle)';
+      promptLabel.style.background = 'var(--vs-bg-base)';
+    }
+  });
+
   backdrop.querySelector('#confirm-generate-key').addEventListener('click', async () => {
     const label = document.getElementById('gen-key-label')?.value?.trim();
     const role = document.getElementById('gen-key-role')?.value || 'agent';
+    const wantsPrompt = document.getElementById('gen-key-prompt-execute')?.checked;
 
     if (!label) {
       showToast('Please enter a label for the key', 'error');
@@ -2275,7 +2348,13 @@ function showGenerateKeyModal() {
     btn.disabled = true;
     btn.textContent = 'Generating…';
 
-    const res = await api.post('/settings/api-keys', { label, role });
+    // Build the request body — only include scopes if the user opted in
+    const body = { label, role };
+    if (wantsPrompt) {
+      body.scopes = [...(AgentAuth_ROLE_DEFAULTS[role] || AgentAuth_ROLE_DEFAULTS.agent), 'prompt:execute'];
+    }
+
+    const res = await api.post('/settings/api-keys', body);
 
     if (res.ok && res.data?.key) {
       close();

@@ -326,6 +326,7 @@ async function loadSettings() {
         <!-- Common Fields (From address, test) -->
         <div id="mail-common-fields" style="display: ${mailConfig.driver === 'none' ? 'none' : 'block'};">
         <div class="border-t border-vs-border-subtle my-2"></div>
+        <div class="flex flex-col gap-4">
         <div>
           <label for="set-mail-from-address" class="block text-sm font-medium text-vs-text-secondary mb-1">From Address</label>
           <input id="set-mail-from-address" type="email" value="${escapeHtml(mailConfig.from_address || '')}"
@@ -342,7 +343,7 @@ async function loadSettings() {
           <p class="text-xs text-vs-text-ghost mt-1">Shown as the sender name on notification emails.</p>
         </div>
 
-        <div class="border-t border-vs-border-subtle my-2"></div>
+        <div class="border-t border-vs-border-subtle"></div>
 
         <!-- Test Email -->
         <div>
@@ -358,7 +359,7 @@ async function loadSettings() {
           </div>
           <p id="mail-test-status" class="text-xs mt-1.5 hidden"></p>
         </div>
-      </div>
+        </div>
       </div>
       <div class="vs-settings-card-footer">
         <span id="save-mail-status" class="text-xs text-vs-text-ghost hidden"></span>
@@ -516,6 +517,75 @@ async function loadSettings() {
       </div>
     </div>
 
+    <!-- Card: API Access -->
+    <div class="vs-settings-card" id="api-access-card">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+        <div>
+          <h2 class="vs-settings-card-title" style="display: flex; align-items: center; gap: 8px;">API Access <span style="font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; background: color-mix(in srgb, var(--vs-accent) 12%, transparent); color: var(--vs-accent); border: 1px solid color-mix(in srgb, var(--vs-accent) 25%, transparent);">Beta</span></h2>
+          <p class="vs-settings-card-subtitle" style="margin-bottom: 0;">Manage Agent API keys for external integrations and automations.</p>
+        </div>
+        <a href="/_studio/api/agent/v1/schema" target="_blank" rel="noopener" class="vs-btn vs-btn-ghost vs-btn-xs" style="color: var(--vs-text-ghost); white-space: nowrap; text-decoration: none;">
+          ${icons.externalLink} View API schema
+        </a>
+      </div>
+      <div class="flex flex-col gap-4">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1; min-width: 0;">
+            <span style="position: relative; display: inline-flex; align-items: center; width: 36px; height: 20px; flex-shrink: 0;">
+              <input type="checkbox" id="set-api-enabled" ${s.agent_api_enabled ? 'checked' : ''} style="position: absolute; opacity: 0; width: 0; height: 0;" />
+              <span class="vs-toggle-track" style="
+                position: absolute; inset: 0; border-radius: 10px;
+                background: ${s.agent_api_enabled ? 'var(--vs-accent)' : 'var(--vs-border-medium, #ccc)'};
+                transition: background 0.2s ease;
+              "></span>
+              <span class="vs-toggle-thumb" style="
+                position: absolute; left: ${s.agent_api_enabled ? '18px' : '2px'}; top: 2px;
+                width: 16px; height: 16px; border-radius: 50%;
+                background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                transition: left 0.2s ease;
+              "></span>
+            </span>
+            <div style="display: flex; flex-direction: column; gap: 1px;">
+              <span style="font-size: 13px; font-weight: 500; color: var(--vs-text-secondary);">
+                Enable Agent API
+              </span>
+              <span style="font-size: 11px; color: var(--vs-text-ghost); line-height: 1.4;">Allow external applications to manage your site via authenticated REST API.</span>
+            </div>
+          </label>
+        </div>
+
+        <div id="api-access-body" style="${s.agent_api_enabled ? '' : 'opacity: 0.4; pointer-events: none;'}">
+          <div style="margin-bottom: 16px;">
+            <label for="set-api-origins" style="display: block; font-size: 13px; font-weight: 500; color: var(--vs-text-secondary); margin-bottom: 6px;">Allowed Origins</label>
+            <textarea id="set-api-origins"
+              class="vs-input" rows="3"
+              style="resize: vertical; font-family: var(--font-mono); font-size: 12px; height: auto; padding: 10px 14px; line-height: 1.5;"
+              placeholder="*">${escapeHtml(s.agent_api_allowed_origins || '*')}</textarea>
+            <p style="font-size: 11px; color: var(--vs-text-ghost); margin: 6px 0 0;">Enter <code>*</code> to allow all origins, or one origin per line (e.g. <code>https://example.com</code>).</p>
+          </div>
+
+          <div style="border-top: 1px solid var(--vs-border-subtle); padding-top: 16px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+              <span style="font-size: 13px; font-weight: 500; color: var(--vs-text-secondary);">API Keys</span>
+              <button id="btn-generate-api-key" class="vs-btn vs-btn-secondary vs-btn-xs">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Generate Key
+              </button>
+            </div>
+            <div id="api-keys-list">
+              <div class="text-xs text-vs-text-ghost text-center py-4">Loading keys...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="vs-settings-card-footer">
+        <span id="save-api-status" class="text-xs text-vs-text-ghost hidden"></span>
+        <button id="btn-save-api-settings" class="vs-btn vs-btn-primary vs-btn-sm">
+          Save API Settings
+        </button>
+      </div>
+    </div>
+
     <!-- Danger Zone -->
     <div class="vs-danger-zone">
       <h3 class="vs-danger-zone-title">
@@ -556,6 +626,9 @@ async function loadSettings() {
 
   // Bind reset installation button
   bindResetInstallEvent();
+
+  // Bind API Access events
+  bindApiAccessEvents(s);
 
   // Bind log deletion buttons (two-step confirm)
   document.querySelectorAll('.btn-delete-log').forEach(btn => {
@@ -1971,4 +2044,331 @@ function showApiStatus(message, type) {
 }
 
 
-export { renderSettingsView, loadSettings, confirmUnsavedChanges, bindSettingsEvents, bindEmailSettingsEvents };
+// ═══════════════════════════════════════════
+//  API Access Section
+// ═══════════════════════════════════════════
+
+function bindApiAccessEvents(s) {
+  const enableToggle = document.getElementById('set-api-enabled');
+  const bodyEl = document.getElementById('api-access-body');
+  const saveBtn = document.getElementById('btn-save-api-settings');
+  const generateBtn = document.getElementById('btn-generate-api-key');
+
+  // Toggle enable/disable
+  if (enableToggle) {
+    enableToggle.addEventListener('change', () => {
+      const isOn = enableToggle.checked;
+      const track = enableToggle.parentElement.querySelector('.vs-toggle-track');
+      const thumb = enableToggle.parentElement.querySelector('.vs-toggle-thumb');
+      if (track) track.style.background = isOn ? 'var(--vs-accent)' : 'var(--vs-border-medium, #ccc)';
+      if (thumb) thumb.style.left = isOn ? '18px' : '2px';
+      if (bodyEl) {
+        bodyEl.style.opacity = isOn ? '' : '0.4';
+        bodyEl.style.pointerEvents = isOn ? '' : 'none';
+      }
+    });
+  }
+
+  // Save API settings
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      if (window.demoGuard?.()) return;
+      const statusEl = document.getElementById('save-api-status');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+
+      const payload = {
+        agent_api_enabled: document.getElementById('set-api-enabled')?.checked || false,
+        agent_api_allowed_origins: document.getElementById('set-api-origins')?.value?.trim() || '*',
+      };
+
+      const res = await api.put('/settings', payload);
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save API Settings';
+
+      if (res.ok) {
+        showToast('API settings saved', 'success');
+        if (statusEl) {
+          statusEl.textContent = 'Saved';
+          statusEl.className = 'text-xs text-vs-success';
+          statusEl.classList.remove('hidden');
+          setTimeout(() => statusEl.classList.add('hidden'), 2000);
+        }
+      } else {
+        showToast(res.error?.message || 'Failed to save', 'error');
+      }
+    });
+  }
+
+  // Load API keys
+  loadApiKeys();
+
+  // Generate key button
+  if (generateBtn) {
+    generateBtn.addEventListener('click', () => {
+      if (window.demoGuard?.()) return;
+      showGenerateKeyModal();
+    });
+  }
+}
+
+async function loadApiKeys() {
+  const container = document.getElementById('api-keys-list');
+  if (!container) return;
+
+  try {
+    const res = await api.get('/settings/api-keys');
+    const keys = res.data?.keys || [];
+
+    if (keys.length === 0) {
+      container.innerHTML = `
+        <div style="text-align: center; padding: 24px 16px; color: var(--vs-text-ghost);">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto 8px; opacity: 0.35;">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <rect x="10" y="10" width="4" height="5" rx="1"/>
+            <circle cx="12" cy="9" r="1.5"/>
+          </svg>
+          <p style="font-size: 13px; margin: 0 0 4px; font-weight: 500;">No API keys yet</p>
+          <p style="font-size: 11px; margin: 0;">Generate a key to let external applications manage your site.</p>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        ${keys.map(k => {
+          const lastUsed = k.last_used_at ? new Date(k.last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never';
+          const created = new Date(k.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          const roleColors = { agent: 'var(--vs-accent)', editor: '#3b82f6', viewer: 'var(--vs-text-ghost)', owner: '#8b5cf6' };
+          const roleColor = roleColors[k.role] || 'var(--vs-text-ghost)';
+          return `
+            <div class="vs-api-key-row" style="display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid var(--vs-border-subtle); border-radius: var(--radius-lg); background: var(--vs-bg-base); transition: border-color 0.15s ease, box-shadow 0.2s ease;">
+              <div style="width: 36px; height: 36px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: color-mix(in srgb, ${roleColor} 10%, var(--vs-bg-surface)); border: 1px solid color-mix(in srgb, ${roleColor} 18%, transparent);">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${roleColor}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 13px; font-weight: 600; color: var(--vs-text-primary); letter-spacing: -0.01em;">${escapeHtml(k.label || 'Unnamed')}</span>
+                  <span style="font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: var(--radius-full); color: ${roleColor}; background: color-mix(in srgb, ${roleColor} 10%, var(--vs-bg-surface)); border: 1px solid color-mix(in srgb, ${roleColor} 20%, transparent); text-transform: capitalize;">${escapeHtml(k.role || 'agent')}</span>
+                </div>
+                <div style="font-size: 11px; color: var(--vs-text-ghost); display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                  <code style="font-size: 10px; font-family: var(--font-mono); background: var(--vs-bg-inset); padding: 1px 5px; border-radius: var(--radius-xs); border: 1px solid var(--vs-border-subtle);">${escapeHtml(k.key_prefix || '???')}…</code>
+                  <span>Created ${created}</span>
+                  <span>· Last used: ${lastUsed}</span>
+                </div>
+              </div>
+              <button class="vs-btn vs-btn-ghost vs-btn-xs btn-revoke-key" data-id="${k.id}" style="color: var(--vs-text-ghost); white-space: nowrap; flex-shrink: 0;" title="Revoke">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                Revoke
+              </button>
+            </div>`;
+        }).join('')}
+      </div>`;
+
+    // Bind revoke buttons
+    container.querySelectorAll('.btn-revoke-key').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (window.demoGuard?.()) return;
+        const keyId = btn.dataset.id;
+        if (btn.dataset.confirm !== 'true') {
+          btn.dataset.confirm = 'true';
+          btn.innerHTML = '<span style="font-size: 11px; color: var(--vs-error);">Sure?</span>';
+          setTimeout(() => {
+            if (btn.dataset.confirm === 'true') {
+              btn.dataset.confirm = '';
+              btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Revoke';
+            }
+          }, 3000);
+          return;
+        }
+        const row = btn.closest('.vs-api-key-row');
+        if (row) row.style.opacity = '0.4';
+        await api.delete(`/settings/api-keys/${keyId}`);
+        showToast('API key revoked', 'success');
+        loadApiKeys();
+      });
+    });
+  } catch (e) {
+    container.innerHTML = '<div style="font-size: 12px; color: var(--vs-text-ghost); text-align: center; padding: 16px 0;">Could not load API keys.</div>';
+  }
+}
+
+function showGenerateKeyModal() {
+  const existing = document.getElementById('generate-key-modal');
+  if (existing) existing.remove();
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'vs-modal-overlay';
+  backdrop.id = 'generate-key-modal';
+  backdrop.innerHTML = `
+    <div class="vs-modal" style="max-width: 440px;">
+      <div class="vs-modal-header">
+        <h3 class="vs-modal-title">Generate API Key</h3>
+        <p class="vs-modal-desc">Create a key to let external tools and AI agents manage your site programmatically.</p>
+      </div>
+      <div class="vs-modal-body">
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div>
+            <label for="gen-key-label" style="display: block; font-size: 13px; font-weight: 500; color: var(--vs-text-secondary); margin-bottom: 6px;">Label</label>
+            <input id="gen-key-label" type="text" class="vs-input" placeholder="e.g. My Website Automation" autofocus />
+          </div>
+          <div>
+            <label for="gen-key-role" style="display: block; font-size: 13px; font-weight: 500; color: var(--vs-text-secondary); margin-bottom: 6px;">Role</label>
+            <select id="gen-key-role" class="vs-input">
+              <option value="agent" selected>Agent — full access (pages, assets, publish, tools)</option>
+              <option value="editor">Editor — pages, assets, & tools (no publish or settings)</option>
+              <option value="viewer">Viewer — read-only access</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="vs-modal-footer">
+        <button class="vs-btn vs-btn-secondary vs-btn-sm" id="cancel-generate-key">Cancel</button>
+        <button class="vs-btn vs-btn-primary vs-btn-sm" id="confirm-generate-key">Generate</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(backdrop);
+  requestAnimationFrame(() => backdrop.classList.add('is-visible'));
+
+  const close = () => closeModal(backdrop);
+
+  // Escape key to dismiss
+  const onKeydown = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+  };
+  document.addEventListener('keydown', onKeydown);
+
+  // Clean up keydown listener when the overlay is removed
+  const observer = new MutationObserver(() => {
+    if (!document.body.contains(backdrop)) {
+      document.removeEventListener('keydown', onKeydown);
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true });
+
+  onBackdropClick(backdrop, close);
+  backdrop.querySelector('#cancel-generate-key').addEventListener('click', close);
+
+  // Enter key in label input submits
+  const labelInput = backdrop.querySelector('#gen-key-label');
+  labelInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      backdrop.querySelector('#confirm-generate-key')?.click();
+    }
+  });
+
+  backdrop.querySelector('#confirm-generate-key').addEventListener('click', async () => {
+    const label = document.getElementById('gen-key-label')?.value?.trim();
+    const role = document.getElementById('gen-key-role')?.value || 'agent';
+
+    if (!label) {
+      showToast('Please enter a label for the key', 'error');
+      return;
+    }
+
+    const btn = backdrop.querySelector('#confirm-generate-key');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+
+    const res = await api.post('/settings/api-keys', { label, role });
+
+    if (res.ok && res.data?.key) {
+      close();
+      showKeyRevealDialog(res.data.key, label);
+      loadApiKeys();
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Generate';
+      showToast(res.error?.message || 'Failed to generate key', 'error');
+    }
+  });
+}
+
+function showKeyRevealDialog(plaintextKey, label) {
+  const existing = document.getElementById('key-reveal-modal');
+  if (existing) existing.remove();
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'vs-modal-overlay';
+  backdrop.id = 'key-reveal-modal';
+  backdrop.innerHTML = `
+    <div class="vs-modal" style="max-width: 640px;">
+      <div class="vs-modal-header">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 36px; height: 36px; border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, #22c55e 10%, var(--vs-bg-surface)); border: 1px solid color-mix(in srgb, #22c55e 20%, transparent); flex-shrink: 0;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div>
+            <h3 class="vs-modal-title" style="margin: 0;">Key Generated</h3>
+            <p class="vs-modal-desc" style="margin: 2px 0 0;">${escapeHtml(label)}</p>
+          </div>
+        </div>
+      </div>
+      <div class="vs-modal-body">
+        <div style="position: relative; margin-bottom: 16px;">
+          <input type="text" readonly value="${escapeHtml(plaintextKey)}" id="revealed-key-input" class="vs-input" style="width: 100%; font-family: var(--font-mono); font-size: 12.5px; padding-right: 44px; letter-spacing: 0.01em; color: var(--vs-text-primary);" />
+          <button id="copy-api-key" type="button" title="Copy" style="position: absolute; right: 1px; top: 1px; bottom: 1px; width: 40px; display: flex; align-items: center; justify-content: center; background: var(--vs-bg-surface); border: none; border-left: 1px solid var(--vs-border-subtle); border-radius: 0 var(--radius-md) var(--radius-md) 0; cursor: pointer; color: var(--vs-text-ghost); transition: color 0.15s ease;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+        <div style="display: flex; gap: 10px; padding: 12px 14px; background: color-mix(in srgb, var(--vs-accent) 5%, var(--vs-bg-surface)); border: 1px solid color-mix(in srgb, var(--vs-accent) 15%, transparent); border-radius: var(--radius-md);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--vs-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 1px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <div>
+            <p style="font-size: 12px; color: var(--vs-text-secondary); margin: 0; font-weight: 500;">Store this key securely</p>
+            <p style="font-size: 11px; color: var(--vs-text-ghost); margin: 3px 0 0; line-height: 1.45;">This key won\u2019t be shown again. If you lose it, revoke it and generate a new one.</p>
+          </div>
+        </div>
+      </div>
+      <div class="vs-modal-footer">
+        <button class="vs-btn vs-btn-primary vs-btn-sm" id="close-key-reveal">Done</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(backdrop);
+  requestAnimationFrame(() => backdrop.classList.add('is-visible'));
+
+  const close = () => closeModal(backdrop);
+
+  // Escape key to dismiss
+  const onKeydown = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+  };
+  document.addEventListener('keydown', onKeydown);
+  const observer = new MutationObserver(() => {
+    if (!document.body.contains(backdrop)) {
+      document.removeEventListener('keydown', onKeydown);
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true });
+
+  onBackdropClick(backdrop, close);
+  backdrop.querySelector('#close-key-reveal').addEventListener('click', close);
+
+  // Select key text on focus for easy manual copy
+  const keyInput = backdrop.querySelector('#revealed-key-input');
+  keyInput?.addEventListener('focus', () => keyInput.select());
+
+  backdrop.querySelector('#copy-api-key').addEventListener('click', async () => {
+    const copyBtn = backdrop.querySelector('#copy-api-key');
+    try {
+      await navigator.clipboard.writeText(plaintextKey);
+      copyBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      copyBtn.style.color = '#22c55e';
+      setTimeout(() => {
+        copyBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+        copyBtn.style.color = '';
+      }, 2000);
+    } catch {
+      // Fallback: select the text
+      keyInput?.select();
+    }
+  });
+}
+
+export { renderSettingsView, loadSettings, confirmUnsavedChanges, bindSettingsEvents, bindEmailSettingsEvents, bindApiAccessEvents };

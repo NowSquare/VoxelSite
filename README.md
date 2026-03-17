@@ -32,7 +32,7 @@ Full documentation: **[voxelsite.com/docs](https://voxelsite.com/docs)**
 - **Asset Manager** — upload images, files, and fonts
 - **Actions** — define interactions (reservations, signups, inquiries) that serve both human visitors (beautiful form bar with file uploads) and AI agents (MCP tools) simultaneously
 - **Forms** — submission handling with validation, spam protection, and email notifications
-- **Agent API** — authenticated REST endpoints for external AI agents and automation tools (Zapier, Make.com, n8n) to manage pages, settings, assets, and publishing programmatically
+- **Agent API** — authenticated REST endpoints for external AI agents and automation tools (Zapier, Make.com, n8n) to manage pages, settings, assets, publishing, and AI prompt execution programmatically
 - **Team** — invite editors and viewers with role-based access
 - **AEO** — built-in AI discoverability (`llms.txt`, schema, MCP endpoint)
 

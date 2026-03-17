@@ -19,7 +19,7 @@ use RuntimeException;
  * - Keys are stored as SHA-256 hashes (never plaintext, never reversible)
  * - Each key has a role (owner, editor, viewer, agent) and granular scopes
  * - Rate limiting is per-key, per-hour (SQLite counter, not in-memory)
- * - Every request is logged to the structured Logger (channel: 'agent_api')
+ * - Every request is logged to the structured Logger (channel: 'agent-api')
  *
  * Key format: vxs_<64 hex chars>  (68 chars total)
  * Example:    vxs_a1b2c3d4e5f67890abcdef1234567890abcdef1234567890abcdef12345678
@@ -71,16 +71,21 @@ class AgentAuth
                       'assets:read', 'assets:write', 'tools:invoke'],
         'editor' => ['pages:read', 'pages:write', 'compile:trigger',
                       'submissions:read', 'assets:read', 'assets:write', 'tools:invoke'],
+        // Agent: full automation access (pages, assets, compile, publish, submissions, tools).
+        // Intentionally excludes settings:write — an agent should not be able to
+        // disable the API or change allowed origins (would lock itself out).
+        'agent'  => ['pages:read', 'pages:write', 'settings:read',
+                      'compile:trigger', 'publish:trigger', 'submissions:read',
+                      'assets:read', 'assets:write', 'tools:invoke'],
         'viewer' => ['pages:read', 'settings:read', 'submissions:read', 'assets:read'],
-        'agent'  => ['pages:read', 'tools:invoke'],
     ];
 
     /** Default rate limits per role (requests per hour) */
     private const RATE_LIMITS = [
         'owner'  => 1000,
         'editor' => 500,
+        'agent'  => 300,
         'viewer' => 200,
-        'agent'  => 100,
     ];
 
     // ── Auth result statuses ──
@@ -92,6 +97,9 @@ class AgentAuth
 
     public function __construct(?Database $db = null)
     {
+        if (DemoMode::isActive()) {
+            throw new RuntimeException('Agent API is disabled in demo mode.');
+        }
         $this->db = $db ?? Database::getInstance();
         $this->ensureTable();
     }
@@ -156,7 +164,7 @@ class AgentAuth
             'created_at'   => $now,
         ]);
 
-        Logger::info('agent_api', 'API key created', [
+        Logger::info('agent-api', 'API key created', [
             'key_id'     => $id,
             'label'      => $label,
             'role'       => $role,
@@ -197,7 +205,7 @@ class AgentAuth
         $deleted = $this->db->delete('api_keys', 'id = ?', [$keyId]);
 
         if ($deleted > 0) {
-            Logger::info('agent_api', 'API key revoked', ['key_id' => $keyId]);
+            Logger::info('agent-api', 'API key revoked', ['key_id' => $keyId]);
 
             // Clean up rate limit entries for this key
             $this->db->delete('api_key_rate_limits', 'key_id = ?', [$keyId]);
@@ -251,7 +259,7 @@ class AgentAuth
         );
 
         if ($key === null) {
-            Logger::warning('agent_api', 'Authentication failed: invalid key', [
+            Logger::warning('agent-api', 'Authentication failed: invalid key', [
                 'key_prefix' => substr($plaintext, 0, 12),
                 'ip'         => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
             ]);
@@ -265,7 +273,7 @@ class AgentAuth
         if ($this->isRateLimited($keyId, $rateLimit)) {
             $retryAfter = $this->getRetryAfterSeconds();
 
-            Logger::warning('agent_api', 'Rate limited', [
+            Logger::warning('agent-api', 'Rate limited', [
                 'key_id'      => $keyId,
                 'rate_limit'  => $rateLimit,
                 'retry_after' => $retryAfter,
@@ -368,7 +376,7 @@ class AgentAuth
     public function requireScope(array $keyData, string $requiredScope): void
     {
         if (!$this->hasScope($keyData, $requiredScope)) {
-            Logger::warning('agent_api', 'Scope denied', [
+            Logger::warning('agent-api', 'Scope denied', [
                 'key_id'         => $keyData['id'],
                 'required_scope' => $requiredScope,
                 'granted_scopes' => $keyData['scopes'],
@@ -518,6 +526,10 @@ class AgentAuth
         if (isset($authResult['remaining'])) {
             header('X-RateLimit-Remaining: ' . $authResult['remaining']);
         }
+        // Always send reset timestamp (next hour boundary)
+        $nextHour = (int) ceil(time() / 3600) * 3600;
+        header('X-RateLimit-Reset: ' . $nextHour);
+
         if ($authResult['status'] === self::AUTH_RATE_LIMITED && isset($authResult['retry_after'])) {
             header('Retry-After: ' . $authResult['retry_after']);
         }

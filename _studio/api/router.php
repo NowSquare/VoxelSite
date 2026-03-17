@@ -44,6 +44,17 @@ if (str_contains($path, 'router.php')) {
 
 $path = '/' . trim($path, '/');
 
+// ── Forward Agent API requests to the standalone Agent API router ──
+// On Apache, the .htaccess rule routes agent/v1/* directly to the Agent API
+// router. On Nginx/Herd (no .htaccess), ALL /_studio/api/* requests arrive
+// here. Detect /agent/v1/ and forward with _path set correctly.
+if (str_starts_with($path, '/agent/v1/') || $path === '/agent/v1') {
+    $agentSubPath = ($path === '/agent/v1') ? '' : substr($path, strlen('/agent/v1'));
+    $_GET['_path'] = ltrim($agentSubPath, '/');
+    require __DIR__ . '/agent/v1/router.php';
+    exit;
+}
+
 // ── Route definitions ──
 // Format: [HTTP_METHOD, pattern, endpoint_file]
 // Patterns support :param for named segments
@@ -194,6 +205,9 @@ $routes = [
     ['DELETE', '/settings/logs',         'settings.php',       true],
     ['POST',   '/settings/favicon',     'settings.php',       true],
     ['DELETE', '/settings/favicon',     'settings.php',       true],
+    ['GET',    '/settings/api-keys',    'api-keys.php',       true],
+    ['POST',   '/settings/api-keys',   'api-keys.php',       true],
+    ['DELETE', '/settings/api-keys/:id','api-keys.php',       true],
 
     // Site management
     ['POST',   '/site/reset',            'site.php',           true],

@@ -67,6 +67,7 @@ if ($method === 'PUT' && $path === '/settings') {
         'evaluator_enabled',
         'nav_style', 'mobile_nav_style', 'footer_style',
         'auto_snapshot', 'max_snapshots', 'max_revisions',
+        'agent_api_enabled', 'agent_api_allowed_origins',
     ];
 
     $updates = [];

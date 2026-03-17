@@ -15,6 +15,12 @@
     # ── Allow static UI assets ──
     RewriteRule ^ui/ - [L]
 
+    # ── Agent API v1 (must come before the Studio API catch-all) ──
+    RewriteRule ^api/agent/v1/(.*)$ api/agent/v1/router.php?_path=$1 [QSA,L]
+
+    # Pass Authorization header through CGI/FastCGI (needed for Bearer tokens)
+    SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+
     # ── Route API requests to the router ──
     RewriteRule ^api/(.*)$ api/router.php [L,QSA]
 

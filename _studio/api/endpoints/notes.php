@@ -25,6 +25,17 @@ $method = $_REQUEST['_route_method'];
 $params = $_REQUEST['_route_params'] ?? [];
 $user   = $_REQUEST['_user'];
 
+// Notes is owner+editor only — viewers cannot read or write.
+// The router's generic viewer guard blocks POST/PUT/DELETE,
+// but GET would still pass. This blocks everything.
+if ($user['role'] === 'viewer') {
+    jsonResponse(['ok' => false, 'error' => [
+        'code'    => 'forbidden',
+        'message' => 'Notes is not available for viewer accounts.',
+    ]], 403);
+    exit;
+}
+
 $noteManager = new NoteManager();
 $userId = (int) $user['id'];
 

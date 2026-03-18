@@ -159,6 +159,7 @@ export function renderTeamModals() {
             ${[
               ['Use AI chat',           true,  true,  false],
               ['Edit pages & code',     true,  true,  false],
+              ['Use notes',              true,  true,  false],
               ['Manage assets',         true,  true,  false],
               ['Publish changes',       true,  true,  false],
               ['View form submissions', true,  true,  true],
@@ -175,6 +176,7 @@ export function renderTeamModals() {
               </div>
             `).join('')}
           </div>
+          <p style="font-size: 11px; color: var(--vs-text-ghost); margin: 12px 0 0; line-height: 1.45;">Notes are private — each team member has their own notes, separate from other users.</p>
         </div>
         <div class="px-6 py-4 border-t border-vs-border-subtle flex justify-end">
           <button id="btn-roles-close" class="vs-btn vs-btn-ghost vs-btn-sm">Close</button>

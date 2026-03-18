@@ -49,7 +49,7 @@ import { closeModal, showConfirmModal, showPromptModal, onBackdropClick } from '
 const NAV_ITEMS = [
   { route: 'chat',        label: 'Chat' },
   { route: 'editor',      label: 'Editor' },
-  { route: 'notes',       label: 'Notes' },
+  { route: 'notes',       label: 'Notes',      roles: ['owner', 'editor'] },
   { route: 'assets',      label: 'Assets' },
   // Collections removed from v1.0.0 — ships in v1.1 with full AI integration
   // { route: 'collections', label: 'Collections' },
@@ -98,7 +98,7 @@ function isMobile() {
 
 /** Mobile nav items — content management views that work on mobile */
 const MOBILE_NAV_ITEMS = [
-  { route: 'notes',      label: 'Notes',      icon: 'fileText' },
+  { route: 'notes',      label: 'Notes',      icon: 'fileText', roles: ['owner', 'editor'] },
   { route: 'assets',     label: 'Assets',     icon: 'image' },
   { route: 'forms',      label: 'Forms',      icon: 'inbox' },
   { route: 'actions',    label: 'Actions',    icon: 'zap' },
@@ -331,7 +331,11 @@ function renderApp() {
     mainContent = renderEditorLayout();
   } else if (route === 'notes') {
     // Notes has its own full-height split layout (list + editor)
-    mainContent = `<div class="h-full overflow-hidden">${renderNotesView()}</div>`;
+    // Only owner and editor have access — viewers see access denied
+    const noteRole = store.get('user')?.role;
+    mainContent = (noteRole === 'owner' || noteRole === 'editor')
+      ? `<div class="h-full overflow-hidden">${renderNotesView()}</div>`
+      : renderContentLayout();
   } else if (isDashboard) {
     mainContent = renderDashboardLayout();
   } else {
@@ -692,6 +696,8 @@ function renderPageContent(route, params) {
       return renderActionDetailView(params.actionId);
     case 'designs':
       return (role === 'owner' || role === 'editor') ? renderDesignsView() : renderAccessDenied();
+    case 'notes':
+      return renderAccessDenied(); // Viewers land here via renderContentLayout — owner/editor bypass via renderApp()
     case 'settings':
       return role === 'owner' ? renderSettingsView() : renderAccessDenied();
     case 'team':

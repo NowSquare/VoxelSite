@@ -131,6 +131,7 @@ assets/fonts/*
 !/_data/
 !/assets/
 !/vendor/
+!/i18n/
 
 # Generated stylesheets, scripts, and data
 assets/css/*

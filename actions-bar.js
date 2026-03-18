@@ -18,7 +18,10 @@
   // ── Configuration ──
   var MANIFEST_URL = '/actions/manifest.json';
   var SUBMIT_URL = '/actions/submit.php';
-  var I18N_BASE = '/actions/i18n/';
+  var I18N_NAMESPACE = 'actions';
+  var I18N_PUBLIC_BASE = '/i18n/';
+  var I18N_STUDIO_BASE = '/_studio/static/i18n/';
+  var I18N_LEGACY_BASE = '/actions/i18n/';
   var BAR_ID = 'vs-actions-bar';
 
   // ── Icons (inline SVG) ──
@@ -101,28 +104,54 @@
     return lang.split('-')[0];
   }
 
+  function buildI18nCandidates(locale) {
+    var candidates = [];
+
+    if (isPreview || isDemoSite) {
+      candidates.push(I18N_STUDIO_BASE + locale + '/' + I18N_NAMESPACE + '.json');
+    }
+
+    candidates.push(I18N_PUBLIC_BASE + locale + '/' + I18N_NAMESPACE + '.json');
+    candidates.push(I18N_LEGACY_BASE + locale + '.json');
+
+    return candidates;
+  }
+
+  function tryLoadTranslation(candidates, callback) {
+    if (!candidates.length) {
+      strings = fallbackStrings;
+      callback();
+      return;
+    }
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', candidates[0], true);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+
+      if (xhr.status === 200) {
+        try {
+          strings = JSON.parse(xhr.responseText);
+          callback();
+          return;
+        } catch (e) {
+          // Fall through to the next candidate if JSON is invalid.
+        }
+      }
+
+      tryLoadTranslation(candidates.slice(1), callback);
+    };
+    xhr.send();
+  }
+
   function loadTranslations(locale, callback) {
     if (locale === 'en') {
       strings = fallbackStrings;
       callback();
       return;
     }
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', I18N_BASE + locale + '.json', true);
-    xhr.onreadystatechange = function () {
-      if (xhr.readyState !== 4) return;
-      if (xhr.status === 200) {
-        try {
-          strings = JSON.parse(xhr.responseText);
-        } catch (e) {
-          strings = fallbackStrings;
-        }
-      } else {
-        strings = fallbackStrings; // Fallback to English
-      }
-      callback();
-    };
-    xhr.send();
+
+    tryLoadTranslation(buildI18nCandidates(locale), callback);
   }
 
   // ── Detect preview mode ──

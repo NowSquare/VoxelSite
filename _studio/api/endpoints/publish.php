@@ -246,16 +246,36 @@ if ($method === 'POST' && $path === '/publish') {
             }
 
             // Deploy i18n translation files
-            $i18nSource = dirname(__DIR__, 2) . '/static/actions-i18n';
+            $i18nSource = dirname(__DIR__, 2) . '/static/i18n';
             if (is_dir($i18nSource)) {
-                $i18nDest = $docRoot . '/actions/i18n';
-                if (!is_dir($i18nDest)) {
-                    mkdir($i18nDest, 0755, true);
+                $publicI18nRoot = $docRoot . '/i18n';
+                if (!is_dir($publicI18nRoot)) {
+                    mkdir($publicI18nRoot, 0755, true);
                 }
-                foreach (glob($i18nSource . '/*.json') as $langFile) {
-                    $filename = basename($langFile);
-                    copy($langFile, $i18nDest . '/' . $filename);
-                    $agenticFiles[] = 'actions/i18n/' . $filename;
+
+                $legacyI18nRoot = $docRoot . '/actions/i18n';
+
+                foreach (glob($i18nSource . '/*', GLOB_ONLYDIR) ?: [] as $localeDir) {
+                    $locale = basename($localeDir);
+                    $localeDest = $publicI18nRoot . '/' . $locale;
+
+                    if (!is_dir($localeDest)) {
+                        mkdir($localeDest, 0755, true);
+                    }
+
+                    foreach (glob($localeDir . '/*.json') ?: [] as $namespaceFile) {
+                        $filename = basename($namespaceFile);
+                        copy($namespaceFile, $localeDest . '/' . $filename);
+                        $agenticFiles[] = 'i18n/' . $locale . '/' . $filename;
+
+                        if ($filename === 'actions.json') {
+                            if (!is_dir($legacyI18nRoot)) {
+                                mkdir($legacyI18nRoot, 0755, true);
+                            }
+                            copy($namespaceFile, $legacyI18nRoot . '/' . $locale . '.json');
+                            $agenticFiles[] = 'actions/i18n/' . $locale . '.json';
+                        }
+                    }
                 }
             }
 

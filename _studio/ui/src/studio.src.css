@@ -7760,9 +7760,37 @@ select.vs-input {
     display: none !important;
   }
 
+  /* Hide center route tabs — replaced by bottom tab bar */
+  .vs-topbar-center {
+    display: none !important;
+  }
+
+  /* Hide theme toggle — available in More sheet */
+  #btn-theme-toggle {
+    display: none !important;
+  }
+
+  /* Hide user dropdown — Profile, Settings, Sign Out are in More sheet */
+  #user-menu-container {
+    display: none !important;
+  }
+
   /* Logo: icon only */
   .vs-logo {
     margin-right: 8px;
+  }
+  /* ── Group Pills: Touch-sized on mobile ──
+     These are the primary mobile nav group switcher. Sized up from
+     desktop 13px/4px-10px to 44px-class touch targets. */
+  .vs-nav-groups {
+    gap: 2px;
+  }
+
+  .vs-nav-group {
+    font-size: 14px;
+    padding: 8px 14px;
+    min-height: 36px;
+    -webkit-tap-highlight-color: transparent;
   }
 
   /* ── Status Bar: Hide on mobile ── */
@@ -8209,12 +8237,16 @@ select.vs-input {
 
 .vs-notes-list-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 0 16px;
-  height: 44px;
-  min-height: 44px;
+  padding: 16px 16px 0;
   flex-shrink: 0;
+}
+
+.vs-notes-list-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 .vs-notes-list-title {
@@ -8223,11 +8255,21 @@ select.vs-input {
   color: var(--vs-text-primary);
   letter-spacing: -0.02em;
   margin: 0;
+  line-height: 1.2;
+}
+
+.vs-notes-list-subtitle {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--vs-text-ghost);
+  letter-spacing: 0;
+  line-height: 1.2;
 }
 
 .vs-notes-new-btn {
   width: 28px;
   height: 28px;
+  margin-top: 1px;
   border-radius: var(--vs-radius-sm);
   border: none;
   background: transparent;
@@ -8769,3 +8811,616 @@ select.vs-input {
   }
 }
 
+
+/* ═══════════════════════════════════════════
+   Board (Kanban)
+   ═══════════════════════════════════════════ */
+
+.vs-board {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 24px;
+  gap: 16px;
+}
+
+.vs-board-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.vs-board-title {
+  font-size: 20px;
+  font-weight: 650;
+  color: var(--vs-text-primary);
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+
+.vs-board-columns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+.vs-board-column {
+  display: flex;
+  flex-direction: column;
+  background: var(--vs-bg-raised);
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: var(--radius-xl);
+  padding: 12px;
+  min-height: 0;
+  transition: background 200ms ease-out;
+}
+
+.vs-board-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 12px;
+  flex-shrink: 0;
+}
+
+.vs-board-column-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--vs-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.vs-board-column-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vs-text-ghost);
+  background: var(--vs-bg-hover);
+  border-radius: 10px;
+  padding: 1px 7px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.vs-board-column-cards {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.vs-board-loading {
+  font-size: 13px;
+  color: var(--vs-text-ghost);
+  padding: 24px 8px;
+  text-align: center;
+}
+
+/* ── Card (collapsed) ── */
+
+.vs-board-card {
+  background: var(--vs-bg-surface);
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition:
+    box-shadow 150ms ease-out,
+    border-color 150ms ease-out,
+    transform 150ms ease-out;
+  position: relative;
+}
+
+.vs-board-card:hover {
+  border-color: var(--vs-border-medium);
+}
+
+.vs-board-card-draggable {
+  cursor: grab;
+}
+
+.vs-board-card-draggable:active {
+  cursor: grabbing;
+}
+
+.vs-board-card-dragging {
+  opacity: 0.5;
+  transform: scale(1.02);
+}
+
+.vs-board-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.vs-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.vs-board-card-title-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vs-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+  flex: 1;
+  min-width: 0;
+}
+
+.vs-board-card-body {
+  font-size: 12px;
+  color: var(--vs-text-secondary);
+  line-height: 1.5;
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 4px;
+  word-break: break-word;
+}
+
+.vs-board-card-footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--vs-border-subtle);
+}
+
+.vs-board-card-link {
+  font-size: 11px;
+  color: var(--vs-accent);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: color 150ms ease-out;
+}
+
+.vs-board-card-link-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: inherit;
+  opacity: 0.7;
+}
+
+.vs-board-card-link-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.vs-board-card-link:hover {
+  color: var(--vs-accent-hover);
+}
+
+/* ── Three-dot menu button ── */
+
+.vs-board-card-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--vs-text-ghost);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 100ms ease-out, background 100ms ease-out, color 100ms ease-out;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.vs-board-card:hover .vs-board-card-menu-btn {
+  opacity: 0.7;
+}
+
+.vs-board-card-menu-btn:hover {
+  opacity: 1 !important;
+  background: var(--vs-bg-hover);
+  color: var(--vs-text-primary);
+}
+
+/* Always show on touch devices */
+@media (hover: none) {
+  .vs-board-card-menu-btn {
+    opacity: 0.7;
+  }
+}
+
+/* ── Three-dot dropdown ── */
+
+.vs-board-card-dropdown {
+  background: var(--vs-bg-surface);
+  border: 1px solid var(--vs-border-medium);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.12),
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  padding: 4px;
+  min-width: 140px;
+  opacity: 0;
+  transform: translateY(-4px) scale(0.97);
+  transform-origin: top right;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+
+.vs-board-card-dropdown.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.vs-board-card-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: transparent;
+  color: var(--vs-text-secondary);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--vs-radius-sm);
+  transition: background 100ms ease-out, color 100ms ease-out;
+}
+
+.vs-board-card-dropdown-item:hover {
+  background: var(--vs-bg-hover);
+  color: var(--vs-text-primary);
+}
+
+.vs-board-card-dropdown-danger {
+  color: var(--vs-error);
+}
+
+.vs-board-card-dropdown-danger:hover {
+  background: color-mix(in srgb, var(--vs-error) 10%, transparent);
+  color: var(--vs-error);
+}
+
+/* ── Card (expanded — inline editing) ── */
+
+.vs-board-card-expanded {
+  cursor: default;
+  border-color: var(--vs-accent);
+  box-shadow: 0 0 0 2px var(--vs-accent-dim);
+  animation: vs-card-expand 200ms ease-out both;
+}
+
+@keyframes vs-card-expand {
+  from {
+    opacity: 0.85;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes vs-card-expand {
+    from, to { opacity: 1; }
+  }
+}
+
+.vs-board-card-expanded:hover {
+  border-color: var(--vs-accent);
+}
+
+.vs-board-card-expand-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.vs-board-card-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--vs-text-ghost);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: auto;
+  transition: background 100ms ease-out, color 100ms ease-out;
+}
+
+.vs-board-card-close-btn:hover {
+  background: var(--vs-bg-hover);
+  color: var(--vs-text-primary);
+}
+
+/* ── Inline form elements ── */
+
+.vs-board-inline-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vs-text-primary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  outline: none;
+  padding: 4px 6px;
+  font-family: var(--font-sans);
+  letter-spacing: -0.015em;
+  transition: background 150ms ease-out;
+}
+
+.vs-board-inline-title:hover {
+  background: var(--vs-bg-hover);
+}
+
+.vs-board-inline-title:focus {
+  background: var(--vs-bg-inset);
+}
+
+.vs-board-inline-body {
+  width: 100%;
+  font-size: 13px;
+  color: var(--vs-text-secondary);
+  background: var(--vs-bg-inset);
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 10px 12px;
+  font-family: var(--font-sans);
+  line-height: 1.55;
+  resize: none;
+  outline: none;
+  min-height: 64px;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+  margin-bottom: 10px;
+}
+
+.vs-board-inline-body:hover {
+  border-color: var(--vs-border-medium);
+}
+
+.vs-board-inline-body:focus {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--border-focus);
+}
+
+.vs-board-inline-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.vs-board-inline-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vs-text-ghost);
+  white-space: nowrap;
+  min-width: 76px;
+  letter-spacing: 0.01em;
+}
+
+.vs-board-inline-select {
+  flex: 1;
+  font-size: 13px;
+  color: var(--vs-text-secondary);
+  background: var(--vs-bg-input);
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 6px 32px 6px 10px;
+  font-family: var(--font-sans);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 14px;
+}
+
+.vs-board-inline-select:hover {
+  border-color: var(--vs-border-medium);
+}
+
+.vs-board-inline-select:focus {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--border-focus);
+}
+
+/* ── Save status ── */
+
+.vs-board-card-expand-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--vs-border-subtle);
+}
+
+.vs-board-card-save-status {
+  font-size: 11px;
+  font-weight: 500;
+  min-height: 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: opacity 300ms ease-out, color 300ms ease-out;
+}
+
+.vs-board-save-active {
+  color: var(--vs-text-ghost);
+  opacity: 1;
+}
+
+.vs-board-save-done {
+  color: var(--vs-success);
+  opacity: 1;
+}
+
+.vs-board-save-fade {
+  color: var(--vs-success);
+  opacity: 0;
+}
+
+.vs-board-save-error {
+  color: var(--vs-error);
+  opacity: 1;
+}
+
+.vs-board-card-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* ── Read-only expanded ── */
+
+.vs-board-card-body-full {
+  font-size: 13px;
+  color: var(--vs-text-secondary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 8px;
+}
+
+.vs-board-card-body-empty {
+  font-size: 13px;
+  color: var(--vs-text-ghost);
+  font-style: italic;
+  margin-bottom: 8px;
+}
+
+.vs-board-card-meta {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--vs-text-ghost);
+  letter-spacing: 0.02em;
+  margin-top: 8px;
+}
+
+/* ── Drop zone (empty column) ── */
+
+.vs-board-drop-zone {
+  border: 1px dashed var(--vs-border-medium);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--vs-text-ghost);
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 150ms ease-out, background 150ms ease-out;
+}
+
+.vs-board-drop-zone:hover {
+  border-color: var(--vs-accent);
+  background: var(--vs-accent-dim);
+}
+
+/* ── Drop indicator (between cards during drag) ── */
+
+.vs-board-drop-indicator {
+  height: 2px;
+  background: var(--vs-accent);
+  border-radius: 1px;
+  margin: 2px 0;
+  flex-shrink: 0;
+}
+
+/* ── Empty state ── */
+
+.vs-board-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px 16px;
+}
+
+/* ── Archived link ── */
+
+.vs-board-archived-link {
+  flex-shrink: 0;
+  text-align: center;
+  padding: 4px 0;
+}
+
+.vs-board-show-archived {
+  font-size: 12px;
+  color: var(--vs-text-ghost);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  padding: 4px 8px;
+  border-radius: var(--vs-radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vs-board-show-archived:hover {
+  color: var(--vs-text-secondary);
+  background: var(--vs-bg-hover);
+}
+
+/* ── Archived item rows ── */
+
+.vs-board-archived-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--vs-border-subtle);
+}
+
+.vs-board-archived-item:last-child {
+  border-bottom: none;
+}
+
+/* ── Mobile ── */
+
+@media (max-width: 767px) {
+  .vs-board {
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .vs-board-columns {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    overflow-y: auto;
+  }
+
+  .vs-board-column {
+    min-height: unset;
+  }
+
+  /* Always show menu button on mobile */
+  .vs-board-card-menu-btn {
+    opacity: 1;
+  }
+}

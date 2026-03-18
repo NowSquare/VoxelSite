@@ -30,6 +30,7 @@ Full documentation: **[voxelsite.com/docs](https://voxelsite.com/docs)**
 - **Snapshots** — save/restore entire site states
 - **Design Library** — save, compare, and switch between entirely different website designs
 - **Notes** — private scratchpad for drafting copy and ideas; send notes directly to AI Chat or use as prompts
+- **Board** — kanban-style task tracker with columns, cards, drag-and-drop, and linked pages; plan your site visually
 - **Asset Manager** — upload images, files, and fonts
 - **Actions** — define interactions (reservations, signups, inquiries) that serve both human visitors (beautiful form bar with file uploads) and AI agents (MCP tools) simultaneously
 - **Forms** — submission handling with validation, spam protection, and email notifications
@@ -99,7 +100,7 @@ Show the Studio to others without giving them real access:
 
 **Hide banners for screenshots:** Add `hide_banner=true` to the `.demo` file to suppress the DEMO badge and login page demo chrome while keeping all read-only enforcement active.
 
-Demo mode does not modify your live workspace. It reads from shipped fixture data for Code Editor, Notes, Forms, Actions, Assets, Settings, Designs, and Team. AI Chat and snapshot history show empty states. Real owner login still works alongside the demo session.
+Demo mode does not modify your live workspace. It reads from shipped fixture data for Code Editor, Notes, Board, Forms, Actions, Assets, Settings, Designs, and Team. AI Chat and snapshot history show empty states. Real owner login still works alongside the demo session.
 
 > **The `.demo` file is an installation-wide switch.** When it exists, all Studio API writes and all form submissions via `submit.php` are blocked — not just the demo preview. If your site is published, unpublish it first so the default `index.php` (which includes demo detection) is restored and live forms are not silently disabled.
 

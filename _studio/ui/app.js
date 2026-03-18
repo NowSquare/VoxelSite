@@ -37,6 +37,7 @@ import { renderTeamView, renderTeamModals } from './src/views/team.js';
 import { renderAssetsView } from './src/views/assets.js';
 import { renderDesignsView, confirmNewDesign, showSaveDesignModal } from './src/views/designs.js';
 import { renderNotesView, cleanupNotes } from './src/views/notes.js';
+import { renderBoardView, cleanupBoard } from './src/views/board.js';
 import { showToast, showToastWithAction } from './src/ui/toasts.js';
 import { escapeHtml, escapeAttr, getCodeLanguage, formatRefUrl } from './src/helpers.js';
 import { closeModal, showConfirmModal, showPromptModal, onBackdropClick } from './src/ui/modals.js';
@@ -56,7 +57,10 @@ import { closeModal, showConfirmModal, showPromptModal, onBackdropClick } from '
  *  - routes:        child routes with optional role gates
  *
  * Settings is intentionally absent — it lives in the user dropdown only.
- * When adding Board/Contacts later, add routes under their group.
+ *
+ * Role gates: routes with a `roles` array are only visible to those roles.
+ * If every route in a group is gated and the user's role is excluded from
+ * all of them, the group itself is hidden from the navigation.
  */
 const NAV_GROUPS = [
   {
@@ -64,8 +68,8 @@ const NAV_GROUPS = [
     label: 'Create',
     defaultRoute: 'chat',
     routes: [
-      { route: 'chat',   label: 'Chat' },
-      { route: 'editor', label: 'Editor' },
+      { route: 'chat',   label: 'Chat',   roles: ['owner', 'editor'] },
+      { route: 'editor', label: 'Editor', roles: ['owner', 'editor'] },
     ],
   },
   {
@@ -74,6 +78,7 @@ const NAV_GROUPS = [
     defaultRoute: 'notes',
     routes: [
       { route: 'notes', label: 'Notes', roles: ['owner', 'editor'] },
+      { route: 'board', label: 'Board' },
     ],
   },
   {
@@ -122,15 +127,31 @@ function getGroupForRoute(route) {
 }
 
 /**
- * Get the last-visited route for a group, falling back to its default.
+ * Get the target route for a group, respecting role gates.
+ *
+ * 1. Try the last-visited route (if it exists and the user's role can access it)
+ * 2. Fall back to the group's default route (if accessible)
+ * 3. Fall back to the group's first visible route
  */
 function getGroupTarget(group) {
+  const role = store.get('user')?.role;
+  const visibleRoutes = group.routes.filter(r => !r.roles || r.roles.includes(role));
+
+  if (visibleRoutes.length === 0) return group.defaultRoute; // shouldn't happen — group would be hidden
+
   const stored = localStorage.getItem(NAV_GROUP_MEMORY_PREFIX + group.id);
   if (stored) {
-    // Validate the stored route still exists in this group
-    if (group.routes.some(r => r.route === stored)) return stored;
+    // Stored route must exist in this group AND be visible to the current role
+    const match = visibleRoutes.find(r => r.route === stored);
+    if (match) return stored;
   }
-  return group.defaultRoute;
+
+  // Default route, but only if the user can see it
+  const defaultVisible = visibleRoutes.find(r => r.route === group.defaultRoute);
+  if (defaultVisible) return group.defaultRoute;
+
+  // Last resort: first visible route
+  return visibleRoutes[0].route;
 }
 
 /**
@@ -186,14 +207,61 @@ function isMobile() {
   return MOBILE_MQ.matches;
 }
 
-/** Mobile nav items — content management views that work on mobile */
-const MOBILE_NAV_ITEMS = [
-  { route: 'notes',      label: 'Notes',      icon: 'fileText', roles: ['owner', 'editor'] },
-  { route: 'assets',     label: 'Assets',     icon: 'image' },
-  { route: 'forms',      label: 'Forms',      icon: 'inbox' },
-  { route: 'actions',    label: 'Actions',    icon: 'zap' },
-  { route: 'more',       label: 'More',       icon: 'ellipsis' },
-];
+/** Mobile nav icon lookup by route — consistent icon set for bottom bar items. */
+const MOBILE_NAV_ICONS = {
+  chat:    'messageCircle',
+  editor:  'pencil',
+  notes:   'fileText',
+  board:   'layoutGrid',
+  assets:  'image',
+  forms:   'inbox',
+  actions: 'zap',
+  designs: 'palette',
+};
+
+/**
+ * Build the mobile bottom nav items dynamically from the active group.
+ * The bottom bar mirrors the desktop center tabs for the current group,
+ * filtered by role, plus a trailing "More" button.
+ *
+ * Returns max ~5 items (group routes + More). Compact enough for any phone.
+ */
+function getMobileNavItems() {
+  const route = store.get('route');
+  const role = store.get('user')?.role;
+  const activeGroupId = getGroupForRoute(route);
+  const activeGroup = activeGroupId
+    ? NAV_GROUPS.find(g => g.id === activeGroupId)
+    : null;
+
+  // Utility routes (settings, profile, team) don't belong to any group.
+  // Show only the More tab — don't invent a fallback group that would
+  // show unrelated tabs with nothing selected.
+  if (!activeGroup) {
+    return [{ route: 'more', label: 'More', icon: 'ellipsis' }];
+  }
+
+  const items = activeGroup.routes
+    .filter(r => !r.roles || r.roles.includes(role))
+    .map(r => ({
+      route: r.route,
+      label: r.label,
+      icon:  MOBILE_NAV_ICONS[r.route] || 'layoutGrid',
+    }));
+
+  items.push({ route: 'more', label: 'More', icon: 'ellipsis' });
+  return items;
+}
+
+/**
+ * Get the default route for the current user's role.
+ * Viewers land on Board (the one Studio surface they can access).
+ * Owners/Editors land on Chat (the primary creation surface).
+ */
+function getDefaultRouteForRole() {
+  const role = store.get('user')?.role;
+  return role === 'viewer' ? 'board' : 'chat';
+}
 
 /** Routes that require desktop/tablet — too complex for mobile */
 const DESKTOP_ONLY_ROUTES = ['chat', 'editor'];
@@ -315,6 +383,10 @@ async function init() {
       if (from.startsWith('notes') && !to.startsWith('notes')) {
         cleanupNotes();
       }
+      // Cleanup Board state when leaving
+      if (from.startsWith('board') && !to.startsWith('board')) {
+        cleanupBoard();
+      }
       return true;
     })
     .on('chat',              () => renderApp())
@@ -328,13 +400,14 @@ async function init() {
     .on('forms',             () => renderApp())
     .on('forms/:formId',     () => renderApp())
     .on('notes',             () => renderApp())
+    .on('board',             () => renderApp())
     .on('actions',           () => renderApp())
     .on('actions/:actionId', () => renderApp())
     .on('designs',           () => renderApp())
     .on('settings',          () => renderApp())
     .on('team',              () => renderApp())
     .on('profile',           () => renderApp())
-    .onNotFound(             () => router.navigate('chat'));
+    .onNotFound(             () => router.navigate(getDefaultRouteForRole()));
 
   // Listen for state changes that affect the shell
   // Theme changes are handled inline by the toggle click handler —
@@ -350,12 +423,14 @@ async function init() {
     renderApp();
   });
 
-  // On mobile, redirect default route (chat) to a mobile-friendly page
+  // On mobile, redirect desktop-only or empty routes to a mobile-friendly page
   if (isMobile()) {
     const hash = window.location.hash || '';
     const path = hash.replace(/^#\/?/, '');
     if (!path || DESKTOP_ONLY_ROUTES.includes(path)) {
-      window.location.hash = '#/assets';
+      // Viewers → Board (their primary surface), others → Assets
+      const mobileFallback = store.get('user')?.role === 'viewer' ? 'board' : 'assets';
+      window.location.hash = `#/${mobileFallback}`;
     }
   }
 
@@ -417,20 +492,27 @@ function renderApp() {
   // On mobile, redirect desktop-only routes to a notice instead of the complex layout
   const isDesktopOnly = isMobile() && DESKTOP_ONLY_ROUTES.includes(route);
 
+  const currentRole = store.get('user')?.role;
+  const isViewerRole = currentRole === 'viewer';
+
   let mainContent;
   if (isDesktopOnly) {
     mainContent = renderDesktopOnlyNotice(route);
   } else if (route === 'editor') {
-    mainContent = renderEditorLayout();
+    // Editor is owner/editor only — viewers see access denied
+    mainContent = isViewerRole ? renderContentLayout() : renderEditorLayout();
   } else if (route === 'notes') {
     // Notes has its own full-height split layout (list + editor)
     // Only owner and editor have access — viewers see access denied
-    const noteRole = store.get('user')?.role;
-    mainContent = (noteRole === 'owner' || noteRole === 'editor')
-      ? `<div class="h-full overflow-hidden">${renderNotesView()}</div>`
-      : renderContentLayout();
+    mainContent = isViewerRole
+      ? renderContentLayout()
+      : `<div class="h-full overflow-hidden">${renderNotesView()}</div>`;
+  } else if (route === 'board') {
+    // Board has its own full-width layout (three-column kanban)
+    mainContent = `<div class="h-full overflow-hidden">${renderBoardView()}</div>`;
   } else if (isDashboard) {
-    mainContent = renderDashboardLayout();
+    // Dashboard (chat + preview) is owner/editor only — redirect viewers
+    mainContent = isViewerRole ? renderContentLayout() : renderDashboardLayout();
   } else {
     mainContent = renderContentLayout();
   }
@@ -451,8 +533,8 @@ function renderApp() {
   bindAppEvents();
   bindMobileEvents();
 
-  // Initialize editor page after DOM is ready
-  if (route === 'editor' && !isDesktopOnly) {
+  // Initialize editor page after DOM is ready (owner/editor only)
+  if (route === 'editor' && !isDesktopOnly && !isViewerRole) {
     initEditorPage();
   }
 }
@@ -505,7 +587,7 @@ function renderTopBar() {
       <div class="vs-topbar-inner">
         <!-- Left: Logo + Group links (architecture) -->
         <div class="vs-topbar-left">
-          <a href="#/chat" class="vs-logo" title="${escapeHtml(store.get('siteName') || 'VoxelSite')}">
+          <a href="#/${getDefaultRouteForRole()}" class="vs-logo" title="${escapeHtml(store.get('siteName') || 'VoxelSite')}">
             <span class="vs-logo-icon">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                 <path class="voxel-top" style="opacity:1" fill="currentColor" d="M12 3L20 7.5L12 12L4 7.5Z"/>
@@ -588,6 +670,17 @@ function renderDashboardLayout() {
   const activeConvId = store.get('activeConversationId');
   const activePageScope = store.get('activePageScope');
   const scopeLabel = formatPageScopeLabel(activePageScope);
+
+  // Compute which page the preview should load initially.
+  // If activePageScope is set (e.g. from a Board card link), show that page.
+  const initialPreviewPath = (() => {
+    if (activePageScope) {
+      const s = activePageScope;
+      return s.endsWith('.php') || s.endsWith('.html') ? s : s + '.php';
+    }
+    return window.__vsCurrentPreviewPath || 'index.php';
+  })();
+  window.__vsCurrentPreviewPath = initialPreviewPath;
 
   return `
     <div class="flex h-full">
@@ -725,7 +818,7 @@ function renderDashboardLayout() {
 
         <!-- Preview Iframe -->
         <div id="preview-frame-container" class="vs-preview-frame" style="margin: 16px 20px 20px 20px;">
-          <iframe id="preview-iframe" class="w-full h-full border-0" src="/_studio/api/router.php?_path=%2Fpreview&path=index.php"
+          <iframe id="preview-iframe" class="w-full h-full border-0" src="/_studio/api/router.php?_path=%2Fpreview&path=${encodeURIComponent(initialPreviewPath)}"
             sandbox="allow-scripts allow-same-origin"
             data-voxelsite-preview
             title="Website preview"></iframe>
@@ -814,6 +907,8 @@ function renderPageContent(route, params) {
       return (role === 'owner' || role === 'editor') ? renderDesignsView() : renderAccessDenied();
     case 'notes':
       return renderAccessDenied(); // Viewers land here via renderContentLayout — owner/editor bypass via renderApp()
+    case 'board':
+      return renderBoardView(); // Board is shared — all roles can view (read-only for viewers)
     case 'settings':
       return role === 'owner' ? renderSettingsView() : renderAccessDenied();
     case 'team':
@@ -826,6 +921,8 @@ function renderPageContent(route, params) {
 }
 
 function renderAccessDenied() {
+  const defaultRoute = getDefaultRouteForRole();
+  const backLabel = defaultRoute === 'board' ? '← Back to Board' : '← Back to Chat';
   return `
     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 50vh; text-align: center; padding: 40px 24px;">
       <div style="width: 56px; height: 56px; border-radius: 16px; background: var(--vs-bg-inset); border: 1px solid var(--vs-border-subtle); display: flex; align-items: center; justify-content: center; margin-bottom: 24px; color: var(--vs-text-ghost);">
@@ -833,8 +930,8 @@ function renderAccessDenied() {
       </div>
       <h1 style="font-size: 18px; font-weight: 600; color: var(--vs-text-primary); letter-spacing: -0.02em; margin: 0 0 8px;">Access Denied</h1>
       <p style="font-size: 13px; color: var(--vs-text-tertiary); margin: 0 0 24px; max-width: 260px; line-height: 1.5;">You don't have permission to view this page.</p>
-      <a href="#/chat" style="font-size: 12px; font-weight: 500; color: var(--vs-accent); text-decoration: none; transition: opacity 0.15s;"
-         onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">← Back to Chat</a>
+      <a href="#/${defaultRoute}" style="font-size: 12px; font-weight: 500; color: var(--vs-accent); text-decoration: none; transition: opacity 0.15s;"
+         onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">${backLabel}</a>
     </div>
   `;
 }
@@ -1938,20 +2035,16 @@ function renderStatusBar() {
 
 function renderMobileNav() {
   const route = store.get('route');
-  const user = store.get('user');
-  const role = user?.role;
+  const items = getMobileNavItems();
 
-  const navHtml = MOBILE_NAV_ITEMS
-    .filter(item => {
-      // Role-based visibility
-      if (item.roles && !item.roles.includes(role)) return false;
-      return true;
-    })
-    .map(item => {
+  const navHtml = items.map(item => {
     // "More" is a special handler, not a route link
     if (item.route === 'more') {
+      // More is "active" when we're on a utility route (settings, profile, team)
+      // that doesn't belong to any workspace group.
+      const moreActive = !getGroupForRoute(route);
       return `
-        <button class="vs-mobile-nav-item" id="btn-mobile-more" aria-label="More">
+        <button class="vs-mobile-nav-item ${moreActive ? 'vs-mobile-nav-item-active' : ''}" id="btn-mobile-more" aria-label="More">
           ${icons[item.icon] || icons.layoutGrid}
           <span>${item.label}</span>
         </button>
@@ -1998,19 +2091,20 @@ function renderMobileMoreSheet() {
     </a>
   `;
 
-  if (role === 'owner' || role === 'editor') {
-    overflowHtml += `
-      <a href="#/designs" class="vs-mobile-more-item" data-mobile-more-nav>
-        ${icons.layoutGrid} Designs
-      </a>
-    `;
-  }
-
   if (role === 'owner') {
     overflowHtml += `
       <a href="#/team" class="vs-mobile-more-item" data-mobile-more-nav>
         ${icons.users} Team Members
       </a>
+    `;
+  }
+
+  // Prompts — touch users' only entry point (desktop ⌘K is hidden on mobile)
+  if (role === 'owner' || role === 'editor') {
+    overflowHtml += `
+      <button id="btn-mobile-prompts" class="vs-mobile-more-item">
+        ${icons.zap} Prompts
+      </button>
     `;
   }
 
@@ -2023,9 +2117,6 @@ function renderMobileMoreSheet() {
     <div class="vs-mobile-more-divider"></div>
     <button id="btn-mobile-publish" class="vs-mobile-more-item" style="color: var(--vs-accent); font-weight: 600;">
       ${icons.publish} Publish
-    </button>
-    <button id="btn-mobile-download" class="vs-mobile-more-item">
-      ${icons.download} Download
     </button>
     <div class="vs-mobile-more-divider"></div>
     <button id="btn-mobile-logout" class="vs-mobile-more-item" style="color: var(--vs-error);">
@@ -2076,6 +2167,15 @@ function bindMobileEvents() {
     link.addEventListener('click', closeMoreSheet);
   });
 
+  // ── More Sheet: Prompts ──
+  const mobilePromptsBtn = document.getElementById('btn-mobile-prompts');
+  if (mobilePromptsBtn) {
+    mobilePromptsBtn.addEventListener('click', () => {
+      closeMoreSheet();
+      openCommandPalette();
+    });
+  }
+
   // ── More Sheet: Theme Toggle ──
   const mobileThemeBtn = document.getElementById('btn-mobile-theme');
   if (mobileThemeBtn) {
@@ -2094,16 +2194,6 @@ function bindMobileEvents() {
       if (demoGuard()) return;
       // Trigger the publish button (it's in the status bar DOM, just hidden on mobile)
       document.getElementById('btn-publish')?.click();
-    });
-  }
-
-  // ── More Sheet: Download ──
-  const mobileDownloadBtn = document.getElementById('btn-mobile-download');
-  if (mobileDownloadBtn) {
-    mobileDownloadBtn.addEventListener('click', () => {
-      closeMoreSheet();
-      if (demoGuard()) return;
-      openDownloadModal();
     });
   }
 
@@ -3478,9 +3568,11 @@ function bindAppEvents() {
         return;
       }
 
-      // Cmd/Ctrl+Z: undo
+      // Cmd/Ctrl+Z: undo (Chat only — these are website revision undo/redo,
+      // not in-field text undo. Firing on Notes/Board would be confusing.)
       if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
         if (isCommandPaletteOpen() || isOnboardingOpen()) return;
+        if (store.get('route') !== 'chat') return;
         // Only intercept when not in an input/textarea
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
@@ -3488,9 +3580,10 @@ function bindAppEvents() {
         performUndo();
       }
 
-      // Cmd/Ctrl+Shift+Z: redo
+      // Cmd/Ctrl+Shift+Z: redo (Chat only)
       if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) {
         if (isCommandPaletteOpen() || isOnboardingOpen()) return;
+        if (store.get('route') !== 'chat') return;
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
         e.preventDefault();

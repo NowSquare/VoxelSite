@@ -2108,6 +2108,47 @@ if (str_starts_with($path, '/notes/')) {
 
 
 // ═══════════════════════════════════════════
+//  Board (Cards)
+// ═══════════════════════════════════════════
+
+if ($path === '/cards') {
+    $demoCards = DemoDataProvider::cards();
+    jsonResponse(['ok' => true, 'data' => ['cards' => $demoCards]]);
+    return;
+}
+
+if ($path === '/cards/archived') {
+    // No archived cards in demo — clean board
+    jsonResponse(['ok' => true, 'data' => ['cards' => []]]);
+    return;
+}
+
+if (str_starts_with($path, '/cards/')) {
+    // /cards/:id — individual card detail
+    $cardId = (int) trim(substr($path, strlen('/cards/')), '/');
+    $demoCards = DemoDataProvider::cards();
+    $card = null;
+    foreach ($demoCards as $c) {
+        if ($c['id'] === $cardId) {
+            $card = $c;
+            break;
+        }
+    }
+
+    if (!$card) {
+        jsonResponse(['ok' => false, 'error' => [
+            'code'    => 'not_found',
+            'message' => 'Card not found.',
+        ]], 404);
+        return;
+    }
+
+    jsonResponse(['ok' => true, 'data' => ['card' => $card]]);
+    return;
+}
+
+
+// ═══════════════════════════════════════════
 //  Team
 // ═══════════════════════════════════════════
 

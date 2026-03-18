@@ -172,6 +172,17 @@ $routes = [
     ['DELETE', '/notes/:id',              'notes.php',       true],
     ['POST',   '/notes/:id/restore',      'notes.php',       true],
 
+    // Board (Kanban)
+    ['GET',    '/cards',                  'cards.php',       true],
+    ['POST',   '/cards',                  'cards.php',       true],
+    ['GET',    '/cards/archived',         'cards.php',       true],
+    ['GET',    '/cards/:id',              'cards.php',       true],
+    ['PUT',    '/cards/:id',              'cards.php',       true],
+    ['DELETE', '/cards/:id',              'cards.php',       true],
+    ['PUT',    '/cards/:id/move',         'cards.php',       true],
+    ['POST',   '/cards/:id/archive',      'cards.php',       true],
+    ['POST',   '/cards/:id/restore',      'cards.php',       true],
+
     // Agentic Actions
     ['GET',    '/agentic/actions',                                 'agentic-actions.php', true],
     ['POST',   '/agentic/actions',                                 'agentic-actions.php', true],

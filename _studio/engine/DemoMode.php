@@ -274,6 +274,8 @@ class DemoMode
         '/agentic/manifest',               // Preview Actions Bar manifest
         '/notes',                          // List all notes
         '/notes/search',                   // Search notes
+        '/cards',                          // List active cards (Board)
+        '/cards/archived',                 // List archived cards (Board)
     ];
 
     /**
@@ -288,6 +290,7 @@ class DemoMode
         '/forms',                   // /forms, /forms/:id, /forms/:id/submissions, etc.
         '/agentic/actions/',        // /agentic/actions/:id, /agentic/actions/:id/records, etc.
         '/notes/',                  // /notes/:id (detail view)
+        '/cards/',                  // /cards/:id (individual card)
     ];
 
     /**

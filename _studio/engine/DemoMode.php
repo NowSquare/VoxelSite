@@ -272,6 +272,8 @@ class DemoMode
         '/agentic/actions',               // List all actions (no trailing /)
         '/agentic/actions/bar-settings',   // Bar settings (exact route)
         '/agentic/manifest',               // Preview Actions Bar manifest
+        '/notes',                          // List all notes
+        '/notes/search',                   // Search notes
     ];
 
     /**
@@ -285,6 +287,7 @@ class DemoMode
         '/designs/',                // /designs/:id/preview
         '/forms',                   // /forms, /forms/:id, /forms/:id/submissions, etc.
         '/agentic/actions/',        // /agentic/actions/:id, /agentic/actions/:id/records, etc.
+        '/notes/',                  // /notes/:id (detail view)
     ];
 
     /**

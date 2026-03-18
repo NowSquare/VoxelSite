@@ -2058,6 +2058,56 @@ if ($path === '/settings/logs/download') {
 
 
 // ═══════════════════════════════════════════
+//  Notes
+// ═══════════════════════════════════════════
+
+if ($path === '/notes') {
+    $demoNotes = DemoDataProvider::notes();
+    jsonResponse(['ok' => true, 'data' => ['notes' => $demoNotes]]);
+    return;
+}
+
+if ($path === '/notes/search') {
+    $demoNotes = DemoDataProvider::notes();
+    $q = strtolower(trim($_GET['q'] ?? ''));
+
+    if ($q !== '') {
+        $demoNotes = array_values(array_filter($demoNotes, static function (array $n) use ($q): bool {
+            return str_contains(strtolower($n['title']), $q)
+                || str_contains(strtolower($n['body']), $q);
+        }));
+    }
+
+    jsonResponse(['ok' => true, 'data' => ['notes' => $demoNotes]]);
+    return;
+}
+
+if (str_starts_with($path, '/notes/')) {
+    // /notes/:id — detail view
+    $noteId = (int) trim(substr($path, strlen('/notes/')), '/');
+    $demoNotes = DemoDataProvider::notes();
+    $note = null;
+    foreach ($demoNotes as $n) {
+        if ($n['id'] === $noteId) {
+            $note = $n;
+            break;
+        }
+    }
+
+    if (!$note) {
+        jsonResponse(['ok' => false, 'error' => [
+            'code'    => 'not_found',
+            'message' => 'Note not found.',
+        ]], 404);
+        return;
+    }
+
+    jsonResponse(['ok' => true, 'data' => ['note' => $note]]);
+    return;
+}
+
+
+// ═══════════════════════════════════════════
 //  Team
 // ═══════════════════════════════════════════
 

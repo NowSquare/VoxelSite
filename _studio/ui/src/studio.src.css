@@ -2659,35 +2659,49 @@ select.vs-input {
 
 
 /* ═══════════════════════════════════════════ */
-/*  RESIZE HANDLE                             */
+/*  PANEL RESIZE HANDLE (shared)              */
 /* ═══════════════════════════════════════════ */
 
+/*
+ * Canonical resize handle for all split-panel views.
+ * - 6px invisible hit area straddling the panel border
+ * - 2px centered accent line on hover/drag via ::after
+ * - Used by: Chat (.vs-resize-handle), Editor (.vs-editor-resize),
+ *   Notes (.vs-notes-resize). Each is aliased to this pattern.
+ *
+ * Industry reference: VS Code, Figma, Linear — all use ~6-8px hit
+ * area with a thin 1-2px visual indicator on hover.
+ */
+.vs-panel-resize,
 .vs-resize-handle {
   position: absolute;
   top: 0;
-  right: -1px;
+  right: -3px;
   width: 6px;
   height: 100%;
   cursor: col-resize;
   z-index: 10;
-  transition: background 200ms ease;
 }
 
+.vs-panel-resize::after,
 .vs-resize-handle::after {
   content: '';
   position: absolute;
-  right: 2px;
+  left: 2px;
   top: 0;
   width: 2px;
   height: 100%;
   background: transparent;
   border-radius: var(--radius-full);
-  transition: all 200ms var(--ease-out);
+  transition: background 200ms var(--ease-out);
 }
 
-.vs-resize-handle:hover::after {
+.vs-panel-resize:hover::after,
+.vs-panel-resize.is-dragging::after,
+.vs-resize-handle:hover::after,
+.vs-resize-handle.is-dragging::after {
   background: var(--vs-accent);
-  box-shadow: 0 0 8px rgba(244, 160, 36, 0.2);
+  box-shadow: 0 0 6px rgba(244, 160, 36, 0.15);
 }
 
 
@@ -4644,6 +4658,7 @@ select.vs-input {
 
 /* ── File Tree Panel ── */
 .vs-editor-sidebar {
+  position: relative;
   width: 260px;
   min-width: 200px;
   max-width: 400px;
@@ -4652,7 +4667,6 @@ select.vs-input {
   flex-direction: column;
   background: var(--vs-bg-base);
   border-right: 1px solid var(--vs-border-subtle);
-  overflow: hidden;
 }
 
 .vs-editor-sidebar-header {
@@ -4660,8 +4674,8 @@ select.vs-input {
   align-items: center;
   justify-content: space-between;
   padding: 0 8px 0 20px;
-  height: 38px;
-  min-height: 38px;
+  height: 44px;
+  min-height: 44px;
   border-bottom: 1px solid var(--vs-border-subtle);
   background: var(--vs-bg-surface);
   gap: 4px;
@@ -4853,12 +4867,9 @@ select.vs-input {
 .vs-editor-tabs {
   display: flex;
   align-items: stretch;
-  height: 38px;
-  min-height: 38px;
   overflow-x: auto;
   overflow-y: hidden;
   background: var(--vs-bg-surface);
-  border-bottom: 1px solid var(--vs-border-subtle);
   scrollbar-width: none;
 }
 
@@ -4980,7 +4991,7 @@ select.vs-input {
   text-align: center;
 }
 
-/* ── Resize Handle (sidebar) ── */
+/* ── Resize Handle (sidebar) — extends .vs-panel-resize ── */
 .vs-editor-resize {
   position: absolute;
   top: 0;
@@ -4989,13 +5000,24 @@ select.vs-input {
   height: 100%;
   cursor: col-resize;
   z-index: 10;
-  background: transparent;
-  transition: background 150ms ease;
 }
 
-.vs-editor-resize:hover,
-.vs-editor-resize.is-dragging {
+.vs-editor-resize::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  border-radius: var(--radius-full);
+  transition: background 200ms var(--ease-out);
+}
+
+.vs-editor-resize:hover::after,
+.vs-editor-resize.is-dragging::after {
   background: var(--vs-accent);
+  box-shadow: 0 0 6px rgba(244, 160, 36, 0.15);
 }
 
 
@@ -8091,3 +8113,608 @@ select.vs-input {
   tab-size: 2;
 }
 .vx-source-fallback:focus { outline: none; }
+
+/* ═══════════════════════════════════════════════════════════════
+   Notes — Split-panel writing surface (4010)
+   ═══════════════════════════════════════════════════════════════ */
+
+.vs-notes {
+  height: 100%;
+  position: relative;
+}
+
+/* ── Empty State ────────────────────────────────────────────── */
+
+.vs-notes-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px 24px;
+}
+
+/* Custom inner/icon/title/desc classes removed — Notes now uses the shared
+   .vs-empty-state component (same as Forms, Designs, Actions, Assets). */
+
+/* ── Split Layout ───────────────────────────────────────────── */
+
+.vs-notes-split {
+  display: flex;
+  height: 100%;
+}
+
+/* ── List Panel ─────────────────────────────────────────────── */
+
+.vs-notes-list-panel {
+  position: relative;
+  min-width: 200px;
+  max-width: 500px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--vs-border-subtle);
+  background: var(--vs-bg-surface);
+}
+
+.vs-notes-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  height: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+}
+
+.vs-notes-list-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--vs-text-primary);
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.vs-notes-new-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--vs-radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--vs-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 150ms ease-out;
+}
+
+.vs-notes-new-btn:hover {
+  background: var(--vs-bg-hover);
+  color: var(--vs-accent);
+}
+
+/* ── Search ─────────────────────────────────────────────────── */
+
+.vs-notes-search-wrap {
+  position: relative;
+  padding: 12px 16px 8px;
+}
+
+.vs-notes-search-icon {
+  position: absolute;
+  left: 26px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--vs-text-ghost);
+  pointer-events: none;
+}
+
+.vs-notes-search {
+  width: 100%;
+  height: 32px;
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: var(--vs-radius-md);
+  background: var(--vs-bg-base);
+  color: var(--vs-text-primary);
+  font-size: 13px;
+  padding: 0 12px 0 34px;
+  outline: none;
+  transition: border-color 150ms ease-out;
+}
+
+.vs-notes-search::placeholder {
+  color: var(--vs-text-ghost);
+}
+
+.vs-notes-search:focus {
+  border-color: var(--vs-accent);
+}
+
+/* ── Note List ──────────────────────────────────────────────── */
+
+.vs-notes-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px 16px;
+}
+
+.vs-notes-list-loading {
+  font-size: 13px;
+  color: var(--vs-text-ghost);
+  text-align: center;
+  padding: 32px 0;
+}
+
+.vs-notes-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vs-text-ghost);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 12px 8px 4px;
+}
+
+.vs-notes-section-label--rest {
+  margin-top: 4px;
+  border-top: 1px solid var(--vs-border-subtle);
+  padding-top: 12px;
+}
+
+.vs-notes-no-results {
+  font-size: 13px;
+  color: var(--vs-text-ghost);
+  text-align: center;
+  padding: 32px 0;
+}
+
+.vs-note-item {
+  padding: 10px 12px;
+  border-radius: var(--vs-radius-md);
+  cursor: pointer;
+  transition: background 120ms ease-out;
+  outline: none;
+}
+
+.vs-note-item:hover {
+  background: var(--vs-bg-hover);
+}
+
+.vs-note-item:focus-visible {
+  box-shadow: 0 0 0 2px var(--vs-accent);
+}
+
+.vs-note-item--active {
+  background: var(--vs-accent-dim);
+}
+
+.vs-note-item--active:hover {
+  background: var(--vs-accent-dim);
+}
+
+.vs-note-item-top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+
+.vs-note-pin {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.vs-note-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vs-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.vs-note-item-preview {
+  font-size: 12px;
+  color: var(--vs-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+  line-height: 1.4;
+}
+
+.vs-note-item-preview mark {
+  background: var(--vs-accent-dim);
+  color: var(--vs-accent);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.vs-note-item-time {
+  font-size: 11px;
+  color: var(--vs-text-ghost);
+}
+
+/* ── Resize Handle — extends .vs-panel-resize ──────────────── */
+
+.vs-notes-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.vs-notes-resize::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  border-radius: var(--radius-full);
+  transition: background 200ms var(--ease-out);
+}
+
+.vs-notes-resize:hover::after,
+.vs-notes-resize:active::after {
+  background: var(--vs-accent);
+  box-shadow: 0 0 6px rgba(244, 160, 36, 0.15);
+}
+
+/* ── Editor Panel ───────────────────────────────────────────── */
+
+.vs-notes-editor-panel {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--vs-bg-base);
+}
+
+.vs-notes-editor-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Editor placeholder classes removed — renderEditorPlaceholder() now outputs
+   the shared .vs-empty-state component. */
+
+/* ── Note Editor ────────────────────────────────────────────── */
+
+.vs-note-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.vs-note-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  height: 44px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--vs-border-subtle);
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.vs-note-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.vs-note-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.vs-note-toolbar-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--vs-radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--vs-text-ghost);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 120ms ease-out;
+}
+
+.vs-note-toolbar-btn:hover {
+  background: var(--vs-bg-hover);
+  color: var(--vs-text-primary);
+}
+
+.vs-note-toolbar-btn--active {
+  color: var(--vs-accent);
+  background: var(--vs-accent-dim);
+}
+
+.vs-note-toolbar-btn--active:hover {
+  color: var(--vs-accent);
+  background: var(--vs-accent-dim);
+}
+
+.vs-note-toolbar-btn--danger:hover {
+  color: var(--vs-error);
+}
+
+/* ── Save Status ────────────────────────────────────────────── */
+
+.vs-note-save-status {
+  font-size: 12px;
+  color: var(--vs-text-ghost);
+  opacity: 0;
+  transition: opacity 300ms ease-out;
+  white-space: nowrap;
+}
+
+.vs-note-save-status--saved {
+  opacity: 1;
+  color: var(--vs-text-ghost);
+  animation: vs-note-fade-saved 2s ease-out forwards;
+}
+
+.vs-note-save-status--error {
+  opacity: 1;
+  color: var(--vs-error);
+}
+
+.vs-note-save-status--readonly {
+  opacity: 1;
+  color: var(--vs-text-ghost);
+}
+
+@keyframes vs-note-fade-saved {
+  0%, 60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ── Editor Body ────────────────────────────────────────────── */
+
+.vs-note-editor-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px;
+}
+
+.vs-note-title-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--vs-text-primary);
+  letter-spacing: -0.02em;
+  font-family: var(--font-sans);
+  padding: 0;
+  margin-bottom: 16px;
+}
+
+.vs-note-title-input::placeholder {
+  color: var(--vs-text-ghost);
+}
+
+.vs-note-body-wrap {
+  min-height: 200px;
+}
+
+.vs-note-body-textarea {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--vs-text-primary);
+  font-family: var(--font-sans);
+  padding: 0;
+  resize: none;
+  overflow: hidden;
+  min-height: 200px;
+}
+
+.vs-note-body-textarea::placeholder {
+  color: var(--vs-text-ghost);
+}
+
+/* ── Markdown Preview ───────────────────────────────────────── */
+
+.vs-note-preview {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--vs-text-primary);
+}
+
+.vs-note-h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 12px; letter-spacing: -0.02em; }
+.vs-note-h2 { font-size: 1.25rem; font-weight: 600; margin: 20px 0 8px; letter-spacing: -0.01em; }
+.vs-note-h3 { font-size: 1.1rem; font-weight: 600; margin: 16px 0 6px; }
+
+.vs-note-p { margin: 0 0 12px; }
+
+.vs-note-blockquote {
+  border-left: 3px solid var(--vs-accent);
+  padding-left: 16px;
+  color: var(--vs-text-secondary);
+  margin: 12px 0;
+  font-style: italic;
+}
+
+.vs-note-hr {
+  border: none;
+  border-top: 1px solid var(--vs-border-subtle);
+  margin: 20px 0;
+}
+
+.vs-note-ul, .vs-note-ol {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+
+.vs-note-li, .vs-note-li-ol { margin-bottom: 4px; }
+
+.vs-note-link {
+  color: var(--vs-accent);
+  text-decoration: none;
+}
+
+.vs-note-link:hover {
+  text-decoration: underline;
+}
+
+.vs-note-code-block {
+  background: var(--vs-bg-raised);
+  border-radius: var(--vs-radius-md);
+  padding: 12px 16px;
+  overflow-x: auto;
+  margin: 12px 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.vs-note-inline-code {
+  background: var(--vs-bg-raised);
+  border-radius: 3px;
+  padding: 2px 5px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+/* ── Context Menu ───────────────────────────────────────────── */
+
+.vs-note-context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--vs-bg-surface);
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: var(--vs-radius-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.08);
+  animation: vs-note-ctx-in 120ms ease-out;
+}
+
+@keyframes vs-note-ctx-in {
+  0% { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.vs-note-ctx-item {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--vs-text-primary);
+  font-size: 13px;
+  padding: 7px 12px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--vs-radius-sm);
+  transition: background 80ms ease-out;
+}
+
+.vs-note-ctx-item:hover {
+  background: var(--vs-bg-hover);
+}
+
+.vs-note-ctx-item--danger {
+  color: var(--vs-error);
+}
+
+.vs-note-ctx-item--danger:hover {
+  background: var(--vs-error-dim);
+}
+
+.vs-note-ctx-divider {
+  height: 1px;
+  background: var(--vs-border-subtle);
+  margin: 4px 0;
+}
+
+/* ── Mobile Detail ──────────────────────────────────────────── */
+
+.vs-notes-mobile-detail {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: var(--vs-bg-base);
+  display: flex;
+  flex-direction: column;
+}
+
+.vs-note-mobile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vs-border-subtle);
+  flex-shrink: 0;
+}
+
+.vs-note-mobile-back {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--vs-accent);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.vs-note-mobile-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Mobile Responsive ──────────────────────────────────────── */
+
+@media (max-width: 767px) {
+  .vs-notes-split {
+    display: block;
+  }
+
+  .vs-notes-list-panel {
+    width: 100% !important;
+    max-width: 100%;
+    border-right: none;
+  }
+
+  .vs-notes-resize {
+    display: none;
+  }
+
+  .vs-notes-editor-panel {
+    display: none;
+  }
+
+  .vs-note-editor-body {
+    padding: 16px 20px;
+  }
+
+  .vs-note-title-input {
+    font-size: 1.25rem;
+  }
+
+  .vs-note-body-textarea {
+    font-size: 15px;
+  }
+}
+

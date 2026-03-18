@@ -19,7 +19,7 @@ function renderEditorLayout() {
   return `
     <div class="vs-editor-layout">
       <!-- File Tree Sidebar -->
-      <div id="editor-sidebar" class="vs-editor-sidebar" style="position: relative; display: flex; flex-direction: column;">
+      <div id="editor-sidebar" class="vs-editor-sidebar" style="position: relative; display: flex; flex-direction: column;${(() => { try { const s = JSON.parse(sessionStorage.getItem('vs-editor-state')); return s?.sidebarWidth ? ` width: ${s.sidebarWidth}px;` : ''; } catch { return ''; }})()}">
         <div class="vs-editor-sidebar-header">
           <span class="vs-editor-sidebar-title">Explorer</span>
           <div style="display:flex;gap:2px;">
@@ -67,7 +67,7 @@ function renderEditorLayout() {
       <!-- Main Editor Area -->
       <div class="vs-editor-main">
         <!-- Editor Topbar -->
-        <div class="vs-editor-topbar" style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--vs-border-subtle); background: var(--vs-bg-surface); height: 38px;">
+        <div class="vs-editor-topbar" style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--vs-border-subtle); background: var(--vs-bg-surface); height: 44px;">
           <!-- Tab Bar Wrapper -->
           <div style="flex: 1; display: flex; align-items: stretch; min-width: 0; position: relative;">
             <!-- Scroll Left Button -->
@@ -84,11 +84,11 @@ function renderEditorLayout() {
             </button>
           </div>
           <!-- Editor Controls -->
-          <div class="vs-editor-controls" style="display: flex; align-items: center; gap: 4px; padding: 0 12px;">
-            <button id="editor-word-wrap-btn" class="vs-btn vs-btn-ghost vs-btn-icon" title="Toggle Word Wrap" style="width: 24px; height: 24px;">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M3 12h15a3 3 0 0 1 0 6h-4"/><path d="m11 15-3 3 3 3"/><path d="M3 18h4"/></svg>
+          <div class="vs-editor-controls" style="display: flex; align-items: center; gap: 6px; padding: 0 12px;">
+            <button id="editor-word-wrap-btn" class="vs-btn vs-btn-ghost vs-btn-icon" title="Toggle Word Wrap" style="width: 28px; height: 28px;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16-3 3 3 3"/><path d="M3 12h14.5a1 1 0 0 1 0 7H13"/><path d="M3 19h6"/><path d="M3 5h18"/></svg>
             </button>
-            <select id="editor-font-size-select" class="vs-input" title="Editor Text Size" style="height: 24px; font-size: 11px; padding: 0 24px 0 8px; width: auto; min-width: 60px; background-size: 12px; background-position: right 6px center;">
+            <select id="editor-font-size-select" class="vs-input" title="Editor Text Size" style="height: 28px; font-size: 11px; padding: 0 24px 0 8px; width: auto; min-width: 60px; background-size: 12px; background-position: right 6px center;">
               <option value="11">11px</option>
               <option value="12">12px</option>
               <option value="13">13px</option>
@@ -150,6 +150,7 @@ async function initEditorPage() {
     disposed: false,
     fontSize: saved?.fontSize || 13,
     wordWrap: saved?.wordWrap || false,
+    sidebarWidth: saved?.sidebarWidth || null,
     expandedFolders: new Set(saved?.expandedFolders || ['_partials', 'assets', 'assets/css', 'assets/js', 'assets/data', 'assets/forms', '_prompts/actions']),
     expandedSections: new Set(saved?.expandedSections || ['site', 'config', 'prompts']),
     // Paths to restore after init
@@ -169,6 +170,7 @@ async function initEditorPage() {
         activeTab: editorState.activeTab,
         fontSize: editorState.fontSize,
         wordWrap: editorState.wordWrap,
+        sidebarWidth: editorState.sidebarWidth,
         expandedFolders: [...editorState.expandedFolders],
         expandedSections: [...editorState.expandedSections],
       }));
@@ -935,6 +937,9 @@ async function initEditorPage() {
         resizeEl.classList.remove('is-dragging');
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        // Persist sidebar width
+        editorState.sidebarWidth = sidebarEl.offsetWidth;
+        persistEditorState();
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);

@@ -739,9 +739,24 @@
     selectedEl.style.filter = 'grayscale(1)';
     selectedEl.style.pointerEvents = 'none';
 
-    // Inject diagonal hatch overlay
+    // Inject diagonal hatch overlay with loading animation
+    if (!document.getElementById('vx-hatch-anim-style')) {
+      const style = document.createElement('style');
+      style.id = 'vx-hatch-anim-style';
+      style.textContent = `
+        @keyframes vx-hatch-slide {
+          from { background-position: 0 0; }
+          to   { background-position: 28px 28px; }
+        }
+        .vx-source-edit-hatch.is-loading {
+          animation: vx-hatch-slide 0.8s linear infinite;
+          background-size: 28px 28px !important;
+        }
+      `;
+      document.head.appendChild(style);
+    }
     const hatch = document.createElement('div');
-    hatch.className = 'vx-source-edit-hatch';
+    hatch.className = 'vx-source-edit-hatch is-loading';
     hatch.style.cssText = `
       position: absolute;
       left: ${rect.left + window.scrollX}px;
@@ -1176,6 +1191,11 @@
       case 'vx-editor:save-edit': saveEditing(); break;
       case 'vx-editor:cancel-edit': cancelEditing(); break;
       case 'vx-editor:start-source-edit': startSourceEdit(); break;
+      case 'vx-editor:source-editor-mounted': {
+        const h = document.querySelector('.vx-source-edit-hatch');
+        if (h) h.classList.remove('is-loading');
+        break;
+      }
       case 'vx-editor:end-source-edit': endSourceEdit(e.data); break;
       case 'vx-editor:swap-image': swapImage(e.data.src); break;
       case 'vx-editor:preview-class': previewClass(e.data); break;

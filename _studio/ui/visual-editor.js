@@ -1053,8 +1053,8 @@ async function openInlineSourceEditor(data) {
       }, 400);
     });
 
-    // Focus the editor
-    setTimeout(() => monacoInstance.focus(), 100);
+    // Focus the editor and signal the bridge that loading is complete
+    setTimeout(() => { monacoInstance.focus(); sendToPreview({ type: 'vx-editor:source-editor-mounted' }); }, 100);
 
   } catch {
     // Fallback: textarea
@@ -1073,7 +1073,7 @@ async function openInlineSourceEditor(data) {
       clearTimeout(taPfTimer);
       taPfTimer = setTimeout(() => runPreflight(ta.value), 400);
     });
-    setTimeout(() => ta.focus(), 100);
+    setTimeout(() => { ta.focus(); sendToPreview({ type: 'vx-editor:source-editor-mounted' }); }, 100);
   }
 
   // ── Button handlers ──

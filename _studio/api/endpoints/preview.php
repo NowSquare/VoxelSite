@@ -1202,30 +1202,15 @@ function annotateFailSafe(string $html, string $pageFile): string
  * with data-vx-* attributes for the Visual Editor bridge.
  *
  * Architecture:
- *   Step 1: Check partials for PHP loop constructs (file-name-only, no offsets).
- *   Step 2: Annotate ALL elements with page-level defaults (data-vx-*=page).
- *   Step 3: Re-parse provenance zones from the post-annotation HTML (offsets valid).
- *   Step 4: Override: build a per-element map (outer zones first, inner zones overwrite),
+ *   Step 1: Annotate ALL elements with page-level defaults (data-vx-*=page).
+ *   Step 2: Re-parse provenance zones from the post-annotation HTML (offsets valid).
+ *   Step 3: Override: build a per-element map (outer zones first, inner zones overwrite),
  *           then apply in a single regex pass. No substring splicing.
- *   Step 5: Strip provenance markers from final output.
+ *   Step 4: Strip provenance markers from final output.
  */
 function annotateSourceAddresses(string $html, string $pageFile): string
 {
-    // Step 1: Check which partials contain PHP loop constructs.
-    $loopPartials = [];
-    $previewDir = dirname(__DIR__, 2) . '/preview';
-    preg_match_all('/<!-- vx:partial:start:([a-zA-Z0-9_\-\/]+\.php) -->/', $html, $partialMatches);
-    foreach (array_unique($partialMatches[1]) as $partialFile) {
-        $partialPath = $previewDir . '/' . $partialFile;
-        if (file_exists($partialPath)) {
-            $src = file_get_contents($partialPath);
-            $loopPartials[$partialFile] = (bool) preg_match('/\b(foreach|for|while)\s*\(/', $src);
-        } else {
-            $loopPartials[$partialFile] = false;
-        }
-    }
-
-    // Step 2: Annotate ALL opening tags with page-level defaults.
+    // Step 1: Annotate ALL opening tags with page-level defaults.
     $skipTags = ['html','head','body','script','style','link','meta','noscript','br','hr','wbr','col','colgroup','iframe','template','svg','path','circle','line','polyline','rect','ellipse','polygon','g','defs','use','symbol','clippath','mask'];
     $skipSet = array_flip($skipTags);
 
@@ -1257,8 +1242,8 @@ function annotateSourceAddresses(string $html, string $pageFile): string
         $count
     ) ?? $html;
 
-    // Step 3: Re-parse zones from the POST-ANNOTATION HTML.
-    // Step 2 changed every tag (adding data-vx-* attrs), shifting all
+    // Step 2: Re-parse zones from the POST-ANNOTATION HTML.
+    // Step 1 changed every tag (adding data-vx-* attrs), shifting all
     // byte offsets. The provenance markers are still intact.
     $zones = [];
     preg_match_all(
@@ -1287,7 +1272,7 @@ function annotateSourceAddresses(string $html, string $pageFile): string
         }
     }
 
-    // Step 4: Override attributes for elements inside partial zones.
+    // Step 3: Override attributes for elements inside partial zones.
     //
     // Pass A: Build a per-element override map. Process outermost zones
     // first; inner zones overwrite, giving them priority.
@@ -1297,9 +1282,6 @@ function annotateSourceAddresses(string $html, string $pageFile): string
     foreach (array_reverse($zones) as $zone) {
         $file = $zone['file'];
         $kind = str_starts_with($file, '_partials/') ? 'partial' : 'page';
-        $hasLoops = $loopPartials[$file] ?? false;
-        $effectiveKind = $hasLoops ? 'unsafe' : $kind;
-        $effectiveEditable = $hasLoops ? 'false' : 'true';
 
         $segment = substr($html, $zone['contentStart'], $zone['contentEnd'] - $zone['contentStart']);
         preg_match_all('/data-vx-node-key="([^"]*)"/', $segment, $keyMatches);
@@ -1307,8 +1289,8 @@ function annotateSourceAddresses(string $html, string $pageFile): string
             foreach ($keyMatches[1] as $origKey) {
                 $elementOverrides[$origKey] = [
                     'file' => $file,
-                    'kind' => $effectiveKind,
-                    'editable' => $effectiveEditable,
+                    'kind' => $kind,
+                    'editable' => 'true',
                     'chain' => $file,
                 ];
             }
@@ -1353,7 +1335,7 @@ function annotateSourceAddresses(string $html, string $pageFile): string
         ) ?? $html;
     }
 
-    // Step 5: Strip provenance markers from final output.
+    // Step 4: Strip provenance markers from final output.
     $html = preg_replace('/<!-- vx:partial:(?:start|end):[a-zA-Z0-9_\-\/]+\.php -->/', '', $html) ?? $html;
 
     return $html;

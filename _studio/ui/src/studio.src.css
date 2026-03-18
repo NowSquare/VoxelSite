@@ -1864,7 +1864,7 @@ select.vs-input {
 
 
 /* ═══════════════════════════════════════════ */
-/*  TOP BAR                                   */
+/*  TOP BAR — Two-Level Grouped Navigation    */
 /* ═══════════════════════════════════════════ */
 
 .vs-topbar {
@@ -1872,7 +1872,7 @@ select.vs-input {
   top: 0;
   left: 0;
   right: 0;
-  height: 48px;
+  height: var(--vs-topbar-h, 48px);
   z-index: 100;
   border-bottom: 1px solid var(--vs-glass-border);
   background: var(--vs-glass-bg);
@@ -1885,11 +1885,11 @@ select.vs-input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 0 20px;
   position: relative;
 }
 
-/* Center section for preview controls */
+/* Center section for route tabs / preview controls */
 .vs-topbar-center {
   position: absolute;
   left: 50%;
@@ -1899,6 +1899,10 @@ select.vs-input {
   gap: 4px;
 }
 
+.vs-topbar-right {
+  z-index: 1;
+}
+
 .vs-topbar-divider {
   width: 1px;
   height: 16px;
@@ -1906,7 +1910,7 @@ select.vs-input {
   margin: 0 4px;
 }
 
-/* User button: ensure icon and text are inline */
+/* User button */
 .vs-user-btn {
   display: inline-flex;
   align-items: center;
@@ -1919,42 +1923,102 @@ select.vs-input {
   flex-shrink: 0;
 }
 
-.vs-nav-item {
-  font-size: var(--text-sm);
-  font-weight: 500;
-  padding: 6px 12px;
-  border-radius: var(--radius-md);
-  color: var(--vs-text-tertiary);
-  text-decoration: none;
-  transition: all 150ms var(--ease-out);
-  position: relative;
+/* ── Topbar Three-Zone Layout ──
+   Left:   Logo + Group text links (architecture)
+   Center: Route segmented control (contextual mode)
+   Right:  Utilities (personal tools) */
+
+.vs-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+  z-index: 1;
 }
 
-.vs-nav-item:hover {
+/* ── Level 1: Group Links (clean text, no container) ──
+   Architectural labels. Tell the user WHERE they are
+   in the product. Open text feels permanent and stable. */
+.vs-nav-groups {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vs-nav-group {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+  color: var(--vs-text-ghost);
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  transition: all 150ms var(--ease-out);
+  white-space: nowrap;
+  line-height: 1;
+  font-family: var(--font-sans);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.vs-nav-group:hover {
   color: var(--vs-text-secondary);
   background: var(--vs-bg-hover);
 }
 
-.vs-nav-item-active {
-  color: var(--border-focus);
-  background: #FFF7ED;
-}
-[data-theme="dark"] .vs-nav-item-active {
-  background: rgba(67, 20, 7, 0.3);
+.vs-nav-group-active {
+  color: var(--vs-text-primary);
+  font-weight: 600;
 }
 
-/* Logo */
+/* ── Level 2: Route Tabs (centered segmented control) ──
+   Tactile mode switcher. Enclosed pill feels interactive
+   and temporary. Centered for visual balance. */
+.vs-nav-routes {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  background: var(--vs-bg-inset);
+  border-radius: var(--radius-lg);
+  padding: 3px;
+}
+
+.vs-nav-item {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 5px 16px;
+  border-radius: calc(var(--radius-lg) - 2px);
+  color: var(--vs-text-tertiary);
+  text-decoration: none;
+  transition: all 150ms var(--ease-out);
+  position: relative;
+  white-space: nowrap;
+}
+
+.vs-nav-item:hover {
+  color: var(--vs-text-primary);
+}
+
+.vs-nav-item-active {
+  background: var(--vs-bg-surface);
+  color: var(--vs-text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 1px var(--vs-border-subtle);
+}
+
+/* Logo — icon only, acts as home anchor */
 .vs-logo {
   display: flex;
   align-items: center;
-  gap: 8px;
   text-decoration: none;
-  margin-right: 16px;
+  flex-shrink: 0;
 }
 
 .vs-logo-icon {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   color: var(--vs-accent);
   transition: all 300ms var(--ease-out);
 }
@@ -1964,12 +2028,6 @@ select.vs-input {
   filter: drop-shadow(0 0 6px rgba(244, 160, 36, 0.3));
 }
 
-.vs-logo-text {
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--vs-text-primary);
-  letter-spacing: var(--tracking-tight);
-}
 
 
 /* ═══════════════════════════════════════════ */
@@ -7676,17 +7734,18 @@ select.vs-input {
 
 @media (max-width: 767px) {
 
-  /* ── Top Bar: Slim down ── */
+  /* ── Top Bar: Slim single-row on mobile ── */
   .vs-topbar {
-    height: 44px;
+    --vs-topbar-h: 44px;
+    height: var(--vs-topbar-h);
   }
 
   .vs-topbar-inner {
     padding: 0 12px;
   }
 
-  /* Hide desktop nav items — they move to bottom nav */
-  .vs-topbar-inner nav[aria-label="Studio navigation"] {
+  /* Hide desktop grouped nav — moves to bottom nav on mobile */
+  .vs-topbar-inner .vs-nav-shell {
     display: none;
   }
 
@@ -7701,13 +7760,9 @@ select.vs-input {
     display: none !important;
   }
 
-  /* Logo: icon only, no text */
+  /* Logo: icon only */
   .vs-logo {
     margin-right: 8px;
-  }
-
-  .vs-logo-text {
-    display: none !important;
   }
 
   /* ── Status Bar: Hide on mobile ── */
@@ -7955,11 +8010,7 @@ select.vs-input {
     padding: 5px 8px;
   }
 
-  /* ── Nav Items: Tighter spacing ── */
-  .vs-nav-item {
-    padding: 6px 8px;
-    font-size: 12px;
-  }
+  /* ── Nav Items: already compact in grouped layout ── */
 
   /* ── Content Layout: Tighter padding ── */
   .mx-auto.px-6.py-8 {

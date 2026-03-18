@@ -43,21 +43,111 @@ import { closeModal, showConfirmModal, showPromptModal, onBackdropClick } from '
 
 
 // ═══════════════════════════════════════════
-//  Nav Items
+//  Grouped Navigation Model
 // ═══════════════════════════════════════════
 
-const NAV_ITEMS = [
-  { route: 'chat',        label: 'Chat' },
-  { route: 'editor',      label: 'Editor' },
-  { route: 'notes',       label: 'Notes',      roles: ['owner', 'editor'] },
-  { route: 'assets',      label: 'Assets' },
-  // Collections removed from v1.0.0 — ships in v1.1 with full AI integration
-  // { route: 'collections', label: 'Collections' },
-  { route: 'forms',       label: 'Forms' },
-  { route: 'actions',      label: 'Actions' },
-  { route: 'designs',     label: 'Designs',    roles: ['owner', 'editor'] },
-  { route: 'settings',    label: 'Settings',   roles: ['owner'] },
+/**
+ * Two-level navigation: Groups → Routes.
+ *
+ * Each group has:
+ *  - id:            used for localStorage keys and data attributes
+ *  - label:         displayed in the group pill
+ *  - defaultRoute:  where to land when no visit history exists for this group
+ *  - routes:        child routes with optional role gates
+ *
+ * Settings is intentionally absent — it lives in the user dropdown only.
+ * When adding Board/Contacts later, add routes under their group.
+ */
+const NAV_GROUPS = [
+  {
+    id: 'create',
+    label: 'Create',
+    defaultRoute: 'chat',
+    routes: [
+      { route: 'chat',   label: 'Chat' },
+      { route: 'editor', label: 'Editor' },
+    ],
+  },
+  {
+    id: 'studio',
+    label: 'Studio',
+    defaultRoute: 'notes',
+    routes: [
+      { route: 'notes', label: 'Notes', roles: ['owner', 'editor'] },
+    ],
+  },
+  {
+    id: 'manage',
+    label: 'Manage',
+    defaultRoute: 'forms',
+    routes: [
+      { route: 'assets',  label: 'Assets' },
+      { route: 'forms',   label: 'Forms' },
+      { route: 'actions', label: 'Actions' },
+      { route: 'designs', label: 'Designs', roles: ['owner', 'editor'] },
+    ],
+  },
 ];
+
+/** localStorage key prefix for persisting last-visited route per group */
+const NAV_GROUP_MEMORY_PREFIX = 'vs-nav-group-last-';
+
+/**
+ * Build a flat lookup: route → group id.
+ * Computed once at module scope for O(1) resolution.
+ */
+const ROUTE_TO_GROUP = (() => {
+  const map = {};
+  for (const g of NAV_GROUPS) {
+    for (const r of g.routes) {
+      map[r.route] = g.id;
+    }
+  }
+  return map;
+})();
+
+/**
+ * Resolve which group a given route belongs to.
+ * Returns null for utility routes (settings, team, profile) that
+ * do not belong to any workspace group.
+ */
+function getGroupForRoute(route) {
+  // Exact match first
+  if (ROUTE_TO_GROUP[route]) return ROUTE_TO_GROUP[route];
+  // Check prefix match for parameterized routes (e.g., 'forms/:formId' → 'manage')
+  const base = route.split('/')[0];
+  if (ROUTE_TO_GROUP[base]) return ROUTE_TO_GROUP[base];
+  // Utility routes: do not falsely activate a group
+  return null;
+}
+
+/**
+ * Get the last-visited route for a group, falling back to its default.
+ */
+function getGroupTarget(group) {
+  const stored = localStorage.getItem(NAV_GROUP_MEMORY_PREFIX + group.id);
+  if (stored) {
+    // Validate the stored route still exists in this group
+    if (group.routes.some(r => r.route === stored)) return stored;
+  }
+  return group.defaultRoute;
+}
+
+/**
+ * Remember the current route as the last-visited for its group.
+ * Called on every route change from the router's beforeEach or renderApp.
+ */
+function rememberRouteForGroup(route) {
+  const groupId = getGroupForRoute(route);
+  if (groupId) {
+    // Store the base route (not the parameterized pattern)
+    const base = route.split('/')[0];
+    localStorage.setItem(NAV_GROUP_MEMORY_PREFIX + groupId, base);
+  }
+}
+
+/** Flat list of all nav routes, for compatibility with code that iterates routes */
+const NAV_ALL_ROUTES = NAV_GROUPS.flatMap(g => g.routes);
 
 /** Routes that use the split-panel dashboard layout */
 const DASHBOARD_ROUTES = ['chat', 'editor'];
@@ -310,6 +400,9 @@ function renderApp() {
   const route = store.get('route');
   const isDashboard = DASHBOARD_ROUTES.includes(route);
 
+  // Persist this route as the last-visited for its group
+  rememberRouteForGroup(route);
+
   // Visual editor state must not survive route changes — the DOM is about to be rebuilt
   if (isVisualEditorActive()) {
     deactivateVisualEditor();
@@ -365,38 +458,54 @@ function renderApp() {
 }
 
 // ═══════════════════════════════════════════
-//  Top Bar (44px)
+//  Top Bar (64px) — Two-Level Grouped Nav
 // ═══════════════════════════════════════════
 
 function renderTopBar() {
   const route = store.get('route');
   const user = store.get('user');
   const theme = store.get('theme');
+  const role = user?.role;
+  const activeGroupId = getGroupForRoute(route);
 
-  const navHtml = NAV_ITEMS
-    .filter(item => {
-      // Role gate: if item has roles array, user must have one of them
-      if (item.roles && user) {
-        return item.roles.includes(user.role);
-      }
-      return true;
+  // ── Level 1: Group Selector (secondary context) ──
+  const groupPillsHtml = NAV_GROUPS
+    .filter(group => {
+      return group.routes.some(r => !r.roles || r.roles.includes(role));
     })
-    .map(item => {
-    const isActive = route === item.route || route.startsWith(item.route + '/');
-    return `
-      <a href="#/${item.route}"
-         class="vs-nav-item ${isActive ? 'vs-nav-item-active' : ''}">
-        ${item.label}
-      </a>
-    `;
-  }).join('');
+    .map(group => {
+      const isActive = group.id === activeGroupId;
+      const target = getGroupTarget(group);
+      return `
+        <button class="vs-nav-group ${isActive ? 'vs-nav-group-active' : ''}"
+                data-group="${group.id}"
+                data-target="${target}">${group.label}</button>
+      `;
+    }).join('');
+
+  // ── Level 2: Route Tabs (primary destinations) ──
+  // Empty when on utility pages (settings, team, profile)
+  const activeGroup = activeGroupId ? NAV_GROUPS.find(g => g.id === activeGroupId) : null;
+  const routeTabsHtml = activeGroup
+    ? activeGroup.routes
+        .filter(item => !item.roles || item.roles.includes(role))
+        .map(item => {
+          const isActive = route === item.route || route.startsWith(item.route + '/');
+          return `
+            <a href="#/${item.route}"
+               class="vs-nav-item ${isActive ? 'vs-nav-item-active' : ''}">
+              ${item.label}
+            </a>
+          `;
+        }).join('')
+    : '';
 
   return `
     <header class="vs-topbar">
       <div class="vs-topbar-inner">
-        <!-- Logo + Nav -->
-        <div class="flex items-center gap-1">
-          <a href="#/chat" class="vs-logo">
+        <!-- Left: Logo + Group links (architecture) -->
+        <div class="vs-topbar-left">
+          <a href="#/chat" class="vs-logo" title="${escapeHtml(store.get('siteName') || 'VoxelSite')}">
             <span class="vs-logo-icon">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                 <path class="voxel-top" style="opacity:1" fill="currentColor" d="M12 3L20 7.5L12 12L4 7.5Z"/>
@@ -404,11 +513,8 @@ function renderTopBar() {
                 <path class="voxel-right" style="opacity:0.4" fill="currentColor" d="M20 7.5L12 12L12 21L20 16.5Z"/>
               </svg>
             </span>
-            <span class="vs-logo-text hidden sm:inline">${escapeHtml(store.get('siteName') || 'VoxelSite')}</span>
           </a>
-          <nav class="flex items-center gap-0.5" aria-label="Studio navigation">
-            ${navHtml}
-          </nav>
+          <nav class="vs-nav-groups" aria-label="Workspace">${groupPillsHtml}</nav>
           ${SHOW_DEMO_CHROME ? `
             <span class="vs-demo-badge" title="Read-only preview — install your own copy to get started.">
               ${icons.eye} Demo
@@ -416,8 +522,13 @@ function renderTopBar() {
           ` : ''}
         </div>
 
+        <!-- Center: Route tabs (contextual mode) -->
+        <div class="vs-topbar-center">
+          ${routeTabsHtml ? `<nav class="vs-nav-routes" aria-label="Section navigation">${routeTabsHtml}</nav>` : ''}
+        </div>
+
         <!-- Right: Search hint + Theme + User -->
-        <div class="flex items-center gap-1.5">
+        <div class="vs-topbar-right flex items-center gap-1.5">
           <button id="btn-command-palette"
             class="vs-btn-ghost vs-btn-sm hidden sm:flex items-center gap-2"
             title="Prompt library">
@@ -438,17 +549,22 @@ function renderTopBar() {
               <span class="hidden sm:inline">${escapeHtml(user?.name || 'Admin')}</span>
             </button>
             <div id="user-dropdown" class="hidden vs-dropdown right-0 top-full mt-1">
-              ${user?.role !== 'owner' ? `
+              ${role !== 'owner' ? `
                 <div style="padding: 8px 12px 4px;">
-                  <span style="display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 999px; background: var(--vs-bg-inset); color: var(--vs-text-tertiary); border: 1px solid var(--vs-border-subtle);">${user?.role === 'editor' ? 'Editor' : 'Viewer'}</span>
+                  <span style="display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 999px; background: var(--vs-bg-inset); color: var(--vs-text-tertiary); border: 1px solid var(--vs-border-subtle);">${role === 'editor' ? 'Editor' : 'Viewer'}</span>
                 </div>
               ` : ''}
               <a href="#/profile" id="btn-edit-profile" class="vs-dropdown-item">
                 ${icons.pencil} Edit Profile
               </a>
-              ${user?.role === 'owner' ? `
+              ${role === 'owner' ? `
                 <a href="#/team" id="btn-team-nav" class="vs-dropdown-item">
                   ${icons.users} Team Members
+                </a>
+              ` : ''}
+              ${role === 'owner' ? `
+                <a href="#/settings" id="btn-settings-nav" class="vs-dropdown-item">
+                  ${icons.settings} Settings
                 </a>
               ` : ''}
               <div style="border-top: 1px solid var(--vs-border-subtle); margin: 4px 0;"></div>
@@ -2819,6 +2935,14 @@ function bindAppEvents() {
     });
   }
 
+  // Group pill navigation — clicking a group navigates to its last-visited route
+  document.querySelectorAll('.vs-nav-group').forEach(pill => {
+    pill.addEventListener('click', () => {
+      const target = pill.dataset.target;
+      if (target) router.navigate(target);
+    });
+  });
+
   // Command palette
   const commandBtn = document.getElementById('btn-command-palette');
   if (commandBtn) {
@@ -2893,7 +3017,7 @@ function bindAppEvents() {
   }
 
   // Dropdown links — close dropdown on click
-  ['btn-edit-profile', 'btn-team-nav'].forEach(id => {
+  ['btn-edit-profile', 'btn-team-nav', 'btn-settings-nav'].forEach(id => {
     const link = document.getElementById(id);
     if (link && dropdown) {
       link.addEventListener('click', () => {

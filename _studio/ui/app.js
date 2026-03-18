@@ -22,7 +22,7 @@ import { store } from './state.js';
 import { router } from './router.js';
 import { api, apiStream } from './api.js';
 import { initializeTheme, toggleTheme } from './theme.js';
-import { initVisualEditor, toggleVisualEditor, deactivateVisualEditor, isVisualEditorActive } from './visual-editor.js';
+import { initVisualEditor, toggleVisualEditor, deactivateVisualEditor, isVisualEditorActive, dismissVisualEditorSelection } from './visual-editor.js';
 
 // ═══════════════════════════════════════════
 //  Icons (inline SVG, no external requests)
@@ -3510,6 +3510,7 @@ function sendPreviewMessage(message) {
 window.sendPreviewMessage = sendPreviewMessage;
 
 async function performUndo() {
+  dismissVisualEditorSelection(); // Clear stale selection before preview reloads
   const result = await api.post('/revisions/undo');
   if (result.ok) {
     // Small delay to let filesystem settle after file restoration
@@ -3520,6 +3521,7 @@ async function performUndo() {
 }
 
 async function performRedo() {
+  dismissVisualEditorSelection(); // Clear stale selection before preview reloads
   const result = await api.post('/revisions/redo');
   if (result.ok) {
     // Small delay to let filesystem settle after file restoration

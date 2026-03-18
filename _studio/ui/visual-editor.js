@@ -19,6 +19,8 @@
 
 import { api, apiStream } from './api.js';
 import { onBackdropClick } from './src/ui/modals.js';
+import { normalizeSourceAddress, isEditableAddress, getReadOnlyMessage, isGlobalAddress } from './visual-editor-addressing.js';
+import { openCodeEditorModal, ensureMonacoReady, monacoThemeForCurrentUi } from './src/views/editor.js';
 
 // ═══════════════════════════════════════════
 //  State
@@ -26,6 +28,7 @@ import { onBackdropClick } from './src/ui/modals.js';
 
 let editorActive = false;
 let selectedElement = null;
+let selectedAddress = null; // VE-005: normalized source address for selected element
 let pendingChanges = [];
 let isSaving = false;
 let visualEditorInitialized = false;
@@ -115,10 +118,50 @@ export function deactivateVisualEditor() {
   richTextActive = false;
 }
 
+/**
+ * Clear the active selection and all floating UI (toolbar, rich text bar,
+ * style panel, AI panel) without deactivating the editor.
+ *
+ * Used by undo/redo: the preview iframe is about to reload, so any
+ * selection referencing the old DOM must be cleared. The editor itself
+ * stays active — the user can re-select after the preview refreshes.
+ */
+export function dismissVisualEditorSelection() {
+  dismissToolbar();
+  dismissRichTextToolbar();
+  closeStylePanel();
+  closeAIEditPanel();
+  selectedElement = null;
+  selectedAddress = null;
+  richTextActive = false;
+}
+
 export function initVisualEditor() {
   if (visualEditorInitialized) return;
   visualEditorInitialized = true;
   window.addEventListener('message', handlePreviewMessage);
+
+  // ⌘E / Ctrl+E → Open Code Editor for read-only element
+  document.addEventListener('keydown', (e) => {
+    if (!editorActive) return;
+    if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
+      // Don't hijack the shortcut when focus is in a form control,
+      // contentEditable, or the code editor modal
+      const el = document.activeElement;
+      if (el) {
+        const tag = el.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
+        if (el.isContentEditable) return;
+        if (el.closest('.vs-modal, .vs-code-editor')) return;
+      }
+      const address = selectedAddress;
+      if (address && !isEditableAddress(address) && address.sourceFile) {
+        e.preventDefault();
+        openCodeEditorModal(address.sourceFile);
+        dismissToolbar();
+      }
+    }
+  });
 
   // Safety net: if the iframe navigates while editing, cancel editing
   const iframe = document.getElementById('preview-iframe');
@@ -147,10 +190,14 @@ function handlePreviewMessage(e) {
   switch (e.data.type) {
     case 'vx-editor:select':
       selectedElement = e.data;
+      selectedAddress = normalizeSourceAddress(e.data.sourceAddress);
       showContextToolbar(e.data);
       break;
     case 'vx-editor:text-changed':
       queueTextChange(e.data);
+      break;
+    case 'vx-editor:source-edit-changed':
+      saveSourceEdit(e.data);
       break;
     case 'vx-editor:image-changed':
       saveImageChange(e.data);
@@ -163,6 +210,7 @@ function handlePreviewMessage(e) {
       dismissRichTextToolbar();
       closeStylePanel();
       selectedElement = null;
+      selectedAddress = null;
       break;
     case 'vx-editor:save-request':
       saveAllPending();
@@ -194,6 +242,9 @@ function handlePreviewMessage(e) {
       if (editorActive) {
         sendToPreview({ type: 'vx-editor:toggle', active: true });
       }
+      break;
+    case 'vx-editor:source-edit-ready':
+      openInlineSourceEditor(e.data);
       break;
   }
 }
@@ -399,15 +450,88 @@ function showContextToolbar(data) {
   if (!iframe) return;
 
   const ir = iframe.getBoundingClientRect();
-  toolbar.style.left = `${ir.left + rect.left + rect.width / 2}px`;
-  toolbar.style.top = `${ir.top + rect.top - 8}px`;
-  toolbar.style.transform = 'translate(-50%, -100%)';
+  const toolbarX = ir.left + rect.left + rect.width / 2;
+  const toolbarTopAbove = ir.top + rect.top - 8;
+  const toolbarTopBelow = ir.top + rect.top + rect.height + 8;
+
+  toolbar.style.left = `${toolbarX}px`;
+
+  // Flip below if not enough room above (toolbar height ~120px estimate)
+  const flipBelow = toolbarTopAbove < 120;
+  if (flipBelow) {
+    toolbar.style.top = `${toolbarTopBelow}px`;
+    toolbar.classList.add('vx-tb-below');
+  } else {
+    toolbar.style.top = `${toolbarTopAbove}px`;
+    toolbar.classList.remove('vx-tb-below');
+  }
+  toolbar.style.transform = ''; // Let CSS class handle transform
+
+  // ── VE-005: Address-aware toolbar gating ──
+  const address = selectedAddress;
+  const editable = isEditableAddress(address);
+  const isGlobal = isGlobalAddress(address);
+  const readOnlyMsg = getReadOnlyMessage(address);
+
+  // If not editable (unsafe/loop), show read-only toolbar
+  if (!editable) {
+    const sourceFile = address?.sourceFile || '';
+    const hasFile = sourceFile.length > 0;
+    const kindLabel = address?.sourceKind === 'loop' ? 'Loop' : 'Dynamic PHP';
+    const isMac = navigator.platform?.includes('Mac');
+    const shortcutKey = isMac ? '⌘E' : 'Ctrl+E';
+
+    // Header: show file badge only when provenance is known
+    const fileBadge = hasFile
+      ? `<span class="vx-tb-readonly-sep"></span><span class="vx-tb-readonly-file">${escapeHtml(sourceFile)}</span>`
+      : '';
+
+    // Actions: show Code Editor button only when we know which file to open
+    const actionsHtml = hasFile
+      ? `<div class="vx-tb-readonly-actions">
+          <button class="vx-tb-btn-primary" data-action="open-code-editor" data-file="${escapeHtml(sourceFile)}" title="Open in Code Editor (${shortcutKey})">
+            Open in Code Editor
+            <kbd>${shortcutKey}</kbd>
+          </button>
+        </div>`
+      : '';
+
+    toolbar.innerHTML = `
+      <div class="vx-tb-readonly">
+        <div class="vx-tb-readonly-header">
+          <svg class="vx-tb-readonly-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span class="vx-tb-readonly-kind">${escapeHtml(kindLabel)}</span>
+          ${fileBadge}
+        </div>
+        <p class="vx-tb-readonly-msg">${escapeHtml(readOnlyMsg)}</p>
+        ${actionsHtml}
+      </div>`;
+    toolbar.classList.add('vx-tb-visible');
+    if (hasFile) {
+      toolbar.querySelector('[data-action="open-code-editor"]')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const fileToOpen = e.currentTarget.dataset.file;
+        openCodeEditorModal(fileToOpen);
+        dismissToolbar();
+      });
+    }
+    return;
+  }
 
   let buttons = '';
 
+  // VE-005: Global-impact cue for partial/component elements
+  if (isGlobal && address?.sourceFile) {
+    buttons += `<div class="vx-tb-global-cue" title="Changes affect all pages that include this file">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      <span>Global — ${escapeHtml(address.sourceFile)}</span>
+    </div>`;
+  }
+
   if (hasText) {
+    // I-beam (text cursor) icon — "enter text editing mode"
     buttons += `<button class="vx-tb-btn" data-action="edit-text" title="Edit text">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 22h-1a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4h1"/><path d="M7 22h1a4 4 0 0 0 4-4V6a4 4 0 0 0-4-4H7"/><line x1="12" y1="2" x2="12" y2="22"/></svg>
       <span>Edit</span></button>`;
   }
 
@@ -425,6 +549,14 @@ function showContextToolbar(data) {
     buttons += `<button class="vx-tb-btn" data-action="edit-link" title="Edit link">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
       <span>Link</span></button>`;
+  }
+
+  // Source button — open the element's PHP source in the Code Editor.
+  // Only shown when we have an honest source file (not in fail-safe mode).
+  if (address?.sourceFile) {
+    buttons += `<button class="vx-tb-btn" data-action="open-source" title="View source code" data-file="${escapeHtml(address.sourceFile)}">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      <span>Source</span></button>`;
   }
 
   // Delete button — always last, visually separated
@@ -452,7 +584,10 @@ function showContextToolbar(data) {
 
 function dismissToolbar() {
   const toolbar = document.getElementById('vx-context-toolbar');
-  if (toolbar) toolbar.classList.remove('vx-tb-visible');
+  if (toolbar) {
+    toolbar.classList.remove('vx-tb-visible');
+    toolbar.classList.remove('vx-tb-below');
+  }
 }
 
 function getElementLabel(tagName, classList) {
@@ -485,6 +620,12 @@ function handleToolbarAction(action, elementData) {
     case 'edit-link':
       openLinkEditor(elementData);
       break;
+    case 'open-source': {
+      // Start inline source editing — bridge will respond with vx-editor:source-edit-ready
+      dismissToolbar();
+      sendToPreview({ type: 'vx-editor:start-source-edit' });
+      break;
+    }
     case 'delete':
       confirmDelete(elementData);
       break;
@@ -492,6 +633,685 @@ function handleToolbarAction(action, elementData) {
       openAIEditPanel(elementData);
       break;
   }
+}
+
+// ═══════════════════════════════════════════
+//  Inline Source Editor (Monaco projected at element position)
+// ═══════════════════════════════════════════
+
+let inlineSourceEditor = null; // { container, monacoInstance, originalHTML }
+
+/**
+ * Rough HTML pretty-printer for readability in the inline editor.
+ * Only handles simple cases — good enough for outerHTML of a single element.
+ */
+function prettyFormatHTML(html) {
+  // Normalize to single line first
+  let result = html.replace(/>\s+</g, '><').trim();
+  // Insert newlines after closing tags and after self-closing tags
+  result = result.replace(/(<\/[^>]+>)(<)/g, '$1\n$2');
+  result = result.replace(/(\/?>)(<[^/])/g, '$1\n$2');
+
+  // Indent
+  const lines = result.split('\n');
+  let indent = 0;
+  const formatted = [];
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    // Closing tag decreases indent
+    if (/^<\//.test(line) && indent > 0) indent--;
+
+    formatted.push('  '.repeat(indent) + line);
+
+    // Opening tag (not self-closing, not closing) increases indent
+    if (/^<[^/!][^>]*[^/]>$/.test(line) && !/^<(br|hr|img|input|meta|link)/i.test(line)) {
+      indent++;
+    }
+  }
+  return formatted.join('\n');
+}
+
+/**
+ * Open the inline source editor at the element's position.
+ * Called when the bridge responds to `start-source-edit`.
+ */
+
+/**
+ * Extract an element's raw source text from a file using the nodeKey
+ * from the PHP annotation system.
+ *
+ * The PHP renderer assigns nodeKey = '{file}:{index}' where `index` is
+ * the sequential count of annotatable opening tags in the RENDERED output.
+ * We mirror that counting logic here to find the Nth element in the SOURCE.
+ *
+ * IMPORTANT: The PHP counter counts tags in the rendered HTML (after PHP
+ * execution), while we're counting in the raw source (before execution).
+ * For static HTML elements, these match perfectly. For PHP-generated
+ * elements (loops, conditionals), they may not align. In that case we
+ * return null and the caller should route to the code editor.
+ *
+ * @param {string} fileContent - raw source file content
+ * @param {string} nodeKey     - e.g. 'partials/hero.php:3'
+ * @param {string} tagName     - expected tag name (e.g. 'SECTION')
+ * @returns {string|null}      - extracted source text, or null
+ */
+function extractSourceElementByNodeKey(fileContent, nodeKey, tagName) {
+  // Parse the index from nodeKey (format: '{file}:{index}')
+  const colonIdx = nodeKey.lastIndexOf(':');
+  if (colonIdx === -1) return null;
+  const targetIndex = parseInt(nodeKey.substring(colonIdx + 1), 10);
+  if (isNaN(targetIndex) || targetIndex < 0) return null;
+
+  // Tags the PHP annotator skips (must match preview.php skipTags exactly)
+  const SKIP_TAGS = new Set([
+    'html','head','body','script','style','link','meta','noscript',
+    'br','hr','wbr','col','colgroup','iframe','template',
+    'svg','path','circle','line','polyline','rect','ellipse',
+    'polygon','g','defs','use','symbol','clippath','mask',
+  ]);
+
+  // Count annotatable opening tags in the source, matching how PHP does it
+  const tagPattern = /<([a-z][a-z0-9]*)[\s>]/gi;
+  let match;
+  let counter = 0;
+
+  while ((match = tagPattern.exec(fileContent)) !== null) {
+    const foundTag = match[1].toLowerCase();
+    if (SKIP_TAGS.has(foundTag)) continue;
+    // Skip tags that already have data-vx-source (already annotated by include)
+    // In source files, this shouldn't happen, but guard against it
+    const nearbyChars = fileContent.substring(match.index, match.index + 500);
+    if (nearbyChars.includes('data-vx-source')) continue;
+
+    if (counter === targetIndex) {
+      // This is our element — extract the full tag
+      const extracted = extractFullElement(fileContent, match.index, foundTag);
+      // Verify the tag name matches (sanity check)
+      if (extracted && foundTag === tagName.toLowerCase()) {
+        return extracted;
+      }
+      // Tag doesn't match — the PHP counter and source counter diverged
+      // (likely due to PHP-generated content). Return null to signal
+      // that we can't deterministically locate this element.
+      return null;
+    }
+    counter++;
+  }
+
+  return null; // index out of range
+}
+
+/**
+ * Extract the opening tag string starting at `pos` in `content`.
+ * Handles quoted attributes (can contain >) and PHP blocks.
+ */
+function extractOpeningTag(content, pos) {
+  let i = pos;
+  let inDouble = false;
+  let inSingle = false;
+
+  while (i < content.length) {
+    const ch = content[i];
+
+    if (ch === '"' && !inSingle) { inDouble = !inDouble; }
+    else if (ch === "'" && !inDouble) { inSingle = !inSingle; }
+    else if (ch === '>' && !inDouble && !inSingle) {
+      return content.substring(pos, i + 1);
+    }
+    i++;
+
+    // Safety: don't scan more than 2000 chars for an opening tag
+    if (i - pos > 2000) return null;
+  }
+  return null;
+}
+
+/**
+ * Extract a full element (opening tag through matching closing tag)
+ * from `content` starting at `pos` for tag name `tag`.
+ * Uses a nesting counter to handle nested same-name elements.
+ */
+function extractFullElement(content, pos, tag) {
+  // First, check if it's a self-closing or void element
+  const openTag = extractOpeningTag(content, pos);
+  if (!openTag) return null;
+
+  const VOID_TAGS = new Set([
+    'area','base','br','col','embed','hr','img','input',
+    'link','meta','source','track','wbr',
+  ]);
+
+  if (VOID_TAGS.has(tag) || openTag.trimEnd().endsWith('/>')) {
+    return openTag;
+  }
+
+  // Find the matching closing tag, respecting nesting
+  const afterOpen = pos + openTag.length;
+  const openRe = new RegExp(`<${tag}[\\s>]`, 'gi');
+  const closeRe = new RegExp(`</${tag}\\s*>`, 'gi');
+
+  // Start with depth 1 (we've found the opening tag)
+  let depth = 1;
+  let searchPos = afterOpen;
+
+  // Safety limit
+  const maxLen = Math.min(content.length, pos + 50000);
+
+  while (searchPos < maxLen && depth > 0) {
+    // Find the next opening or closing tag for this tag name
+    openRe.lastIndex = searchPos;
+    closeRe.lastIndex = searchPos;
+
+    const nextOpen = openRe.exec(content);
+    const nextClose = closeRe.exec(content);
+
+    if (!nextClose) {
+      // No closing tag found — return what we have up to end of file
+      return null;
+    }
+
+    const openPos = nextOpen ? nextOpen.index : Infinity;
+    const closePos = nextClose.index;
+
+    if (openPos < closePos && openPos < maxLen) {
+      // Another opening tag before the next closing tag — increase depth
+      depth++;
+      searchPos = openPos + nextOpen[0].length;
+    } else {
+      // Closing tag — decrease depth
+      depth--;
+      searchPos = closePos + nextClose[0].length;
+    }
+  }
+
+  if (depth !== 0) return null;
+
+  return content.substring(pos, searchPos);
+}
+async function openInlineSourceEditor(data) {
+  // Close any existing inline source editor
+  closeInlineSourceEditor(false);
+
+  const { html, tagName, rect, filePath, sourceAddress } = data;
+  const iframe = document.getElementById('preview-iframe');
+  if (!iframe || !html) return;
+
+  const ir = iframe.getBoundingClientRect();
+
+  // ── Position & size ──
+  const minW = 450;
+  const minH = 180;
+  const maxW = ir.width - 40; // 20px padding on each side
+  const editorW = Math.max(minW, Math.min(rect.width + 40, maxW));
+  const editorH = Math.max(minH, Math.min(rect.height + 60, 400));
+  let editorX = ir.left + rect.left + (rect.width / 2) - (editorW / 2);
+  let editorY = ir.top + rect.top;
+
+  // Clamp to iframe bounds
+  editorX = Math.max(ir.left + 10, Math.min(editorX, ir.right - editorW - 10));
+  editorY = Math.max(ir.top + 10, Math.min(editorY, ir.bottom - editorH - 10));
+
+  // ── Container ──
+  const container = document.createElement('div');
+  container.className = 'vx-source-editor';
+  container.style.left = `${editorX}px`;
+  container.style.top = `${editorY}px`;
+  container.style.width = `${editorW}px`;
+  container.style.height = `${editorH}px`;
+
+  const isMac = navigator.platform?.includes('Mac');
+  const saveKey = isMac ? '⌘S' : 'Ctrl+S';
+
+  container.innerHTML = `
+    <div class="vx-source-header">
+      <div class="vx-source-label">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        <span>Source</span>
+      </div>
+      <div class="vx-source-actions">
+        <button class="vx-source-btn vx-source-btn-cancel" data-action="cancel">Cancel <kbd>Esc</kbd></button>
+        <button class="vx-source-btn vx-source-btn-apply" data-action="apply">Apply <kbd>${saveKey}</kbd></button>
+      </div>
+    </div>
+    <div class="vx-source-warn" hidden></div>
+    <div class="vx-source-body"></div>
+  `;
+
+  document.body.appendChild(container);
+
+  // Make draggable by header
+  const header = container.querySelector('.vx-source-header');
+  let dragStart = null;
+  header.addEventListener('mousedown', (e) => {
+    if (e.target.closest('button')) return;
+    dragStart = { x: e.clientX - container.offsetLeft, y: e.clientY - container.offsetTop };
+    e.preventDefault();
+  });
+  const onDragMove = (e) => {
+    if (!dragStart) return;
+    container.style.left = `${e.clientX - dragStart.x}px`;
+    container.style.top = `${e.clientY - dragStart.y}px`;
+  };
+  const onDragEnd = () => { dragStart = null; };
+  document.addEventListener('mousemove', onDragMove);
+  document.addEventListener('mouseup', onDragEnd);
+
+  // Make resizable
+  const body = container.querySelector('.vx-source-body');
+
+  // ── Resolve source text (deterministic when possible) ──
+  // Use the sourceAddress.nodeKey to deterministically locate the element
+  // in the source file. If extraction fails, fall back to DOM-normalized
+  // HTML — the pessimistic save will catch any mismatch gracefully.
+  const sourceFile = sourceAddress?.sourceFile || filePath || getCurrentPreviewPath();
+  const nodeKey = sourceAddress?.nodeKey || '';
+  let sourceText = null; // the raw source text from the file (save needle)
+
+  if (nodeKey) {
+    try {
+      const readResult = await api.get(`/files/content?path=${encodeURIComponent(sourceFile)}`);
+      if (readResult.ok && readResult.data?.content) {
+        sourceText = extractSourceElementByNodeKey(readResult.data.content, nodeKey, tagName);
+      }
+    } catch { /* extraction failed — fall back to DOM HTML */ }
+  }
+
+  // Use source text if we found it, otherwise fall back to DOM-normalized HTML.
+  // The pessimistic save handles any needle mismatch gracefully.
+  const usingFallback = !sourceText;
+  const editorContent = sourceText || html;
+  const formatted = prettyFormatHTML(editorContent);
+
+  // Preflight state — tracks whether current editor content is valid
+  const applyBtn = container.querySelector('[data-action="apply"]');
+  const warnBar = container.querySelector('.vx-source-warn');
+  let preflightValid = true; // starts valid (content is the original HTML)
+  let _monacoRef = null; // set after Monaco loads, used by runPreflight for markers
+
+  // Show a subtle notice when falling back to DOM HTML
+  if (usingFallback) {
+    warnBar.textContent = 'ℹ Live HTML — save may not work for this element';
+    warnBar.hidden = false;
+    warnBar.style.color = 'var(--vs-text-ghost)';
+    warnBar.style.background = 'transparent';
+  }
+
+  /** Run preflight and update UI. Returns true if valid. */
+  function runPreflight(editorValue) {
+    const result = preflightSourceHTML(editorValue, tagName);
+    if (result) {
+      // Reset any inline ghost styles from fallback info notice
+      warnBar.style.color = '';
+      warnBar.style.background = '';
+      warnBar.textContent = `⚠ ${result.message}`;
+      warnBar.hidden = false;
+      applyBtn.disabled = true;
+      applyBtn.classList.add('vx-source-btn-disabled');
+      preflightValid = false;
+
+      // Place Monaco marker on the problem line
+      if (_monacoRef && result.line) {
+        try {
+          const model = _monacoRef.getModel();
+          if (model) {
+            const monaco = window.monaco || globalThis.monaco;
+            if (monaco?.editor) {
+              monaco.editor.setModelMarkers(model, 'preflight', [{
+                startLineNumber: result.line,
+                startColumn: 1,
+                endLineNumber: result.line,
+                endColumn: model.getLineMaxColumn(result.line),
+                message: result.message,
+                severity: monaco.MarkerSeverity.Error,
+              }]);
+            }
+          }
+        } catch { /* markers are best-effort */ }
+      }
+    } else {
+      // Valid — restore fallback info notice if applicable, otherwise hide
+      if (usingFallback) {
+        warnBar.textContent = 'ℹ Live HTML — save may not work for this element';
+        warnBar.hidden = false;
+        warnBar.style.color = 'var(--vs-text-ghost)';
+        warnBar.style.background = 'transparent';
+      } else {
+        warnBar.hidden = true;
+        warnBar.style.color = '';
+        warnBar.style.background = '';
+      }
+      applyBtn.disabled = false;
+      applyBtn.classList.remove('vx-source-btn-disabled');
+      preflightValid = true;
+
+      // Clear any markers
+      if (_monacoRef) {
+        try {
+          const model = _monacoRef.getModel();
+          const monaco = window.monaco || globalThis.monaco;
+          if (model && monaco?.editor) {
+            monaco.editor.setModelMarkers(model, 'preflight', []);
+          }
+        } catch {}
+      }
+    }
+    return preflightValid;
+  }
+
+  let monacoInstance = null;
+  try {
+    const monaco = await ensureMonacoReady();
+    if (!monaco?.editor) throw new Error('Monaco unavailable');
+
+    const editorTheme = monacoThemeForCurrentUi();
+    monaco.editor.setTheme(editorTheme);
+
+    monacoInstance = monaco.editor.create(body, {
+      value: formatted,
+      language: 'html',
+      theme: editorTheme,
+      automaticLayout: true,
+      minimap: { enabled: false },
+      fontSize: 12,
+      lineHeight: 18,
+      tabSize: 2,
+      insertSpaces: true,
+      scrollBeyondLastLine: false,
+      wordWrap: 'on',
+      lineNumbers: 'off',
+      glyphMargin: false,
+      folding: false,
+      renderLineHighlight: 'none',
+      overviewRulerLanes: 0,
+      hideCursorInOverviewRuler: true,
+      overviewRulerBorder: false,
+      scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
+      padding: { top: 8, bottom: 8 },
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+    });
+
+    // Expose to runPreflight for marker support
+    _monacoRef = monacoInstance;
+    // ⌘S / Ctrl+S to apply — blocked when preflight fails
+    monacoInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      if (preflightValid) applyInlineSourceEdit();
+    });
+
+    // Escape to cancel
+    monacoInstance.addCommand(monaco.KeyCode.Escape, () => {
+      closeInlineSourceEditor(false);
+    });
+
+    // Live preflight on content change (debounced 400ms)
+    let preflightTimer = null;
+    monacoInstance.onDidChangeModelContent(() => {
+      clearTimeout(preflightTimer);
+      preflightTimer = setTimeout(() => {
+        runPreflight(monacoInstance.getValue());
+      }, 400);
+    });
+
+    // Focus the editor
+    setTimeout(() => monacoInstance.focus(), 100);
+
+  } catch {
+    // Fallback: textarea
+    body.innerHTML = `<textarea class="vx-source-fallback" spellcheck="false">${escapeHtml(formatted)}</textarea>`;
+    const ta = body.querySelector('textarea');
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); closeInlineSourceEditor(false); }
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        if (preflightValid) applyInlineSourceEdit();
+      }
+    });
+    // Live preflight for the textarea fallback
+    let taPfTimer = null;
+    ta.addEventListener('input', () => {
+      clearTimeout(taPfTimer);
+      taPfTimer = setTimeout(() => runPreflight(ta.value), 400);
+    });
+    setTimeout(() => ta.focus(), 100);
+  }
+
+  // ── Button handlers ──
+  applyBtn.addEventListener('click', () => {
+    if (preflightValid) applyInlineSourceEdit();
+  });
+  container.querySelector('[data-action="cancel"]').addEventListener('click', () => closeInlineSourceEditor(false));
+
+  // Store state — include tagName for preflight, sourceFile for save
+  inlineSourceEditor = {
+    container,
+    monacoInstance,
+    originalHTML: editorContent,   // raw source text — the save needle
+    formattedHTML: formatted,       // what Monaco started with — for has-changed check
+    tagName,
+    sourceFile,
+    cleanupDrag: () => {
+      document.removeEventListener('mousemove', onDragMove);
+      document.removeEventListener('mouseup', onDragEnd);
+    },
+  };
+
+  // Animate in
+  requestAnimationFrame(() => container.classList.add('vx-source-visible'));
+}
+
+async function applyInlineSourceEdit() {
+  if (!inlineSourceEditor) return;
+  if (window.demoGuard?.()) return;
+  const { monacoInstance, container, tagName, originalHTML, formattedHTML, sourceFile } = inlineSourceEditor;
+  let newHTML;
+  if (monacoInstance) {
+    newHTML = monacoInstance.getValue().trim();
+  } else {
+    const ta = container.querySelector('textarea');
+    newHTML = ta?.value?.trim() || '';
+  }
+
+  // Final preflight gate — block if invalid
+  const result = preflightSourceHTML(newHTML, tagName);
+  if (result) {
+    const warnBar = container.querySelector('.vx-source-warn');
+    if (warnBar) {
+      warnBar.textContent = `⚠ ${result.message}`;
+      warnBar.hidden = false;
+    }
+    return; // do NOT close or apply
+  }
+
+  // No change? Just close without saving.
+  if (newHTML === formattedHTML) {
+    closeInlineSourceEditor(false);
+    return;
+  }
+
+  // ── Pessimistic save: save FIRST, only touch DOM on success ──
+  const applyBtn = container.querySelector('[data-action="apply"]');
+  const cancelBtn = container.querySelector('[data-action="cancel"]');
+  if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = 'Saving…'; }
+  if (cancelBtn) cancelBtn.disabled = true;
+
+  const saved = await saveSourceEdit({
+    filePath: sourceFile,
+    originalHTML,
+    newHTML,
+  });
+
+  if (saved) {
+    // Save succeeded — now apply to live DOM and close
+    closeInlineSourceEditor(true, newHTML);
+  } else {
+    // Save failed — restore buttons, keep editor open
+    if (applyBtn) {
+      applyBtn.disabled = false;
+      applyBtn.innerHTML = `Apply <kbd>${navigator.platform?.includes('Mac') ? '⌘S' : 'Ctrl+S'}</kbd>`;
+    }
+    if (cancelBtn) cancelBtn.disabled = false;
+    // Error message already shown by saveSourceEdit
+  }
+}
+
+/**
+ * Preflight check for inline source editor HTML.
+ * Returns null if valid, or an object { message, line?, tag? } if invalid.
+ *
+ * This is a GATE — when it returns a non-null value, Apply is blocked.
+ *
+ * Checks:
+ *  1. Not empty
+ *  2. No <script>, <iframe>, or inline on*= handlers
+ *  3. Exactly one top-level element (via <template> parse)
+ *  4. Root tag must match the original element's tag
+ *  5. Tag balance: every opening tag must have a matching close
+ *     (excludes HTML void elements: br, img, hr, input, etc.)
+ */
+function preflightSourceHTML(html, expectedTagName) {
+  if (!html || !html.trim()) {
+    return { message: 'HTML is empty' };
+  }
+
+  const trimmed = html.trim();
+
+  // ── Security ──
+  if (/<script\b/i.test(trimmed)) {
+    return { message: '<script> elements are not allowed' };
+  }
+  if (/<iframe\b/i.test(trimmed)) {
+    return { message: '<iframe> elements are not allowed' };
+  }
+  if (/\bon[a-z]+\s*=/i.test(trimmed)) {
+    return { message: 'Inline event handlers (on*=) are not allowed' };
+  }
+
+  // ── Structure: one root element ──
+  const tpl = document.createElement('template');
+  tpl.innerHTML = trimmed;
+  const fragment = tpl.content;
+
+  const topElements = Array.from(fragment.childNodes).filter(
+    n => n.nodeType === Node.ELEMENT_NODE
+  );
+
+  if (topElements.length === 0) {
+    return { message: 'No HTML element found' };
+  }
+  if (topElements.length > 1) {
+    return { message: `Expected 1 root element, found ${topElements.length}` };
+  }
+
+  // Stray text outside root
+  for (const node of fragment.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+      return { message: 'Text found outside root element — check for broken tags' };
+    }
+  }
+
+  // ── Root tag unchanged ──
+  const rootEl = topElements[0];
+  const expectedTag = (expectedTagName || '').toUpperCase();
+  if (expectedTag && rootEl.tagName !== expectedTag) {
+    return {
+      message: `Root changed: <${expectedTag.toLowerCase()}> → <${rootEl.tagName.toLowerCase()}>`,
+      line: 1,
+    };
+  }
+
+  // ── Tag balance ──
+  // Count opening vs closing tags per tag name, tracking line numbers.
+  const VOID_TAGS = new Set([
+    'area','base','br','col','embed','hr','img','input',
+    'link','meta','source','track','wbr',
+  ]);
+
+  const lines = trimmed.split('\n');
+  // Stack of { tag, line } for each unclosed opening tag
+  const stack = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const lineContent = lines[i];
+
+    // Find all opening tags (excluding self-closing />)
+    // The regex properly handles quoted attribute values (which can contain < and >)
+    // but does NOT allow bare < in the attribute area — this catches missing > errors.
+    const openRe = /<([a-z][a-z0-9]*)\b(?:[^<>"']|"[^"]*"|'[^']*')*(\/?)\s*>/gi;
+    let m;
+    while ((m = openRe.exec(lineContent)) !== null) {
+      const tag = m[1].toLowerCase();
+      const selfClosing = m[2] === '/';
+      if (VOID_TAGS.has(tag) || selfClosing) continue;
+      stack.push({ tag, line: i + 1 }); // 1-indexed
+    }
+
+    // Find all closing tags
+    const closeRe = /<\/([a-z][a-z0-9]*)\s*>/gi;
+    while ((m = closeRe.exec(lineContent)) !== null) {
+      const tag = m[1].toLowerCase();
+      if (VOID_TAGS.has(tag)) continue;
+
+      // Strict nesting: closing tag MUST match the top of the stack.
+      // If it doesn't, the HTML is misnested (crossed tags).
+      if (stack.length === 0) {
+        return {
+          message: `Extra </${tag}> — no matching opening tag`,
+          line: i + 1,
+          tag,
+        };
+      }
+
+      const top = stack[stack.length - 1];
+      if (top.tag !== tag) {
+        return {
+          message: `Misnested: </${tag}> but <${top.tag}> is still open (line ${top.line})`,
+          line: i + 1,
+          tag,
+        };
+      }
+
+      stack.pop(); // correct match — pop the top
+    }
+  }
+
+  // Anything left on the stack is unclosed
+  if (stack.length > 0) {
+    const first = stack[stack.length - 1]; // deepest unclosed
+    return {
+      message: `Unclosed <${first.tag}> (line ${first.line})`,
+      line: first.line,
+      tag: first.tag,
+    };
+  }
+
+  return null; // all checks passed
+}
+
+function closeInlineSourceEditor(apply, newHTML) {
+  if (!inlineSourceEditor) return;
+  const { container, monacoInstance, cleanupDrag } = inlineSourceEditor;
+
+  // Tell the bridge: apply = true means "replace live DOM + restore styles",
+  // apply = false means "restore styles only (cancel)".
+  // At this point, the file has ALREADY been saved (if apply is true).
+  sendToPreview({
+    type: 'vx-editor:end-source-edit',
+    apply: !!apply,
+    html: apply ? newHTML : undefined,
+  });
+
+  // Clean up Monaco
+  if (monacoInstance) {
+    try { monacoInstance.dispose(); } catch {}
+  }
+  cleanupDrag();
+
+  // Animate out
+  container.classList.remove('vx-source-visible');
+  setTimeout(() => container.remove(), 200);
+
+  inlineSourceEditor = null;
 }
 
 // ═══════════════════════════════════════════
@@ -545,6 +1365,7 @@ function confirmDelete(elementData) {
   modal.focus();
 
   document.getElementById('vx-delete-confirm').addEventListener('click', () => {
+    if (window.demoGuard?.()) return;
     sendToPreview({ type: 'vx-editor:delete-element' });
     close();
   });
@@ -2125,6 +2946,7 @@ function openLinkEditor(elementData) {
  *      (handles PHP-expression sources like `src="<?= $dish['image'] ?>"`)
  */
 async function saveImageChange(data) {
+  if (window.demoGuard?.()) return;
   const { filePath, oldSrc, newSrc, alt } = data;
   const fp = filePath || getCurrentPreviewPath();
 
@@ -2253,12 +3075,128 @@ function replaceImgSrcByAlt(content, alt, newSrc) {
 }
 
 function queueTextChange(data) {
+  if (window.demoGuard?.()) return;
   pendingChanges.push({ type: 'text', filePath: data.filePath, originalHTML: data.originalHTML, newHTML: data.newHTML, timestamp: Date.now() });
   clearTimeout(queueTextChange._timer);
   queueTextChange._timer = setTimeout(() => saveAllPending(), 800);
 }
 
+/**
+ * Save an inline source editor change with strict match verification.
+ *
+ * Unlike the generic text-edit queue (saveAllPending), this function:
+ *  - Saves immediately (no debounce — user explicitly clicked Apply)
+ *  - Requires EXACTLY ONE match of the needle in the source file
+ *  - Fails loud when zero matches (needle not found)
+ *  - Fails loud when multiple matches (ambiguous replacement)
+ *  - Searches partials if the main file has no match
+ *  - Shows clear error messages in the save indicator
+ */
+async function saveSourceEdit(data) {
+  const { filePath, originalHTML: needle, newHTML } = data;
+  if (!needle || !newHTML) {
+    showSaveIndicator('Source edit failed — missing data', true);
+    return false;
+  }
+
+  const fp = filePath || getCurrentPreviewPath();
+
+  try {
+    // ── Try main file first ──
+    const readResult = await api.get(`/files/content?path=${encodeURIComponent(fp)}`);
+    if (!readResult.ok) {
+      showSaveIndicator('Cannot read source file', true);
+      return false;
+    }
+
+    let content = readResult.data.content;
+    const status = await attemptExactReplace(fp, content, needle, newHTML);
+    if (status === 'saved') return true;
+    if (status === 'ambiguous') return false; // STOP — do NOT search other files
+
+    // ── 'not_found' — search partials ──
+    const listResult = await api.get('/files');
+    if (!listResult.ok) {
+      showSaveIndicator('Save failed — source not found in file', true);
+      return false;
+    }
+
+    const candidates = (listResult.data.files || [])
+      .filter(f => f.path.endsWith('.php') && f.path !== fp);
+
+    for (const file of candidates) {
+      const partialRead = await api.get(`/files/content?path=${encodeURIComponent(file.path)}`);
+      if (!partialRead.ok || !partialRead.data.content) continue;
+
+      const partialStatus = await attemptExactReplace(file.path, partialRead.data.content, needle, newHTML);
+      if (partialStatus === 'saved') return true;
+      if (partialStatus === 'ambiguous') return false; // STOP on ambiguity anywhere
+    }
+
+    // Nothing matched anywhere
+    console.warn('[VX] Source edit needle not found in any file:', needle.substring(0, 100));
+    showSaveIndicator('Save failed — source not found. The file may have changed.', true);
+    return false;
+
+  } catch (err) {
+    console.error('[VX] Source edit save error:', err);
+    showSaveIndicator('Save failed', true);
+    return false;
+  }
+}
+
+/**
+ * Attempt to replace `needle` with `replacement` in `content`.
+ * Returns a status string:
+ *  - 'saved'     — exactly 1 match, replaced and saved successfully
+ *  - 'not_found' — 0 matches in this file
+ *  - 'ambiguous'  — 2+ matches, refused to replace (error shown to user)
+ */
+async function attemptExactReplace(filePath, content, needle, replacement) {
+  // Count occurrences
+  let matchCount = 0;
+  let searchPos = 0;
+  while (true) {
+    const idx = content.indexOf(needle, searchPos);
+    if (idx === -1) break;
+    matchCount++;
+    searchPos = idx + needle.length;
+    if (matchCount > 1) break; // we already know it's ambiguous
+  }
+
+  if (matchCount === 0) {
+    return 'not_found';
+  }
+
+  if (matchCount > 1) {
+    showSaveIndicator('Save failed — source fragment appears multiple times. Edit in the Code Editor instead.', true);
+    return 'ambiguous';
+  }
+
+  // Exactly one match — safe to replace
+  const newContent = content.replace(needle, replacement);
+  const saveResult = await api.put('/files/content', { path: filePath, content: newContent });
+
+  if (saveResult.ok) {
+    const fileName = filePath.split('/').pop();
+    showSaveIndicator(`Saved → ${fileName}`);
+
+    // Reload CSS if Tailwind was recompiled
+    if (saveResult.data?.tailwindCompiled) {
+      setTimeout(() => {
+        const iframe = document.getElementById('preview-iframe');
+        if (iframe?.contentWindow) iframe.contentWindow.postMessage('voxelsite:reload-css', '*');
+      }, 300);
+    }
+    return 'saved';
+  } else {
+    showSaveIndicator('Save failed', true);
+    return 'not_found';
+  }
+}
+
 function queueDeletion(data) {
+  if (window.demoGuard?.()) return;
   pendingChanges.push({ type: 'delete', filePath: data.filePath, outerHTML: data.outerHTML, timestamp: Date.now() });
   clearTimeout(queueDeletion._timer);
   queueDeletion._timer = setTimeout(() => saveAllPending(), 300);

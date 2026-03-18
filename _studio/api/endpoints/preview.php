@@ -147,15 +147,12 @@ if ($method === 'GET' && $path === '/preview') {
 
     if ($extension === 'php') {
         // PHP files: render via ob_start/include so partials are resolved
-        // Change to preview directory so relative includes work
         $originalDir = getcwd();
-        chdir($previewDir);
 
         // Bust opcache for this file AND all partials so undo/redo
         // changes are reflected immediately without stale bytecode.
         if (function_exists('opcache_invalidate')) {
             opcache_invalidate($realPath, true);
-            // Also invalidate common partials that may be included
             $partialsDir = $previewDir . '/_partials';
             if (is_dir($partialsDir)) {
                 foreach (glob($partialsDir . '/*.php') as $partial) {
@@ -164,18 +161,46 @@ if ($method === 'GET' && $path === '/preview') {
             }
         }
 
+        // ── VE-002: Instrumented include for source provenance ──
+        // Create instrumented copies in an isolated temp directory so
+        // the real source files are never mutated.
+        $tempDir = createInstrumentedPreviewCopy($previewDir, $requestedPath);
+        $instrumentationAvailable = ($tempDir !== null);
+
+        if ($instrumentationAvailable) {
+            $tempEntryFile = $tempDir . '/' . $requestedPath;
+            $runDir = $tempDir;
+        } else {
+            // Fail-safe: render from real source but do NOT trust
+            // the output for visual editing — no markers will exist.
+            $tempEntryFile = $realPath;
+            $runDir = $previewDir;
+        }
+
+        chdir($runDir);
         ob_start();
         try {
-            include $realPath;
+            include $tempEntryFile;
         } catch (\Throwable $e) {
             ob_end_clean();
             chdir($originalDir);
+            cleanupTempPreviewDir($tempDir);
             header('Content-Type: text/html; charset=utf-8');
             echo '<h1>Preview Error</h1><pre>' . htmlspecialchars($e->getMessage()) . '</pre>';
             exit;
         }
         $content = ob_get_clean();
         chdir($originalDir);
+        cleanupTempPreviewDir($tempDir);
+
+        // ── VE-002: Annotate rendered HTML with source addresses ──
+        // If instrumentation was available, run the full provenance pipeline.
+        // If not, mark everything unsafe so the visual editor cannot mutate.
+        if ($instrumentationAvailable) {
+            $content = annotateSourceAddresses($content, $requestedPath);
+        } else {
+            $content = annotateFailSafe($content, $requestedPath);
+        }
 
         // Bust CSS cache — the root .htaccess sets 1-year expiry for CSS.
         // Without this, the browser serves stale tailwind.css / style.css
@@ -668,10 +693,10 @@ function injectHotReload(string $html): string
     if (e.data === 'voxelsite:reload') {
       window.location.reload();
     } else if (e.data === 'voxelsite:reload-css') {
-      // Bust CSS cache without full reload
+      // Bust CSS cache without full reload — skip external links (Google Fonts, CDNs)
       document.querySelectorAll('link[rel="stylesheet"]').forEach(function(link) {
         var href = link.getAttribute('href');
-        if (href) {
+        if (href && href.charAt(0) !== 'h' && href.substr(0,2) !== '//') {
           link.setAttribute('href', href.split('?')[0] + '?t=' + Date.now());
         }
       });
@@ -936,6 +961,400 @@ function injectActionsBar(string $html): string
     } else {
         $html .= $injection;
     }
+
+    return $html;
+}
+
+// ═══════════════════════════════════════════
+//  VE-002: Source Address Annotation
+// ═══════════════════════════════════════════
+
+/**
+ * Create an isolated temp-directory copy of the preview with
+ * instrumented PHP includes. The real source files are never mutated.
+ *
+ * Returns the temp directory path, or null on failure.
+ */
+function createInstrumentedPreviewCopy(string $previewDir, string $requestedPath): ?string
+{
+    $tempDir = sys_get_temp_dir() . '/vx-preview-' . uniqid('', true);
+    if (!@mkdir($tempDir, 0755, true)) {
+        return null;
+    }
+
+    // Instrument the main page file
+    $mainFile = $previewDir . '/' . $requestedPath;
+    if (!file_exists($mainFile)) {
+        @rmdir($tempDir);
+        return null;
+    }
+
+    // Create subdirectory for nested pages (e.g., "pages/about.php")
+    $subDir = dirname($requestedPath);
+    if ($subDir !== '.' && $subDir !== '') {
+        @mkdir($tempDir . '/' . $subDir, 0755, true);
+    }
+
+    $content = file_get_contents($mainFile);
+    file_put_contents($tempDir . '/' . $requestedPath, instrumentPhpIncludes($content, ''));
+
+    // Instrument partials
+    $partialsDir = $previewDir . '/_partials';
+    if (is_dir($partialsDir)) {
+        @mkdir($tempDir . '/_partials', 0755, true);
+        foreach (glob($partialsDir . '/*.php') as $partialFile) {
+            $content = file_get_contents($partialFile);
+            file_put_contents(
+                $tempDir . '/_partials/' . basename($partialFile),
+                instrumentPhpIncludes($content, '_partials/')
+            );
+        }
+    }
+
+    // Mirror everything else (assets, images, non-PHP dirs) so
+    // CSS/JS/images resolve correctly from the temp working directory.
+    // Prefer symlinks for speed; fall back to copy on hosts that disable them.
+    $entries = @scandir($previewDir);
+    if ($entries) {
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') continue;
+            if ($entry === '_partials' || $entry === $requestedPath) continue;
+            $targetInTemp = $tempDir . '/' . $entry;
+            if (file_exists($targetInTemp) || is_link($targetInTemp)) continue;
+            $source = $previewDir . '/' . $entry;
+            if (!@symlink($source, $targetInTemp)) {
+                // Symlinks disabled — fall back to copy
+                if (is_dir($source)) {
+                    recursiveCopyDir($source, $targetInTemp);
+                } else {
+                    @copy($source, $targetInTemp);
+                }
+            }
+        }
+    }
+
+    return $tempDir;
+}
+
+/**
+ * Recursively copy a directory tree. Used as fallback when symlinks
+ * are disabled on the host.
+ */
+function recursiveCopyDir(string $src, string $dst): void
+{
+    @mkdir($dst, 0755, true);
+    $entries = @scandir($src);
+    if (!$entries) return;
+    foreach ($entries as $entry) {
+        if ($entry === '.' || $entry === '..') continue;
+        $s = $src . '/' . $entry;
+        $d = $dst . '/' . $entry;
+        if (is_dir($s)) {
+            recursiveCopyDir($s, $d);
+        } else {
+            @copy($s, $d);
+        }
+    }
+}
+
+/**
+ * Rewrite include/require statements in PHP source to wrap them
+ * with VX provenance markers.
+ */
+function instrumentPhpIncludes(string $source, string $basePath): string
+{
+    // ── Order matters: most-specific pattern first ──
+    // The conditional pattern must be processed BEFORE the unconditional
+    // ones, otherwise the unconditional `include __DIR__` pattern matches
+    // the include inside `if (...) include ...;` and rewrites it first.
+
+    // 1. if (file_exists(...)) include __DIR__ . '/something.php';
+    //    Markers go INSIDE the if block to preserve control flow exactly.
+    //    Without this, markers would be emitted even when the branch is not taken.
+    //    The condition regex handles one level of nested parens (e.g. file_exists()).
+    $source = preg_replace_callback(
+        '/(if\s*\((?:[^()]*|\([^)]*\))*\)\s*)(include|require|include_once|require_once)(\s+__DIR__\s*\.\s*[\'"]\/([a-zA-Z0-9_\-]+\.php)[\'\"]\s*);/',
+        function ($m) use ($basePath) {
+            $file = $basePath . $m[4];
+            $includeStmt = $m[2] . $m[3];
+            return "{$m[1]}{ echo '<!-- vx:partial:start:{$file} -->'; {$includeStmt}; echo '<!-- vx:partial:end:{$file} -->'; }";
+        },
+        $source
+    ) ?? $source;
+
+    // 2. include '_partials/something.php'
+    //    Skip if already instrumented by Pattern 1 (avoid double markers).
+    $source = preg_replace_callback(
+        '/\b(include|require|include_once|require_once)\s+[\'"]((_partials\/)?[a-zA-Z0-9_\-\/]+\.php)[\'"]\s*;/',
+        function ($m) use (&$source) {
+            $file = $m[2];
+            // Guard: if this include is already wrapped in markers, skip it
+            $pos = strpos($source, $m[0]);
+            if ($pos !== false && $pos > 0) {
+                $before = substr($source, max(0, $pos - 200), min($pos, 200));
+                if (str_contains($before, "vx:partial:start:{$file}")) return $m[0];
+            }
+            return "echo '<!-- vx:partial:start:{$file} -->'; {$m[0]} echo '<!-- vx:partial:end:{$file} -->';";
+        },
+        $source
+    ) ?? $source;
+
+    // 3. include __DIR__ . '/nav.php'
+    //    Skip if already instrumented by Pattern 1 (avoid double markers).
+    $source = preg_replace_callback(
+        '/\b(include|require|include_once|require_once)\s+__DIR__\s*\.\s*[\'"]\/([a-zA-Z0-9_\-]+\.php)[\'"]\s*;/',
+        function ($m) use ($basePath, &$source) {
+            $file = $basePath . $m[2];
+            // Guard: if this include is already wrapped in markers, skip it
+            $pos = strpos($source, $m[0]);
+            if ($pos !== false && $pos > 0) {
+                $before = substr($source, max(0, $pos - 200), min($pos, 200));
+                if (str_contains($before, "vx:partial:start:{$file}")) return $m[0];
+            }
+            return "echo '<!-- vx:partial:start:{$file} -->'; {$m[0]} echo '<!-- vx:partial:end:{$file} -->';";
+        },
+        $source
+    ) ?? $source;
+
+    return $source;
+}
+
+/**
+ * Recursively delete a temp preview directory.
+ * Safety: only deletes directories with the vx-preview- prefix.
+ * Handles both symlinks and deep copied subtrees.
+ */
+function cleanupTempPreviewDir(?string $tempDir): void
+{
+    if (!$tempDir) return;
+    $prefix = sys_get_temp_dir() . '/vx-preview-';
+    if (!str_starts_with($tempDir, $prefix)) return;
+    if (!is_dir($tempDir)) return;
+
+    recursiveDeleteDir($tempDir);
+}
+
+/**
+ * Recursively delete a directory and all its contents.
+ * Handles symlinks (unlinks without following) and real directories.
+ */
+function recursiveDeleteDir(string $dir): void
+{
+    $entries = @scandir($dir);
+    if (!$entries) return;
+
+    foreach ($entries as $entry) {
+        if ($entry === '.' || $entry === '..') continue;
+        $path = $dir . '/' . $entry;
+        if (is_link($path)) {
+            @unlink($path);
+        } elseif (is_dir($path)) {
+            recursiveDeleteDir($path);
+        } else {
+            @unlink($path);
+        }
+    }
+    @rmdir($dir);
+}
+
+/**
+ * Fail-safe annotation: used when instrumented preview copy could not
+ * be created (e.g. temp directory unavailable). Marks every selectable
+ * HTML element as unsafe/non-editable so the Visual Editor renders
+ * read-only toolbars everywhere instead of silently allowing mutation
+ * on un-instrumented output.
+ *
+ * Crucially, data-vx-source-file is left EMPTY because provenance is
+ * unknown. This prevents the editor from linking to the wrong file.
+ */
+function annotateFailSafe(string $html, string $pageFile): string
+{
+    $skipTags = ['html','head','body','script','style','link','meta','noscript','br','hr','wbr','col','colgroup','iframe','template','svg','path','circle','line','polyline','rect','ellipse','polygon','g','defs','use','symbol','clippath','mask'];
+    $skipSet = array_flip($skipTags);
+    $idx = 0;
+
+    return preg_replace_callback(
+        '/<([a-z][a-z0-9]*)(\s[^>]*)?(\/?)>/i',
+        function ($m) use ($skipSet, &$idx) {
+            $tag = strtolower($m[1]);
+            $attrs = $m[2] ?? '';
+            $selfClose = $m[3] ?? '';
+
+            if (isset($skipSet[$tag])) return $m[0];
+            if (str_contains($attrs, 'data-vx-source')) return $m[0];
+            if (preg_match('/(?:id|class)=["\'](?:vx-|vs-)/', $attrs)) return $m[0];
+
+            $nodeKey = 'failsafe:' . $idx++;
+            $vxAttrs = ' data-vx-source-file=""'
+                     . ' data-vx-source-kind="unsafe"'
+                     . " data-vx-node-key=\"{$nodeKey}\""
+                     . ' data-vx-editable="false"';
+
+            return "<{$tag}{$attrs}{$vxAttrs}{$selfClose}>";
+        },
+        $html,
+        -1
+    ) ?? $html;
+}
+
+/**
+ * Parse provenance markers in rendered HTML and annotate content elements
+ * with data-vx-* attributes for the Visual Editor bridge.
+ *
+ * Architecture:
+ *   Step 1: Check partials for PHP loop constructs (file-name-only, no offsets).
+ *   Step 2: Annotate ALL elements with page-level defaults (data-vx-*=page).
+ *   Step 3: Re-parse provenance zones from the post-annotation HTML (offsets valid).
+ *   Step 4: Override: build a per-element map (outer zones first, inner zones overwrite),
+ *           then apply in a single regex pass. No substring splicing.
+ *   Step 5: Strip provenance markers from final output.
+ */
+function annotateSourceAddresses(string $html, string $pageFile): string
+{
+    // Step 1: Check which partials contain PHP loop constructs.
+    $loopPartials = [];
+    $previewDir = dirname(__DIR__, 2) . '/preview';
+    preg_match_all('/<!-- vx:partial:start:([a-zA-Z0-9_\-\/]+\.php) -->/', $html, $partialMatches);
+    foreach (array_unique($partialMatches[1]) as $partialFile) {
+        $partialPath = $previewDir . '/' . $partialFile;
+        if (file_exists($partialPath)) {
+            $src = file_get_contents($partialPath);
+            $loopPartials[$partialFile] = (bool) preg_match('/\b(foreach|for|while)\s*\(/', $src);
+        } else {
+            $loopPartials[$partialFile] = false;
+        }
+    }
+
+    // Step 2: Annotate ALL opening tags with page-level defaults.
+    $skipTags = ['html','head','body','script','style','link','meta','noscript','br','hr','wbr','col','colgroup','iframe','template','svg','path','circle','line','polyline','rect','ellipse','polygon','g','defs','use','symbol','clippath','mask'];
+    $skipSet = array_flip($skipTags);
+
+    $nodeCounters = [];
+    $html = preg_replace_callback(
+        '/<([a-z][a-z0-9]*)(\s[^>]*)?(\/?)?>/i',
+        function ($m) use ($skipSet, $pageFile, &$nodeCounters) {
+            $tag = strtolower($m[1]);
+            $attrs = $m[2] ?? '';
+            $selfClose = $m[3] ?? '';
+
+            if (isset($skipSet[$tag])) return $m[0];
+            if (str_contains($attrs, 'data-vx-source')) return $m[0];
+            if (preg_match('/(?:id|class)=["\'](?:vx-|vs-)/', $attrs)) return $m[0];
+
+            if (!isset($nodeCounters[$pageFile])) $nodeCounters[$pageFile] = 0;
+            $idx = $nodeCounters[$pageFile]++;
+            $nodeKey = htmlspecialchars($pageFile . ':' . $idx);
+
+            $vxAttrs = " data-vx-source-file=\"{$pageFile}\""
+                     . " data-vx-source-kind=\"page\""
+                     . " data-vx-node-key=\"{$nodeKey}\""
+                     . ' data-vx-editable="true"';
+
+            return "<{$tag}{$attrs}{$vxAttrs}{$selfClose}>";
+        },
+        $html,
+        -1,
+        $count
+    ) ?? $html;
+
+    // Step 3: Re-parse zones from the POST-ANNOTATION HTML.
+    // Step 2 changed every tag (adding data-vx-* attrs), shifting all
+    // byte offsets. The provenance markers are still intact.
+    $zones = [];
+    preg_match_all(
+        '/<!-- vx:partial:(start|end):([a-zA-Z0-9_\-\/]+\.php) -->/',
+        $html, $zoneMatches, PREG_OFFSET_CAPTURE | PREG_SET_ORDER
+    );
+
+    $openStack = [];
+    foreach ($zoneMatches as $m) {
+        $action = $m[1][0];
+        $file = $m[2][0];
+        $offset = (int) $m[0][1];
+        $markerLen = strlen($m[0][0]);
+
+        if ($action === 'start') {
+            $openStack[] = ['file' => $file, 'contentStart' => $offset + $markerLen];
+        } elseif ($action === 'end' && $openStack) {
+            $open = array_pop($openStack);
+            if ($open['file'] === $file) {
+                $zones[] = [
+                    'file' => $file,
+                    'contentStart' => $open['contentStart'],
+                    'contentEnd' => $offset,
+                ];
+            }
+        }
+    }
+
+    // Step 4: Override attributes for elements inside partial zones.
+    //
+    // Pass A: Build a per-element override map. Process outermost zones
+    // first; inner zones overwrite, giving them priority.
+    // (Zones are ordered innermost-first from the stack parser.)
+    $elementOverrides = [];
+
+    foreach (array_reverse($zones) as $zone) {
+        $file = $zone['file'];
+        $kind = str_starts_with($file, '_partials/') ? 'partial' : 'page';
+        $hasLoops = $loopPartials[$file] ?? false;
+        $effectiveKind = $hasLoops ? 'unsafe' : $kind;
+        $effectiveEditable = $hasLoops ? 'false' : 'true';
+
+        $segment = substr($html, $zone['contentStart'], $zone['contentEnd'] - $zone['contentStart']);
+        preg_match_all('/data-vx-node-key="([^"]*)"/', $segment, $keyMatches);
+        if (!empty($keyMatches[1])) {
+            foreach ($keyMatches[1] as $origKey) {
+                $elementOverrides[$origKey] = [
+                    'file' => $file,
+                    'kind' => $effectiveKind,
+                    'editable' => $effectiveEditable,
+                    'chain' => $file,
+                ];
+            }
+        }
+    }
+
+    // Pass B: Single regex pass to apply all overrides.
+    if (!empty($elementOverrides)) {
+        $globalNodeCounters = [];
+        $html = preg_replace_callback(
+            '/<([a-z][a-z0-9]*)(\s[^>]*?)(data-vx-node-key="([^"]*)")([^>]*?)(\/?)?>/i',
+            function ($m) use ($elementOverrides, &$globalNodeCounters) {
+                $origKey = $m[4];
+                if (!isset($elementOverrides[$origKey])) return $m[0];
+
+                $ov = $elementOverrides[$origKey];
+                $file = $ov['file'];
+
+                if (!isset($globalNodeCounters[$file])) $globalNodeCounters[$file] = 0;
+                $newKey = htmlspecialchars($file . ':' . $globalNodeCounters[$file]++);
+                $chain = htmlspecialchars($ov['chain']);
+
+                $fullAttrs = $m[2] . $m[3] . $m[5];
+                $fullAttrs = preg_replace('/data-vx-source-file="[^"]*"/', 'data-vx-source-file="' . htmlspecialchars($file) . '"', $fullAttrs);
+                $fullAttrs = preg_replace('/data-vx-source-kind="[^"]*"/', 'data-vx-source-kind="' . $ov['kind'] . '"', $fullAttrs);
+                $fullAttrs = preg_replace('/data-vx-editable="[^"]*"/', 'data-vx-editable="' . $ov['editable'] . '"', $fullAttrs);
+                $fullAttrs = preg_replace('/data-vx-node-key="[^"]*"/', 'data-vx-node-key="' . $newKey . '"', $fullAttrs);
+
+                if (!str_contains($fullAttrs, 'data-vx-include-chain')) {
+                    $fullAttrs = preg_replace(
+                        '/(data-vx-source-kind="[^"]*")/',
+                        '$1 data-vx-include-chain="' . $chain . '"',
+                        $fullAttrs
+                    );
+                } else {
+                    $fullAttrs = preg_replace('/data-vx-include-chain="[^"]*"/', 'data-vx-include-chain="' . $chain . '"', $fullAttrs);
+                }
+
+                return "<{$m[1]}{$fullAttrs}{$m[6]}>";
+            },
+            $html
+        ) ?? $html;
+    }
+
+    // Step 5: Strip provenance markers from final output.
+    $html = preg_replace('/<!-- vx:partial:(?:start|end):[a-zA-Z0-9_\-\/]+\.php -->/', '', $html) ?? $html;
 
     return $html;
 }

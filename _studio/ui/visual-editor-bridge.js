@@ -477,6 +477,7 @@
       outerHTML: el.outerHTML?.substring(0, 2000) || '',
       rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
       filePath: getPageFilePath(),
+      sourceAddress: getSourceAddress(el),
     });
   }
 
@@ -613,9 +614,12 @@
     notifyParent({ type: 'vx-editor:editing-ended' });
     document.body.style.cursor = 'crosshair';  // Restore selection cursor
     if (newContent !== originalContent) {
-      notifyParent({ type: 'vx-editor:text-changed', filePath: getPageFilePath(), originalHTML: originalContent, newHTML: newContent });
+      notifyParent({ type: 'vx-editor:text-changed', filePath: getPageFilePath(), originalHTML: originalContent, newHTML: newContent, sourceAddress: getSourceAddress(selectedEl) });
     }
     originalContent = null;
+    // Fully deselect so the next click on the same element re-selects cleanly
+    deselectElement();
+    notifyParent({ type: 'vx-editor:deselect' });
   }
 
   /** Cancel editing — revert to original content and exit edit mode. */
@@ -631,6 +635,194 @@
     notifyParent({ type: 'vx-editor:editing-ended' });
     document.body.style.cursor = 'crosshair';  // Restore selection cursor
     originalContent = null;
+    // Fully deselect so the next click on the same element re-selects cleanly
+    deselectElement();
+    notifyParent({ type: 'vx-editor:deselect' });
+  }
+
+  // ═══════════════════════════════════════════
+  //  Inline Source Editing
+  // ═══════════════════════════════════════════
+
+  let sourceEditOriginalHTML = null;
+  let sourceEditSavedStyles = null; // snapshot of original inline styles
+
+  /**
+   * Runtime-only CSS classes added by JavaScript at runtime.
+   * These are never authored in PHP source files and must be stripped
+   * before the outerHTML is used as a search needle or shown to the user.
+   * Mirrors the RUNTIME_ONLY set in visual-editor.js:applyClassDiffSubset.
+   */
+  const RUNTIME_ONLY_CLASSES = new Set([
+    'is-visible', 'is-active', 'is-open', 'active', 'open',
+    'show', 'shown', 'visible', 'in', 'entered', 'transitioning',
+  ]);
+
+  /**
+   * Normalize outerHTML from the live DOM to something that can be matched
+   * against the PHP source and safely shown to the user in Monaco.
+   *
+   * Strips:
+   *  1. data-vx-* instrumentation attributes (preview provenance)
+   *  2. Runtime-only CSS classes (JS intersection observers, toggles)
+   *  3. Empty style="" attributes (browser default serialization)
+   *  4. Boolean attribute normalization (data-reveal="" → data-reveal)
+   */
+  function normalizeForSource(html) {
+    let result = html;
+
+    // 1. Strip data-vx-* instrumentation attributes
+    result = result.replace(/\s+data-vx-[a-z-]+="[^"]*"/g, '');
+
+    // 2. Strip runtime-only classes from class="..." attributes
+    result = result.replace(/\bclass="([^"]*)"/g, (match, classList) => {
+      const classes = classList.split(/\s+/).filter(c => c && !RUNTIME_ONLY_CLASSES.has(c));
+      if (classes.length === 0) return 'class=""';
+      return `class="${classes.join(' ')}"`;
+    });
+
+    // 3. Remove empty style="" attributes (browser adds these, not in source)
+    result = result.replace(/\s+style=""/g, '');
+
+    // 4. Normalize boolean attributes: attr="" → attr (common for data-reveal, etc.)
+    //    Only for known boolean-like data attributes, not standard HTML attributes.
+    result = result.replace(/\s(data-[a-z][a-z0-9-]*)=""/g, ' $1');
+
+    return result;
+  }
+
+  /**
+   * Restore runtime visibility state on an element after outerHTML replacement.
+   * After outerHTML replacement, the new DOM node has no IntersectionObserver
+   * binding and lacks runtime classes like 'is-visible'. Since the element
+   * was in-viewport when the user edited it, we add reveal classes directly.
+   *
+   * Currently handles the [data-reveal].is-visible pattern. Will be
+   * generalized to cover other runtime-hidden-element patterns later.
+   */
+  function rehydrateEditedElementVisibility(el) {
+    if (!el) return;
+    const revealSelector = '[data-reveal], [data-reveal-stagger]';
+    // Force the element itself
+    if (el.matches?.(revealSelector)) el.classList.add('is-visible');
+    // Force all descendants
+    el.querySelectorAll(revealSelector).forEach(child => child.classList.add('is-visible'));
+  }
+
+  /**
+   * Start inline source editing for the currently selected element.
+   * Captures the full outerHTML (normalized to source-like HTML), applies
+   * a visual "being edited" treatment, and sends the clean HTML + rect to
+   * the parent frame so it can project a Monaco editor at the element's position.
+   */
+  function startSourceEdit() {
+    if (!selectedEl || isEditing) return;
+    isEditing = true;
+
+    // Capture and normalize outerHTML BEFORE applying visual treatment
+    const rawHTML = selectedEl.outerHTML;
+    const cleanHTML = normalizeForSource(rawHTML);
+    sourceEditOriginalHTML = cleanHTML;
+
+    // Get fresh bounding rect
+    const rect = selectedEl.getBoundingClientRect();
+
+    // Snapshot existing inline styles before applying visual treatment
+    sourceEditSavedStyles = {
+      opacity: selectedEl.style.opacity,
+      filter: selectedEl.style.filter,
+      pointerEvents: selectedEl.style.pointerEvents,
+    };
+
+    // Visual "being edited" treatment — dim + grayscale + diagonal hatching
+    selectedEl.style.opacity = '0.35';
+    selectedEl.style.filter = 'grayscale(1)';
+    selectedEl.style.pointerEvents = 'none';
+
+    // Inject diagonal hatch overlay
+    const hatch = document.createElement('div');
+    hatch.className = 'vx-source-edit-hatch';
+    hatch.style.cssText = `
+      position: absolute;
+      left: ${rect.left + window.scrollX}px;
+      top: ${rect.top + window.scrollY}px;
+      width: ${rect.width}px;
+      height: ${rect.height}px;
+      pointer-events: none;
+      z-index: 99997;
+      border: 1.5px dashed rgba(59,130,246,0.5);
+      border-radius: 4px;
+      background: repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 6px,
+        rgba(59,130,246,0.06) 6px,
+        rgba(59,130,246,0.06) 7px
+      );
+    `;
+    document.body.appendChild(hatch);
+    hideSelectionHighlight();
+
+    notifyParent({
+      type: 'vx-editor:source-edit-ready',
+      html: cleanHTML,
+      tagName: selectedEl.tagName,
+      rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      filePath: getPageFilePath(),
+      sourceAddress: getSourceAddress(selectedEl),
+    });
+  }
+
+  /**
+   * End inline source editing.
+   * If `data.apply` is true, replaces the element's outerHTML with the
+   * edited version and triggers the text-change persistence pipeline.
+   * If false (cancel), simply restores the element.
+   */
+  function endSourceEdit(data) {
+    if (!selectedEl) return;
+    isEditing = false;
+
+    // Restore original inline styles (not just clear them)
+    if (sourceEditSavedStyles) {
+      selectedEl.style.opacity = sourceEditSavedStyles.opacity;
+      selectedEl.style.filter = sourceEditSavedStyles.filter;
+      selectedEl.style.pointerEvents = sourceEditSavedStyles.pointerEvents;
+    }
+    sourceEditSavedStyles = null;
+
+    // Remove hatch overlay
+    const hatch = document.querySelector('.vx-source-edit-hatch');
+    if (hatch) hatch.remove();
+
+    if (data.apply && data.html) {
+      // Apply the new HTML to live preview (visual feedback only — file save
+      // is handled directly by the parent frame using the source-file needle)
+      try {
+        // Remember position so we can find the new element after replacement
+        const parent = selectedEl.parentElement;
+        const siblingIndex = parent ? Array.from(parent.children).indexOf(selectedEl) : -1;
+
+        selectedEl.outerHTML = data.html;
+        selectedEl = null; // element reference is now stale
+
+        // Force-reveal the new element: outerHTML replacement creates a new DOM
+        // node that is orphaned from the site's IntersectionObserver. Since we
+        // stripped runtime classes like 'is-visible' during normalization, the
+        // element starts at opacity:0. Re-add reveal classes because the element
+        // was in-viewport (the user just edited it).
+        if (parent && siblingIndex >= 0 && siblingIndex < parent.children.length) {
+          const newEl = parent.children[siblingIndex];
+          rehydrateEditedElementVisibility(newEl);
+        }
+      } catch { /* outerHTML replacement can fail in edge cases */ }
+    }
+
+    sourceEditOriginalHTML = null;
+    // Fully deselect so the next click on the same element re-selects cleanly
+    deselectElement();
+    notifyParent({ type: 'vx-editor:deselect' });
+    document.body.style.cursor = 'crosshair';
   }
 
   // ═══════════════════════════════════════════
@@ -786,6 +978,7 @@
       oldSrc,
       newSrc,
       alt: img.getAttribute('alt') || '',
+      sourceAddress: getSourceAddress(img),
     });
   }
 
@@ -798,7 +991,7 @@
     const outerHTML = selectedEl.outerHTML;
     const parent = selectedEl.parentElement;
     if (!parent) return;
-    notifyParent({ type: 'vx-editor:element-deleted', filePath: getPageFilePath(), outerHTML });
+    notifyParent({ type: 'vx-editor:element-deleted', filePath: getPageFilePath(), outerHTML, sourceAddress: getSourceAddress(selectedEl) });
     selectedEl.remove();
     selectedEl = null;
     originalClasses = null;
@@ -912,6 +1105,40 @@
     catch { return 'index.php'; }
   }
 
+  // ═══════════════════════════════════════════
+  //  VE-003: Source Address Reader
+  // ═══════════════════════════════════════════
+
+  /**
+   * Read the data-vx-* attributes from the nearest annotated ancestor of `el`
+   * and return a source address object. Returns null if no annotation found.
+   */
+  function getSourceAddress(el) {
+    if (!el) return null;
+    // Walk up to find the nearest element with data-vx-source-file
+    let cur = el;
+    while (cur && cur !== document.documentElement) {
+      if (cur.dataset && cur.dataset.vxSourceFile) {
+        return {
+          sourceFile: cur.dataset.vxSourceFile || '',
+          sourceKind: cur.dataset.vxSourceKind || 'unsafe',
+          nodeKey: cur.dataset.vxNodeKey || '',
+          includeChain: cur.dataset.vxIncludeChain || '',
+          editable: cur.dataset.vxEditable === 'true',
+        };
+      }
+      cur = cur.parentElement;
+    }
+    // No annotation found — default to unsafe
+    return {
+      sourceFile: getPageFilePath(),
+      sourceKind: 'unsafe',
+      nodeKey: '',
+      includeChain: '',
+      editable: false,
+    };
+  }
+
   function notifyParent(data) {
     try { window.parent.postMessage(data, '*'); } catch {}
   }
@@ -929,6 +1156,7 @@
         if (active) {
           createOverlay();
           document.body.style.cursor = 'crosshair';
+          document.body.classList.add('vx-editor-active');
           injectDividerStyles();
           // Delayed rebuild to let iframe content settle
           setTimeout(rebuildSectionDividers, 100);
@@ -938,6 +1166,7 @@
           hoveredEl = null;
           removeOverlay();
           document.body.style.cursor = '';
+          document.body.classList.remove('vx-editor-active');
           clearJitCSS();
           originalClasses = null;
           removeSectionDividers();
@@ -946,6 +1175,8 @@
       case 'vx-editor:start-edit': if (e.data.mode === 'text') startTextEditing(); break;
       case 'vx-editor:save-edit': saveEditing(); break;
       case 'vx-editor:cancel-edit': cancelEditing(); break;
+      case 'vx-editor:start-source-edit': startSourceEdit(); break;
+      case 'vx-editor:end-source-edit': endSourceEdit(e.data); break;
       case 'vx-editor:swap-image': swapImage(e.data.src); break;
       case 'vx-editor:preview-class': previewClass(e.data); break;
       case 'vx-editor:update-classes': applyClasses(e.data.classes || [], !!e.data.silent); break;
@@ -1199,12 +1430,14 @@
     scrollToSection(neighborIndex);
 
     // Notify parent to persist the swap in the source file
+    const movedSection = sections[sectionIndex];
     notifyParent({
       type: 'vx-editor:section-moved',
       filePath: getPageFilePath(),
       sectionIndex: upperIdx,
       neighborIndex: lowerIdx,
       direction: direction,
+      sourceAddress: getSourceAddress(movedSection),
     });
   }
 
@@ -1244,6 +1477,8 @@
     const style = document.createElement('style');
     style.id = 'vx-divider-styles';
     style.textContent = `
+      /* Hide Actions Bar when visual editor is active */
+      body.vx-editor-active #vs-actions-bar { display: none !important; }
       .vx-section-divider {
         position: absolute;
         left: 0;

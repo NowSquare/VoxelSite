@@ -212,7 +212,10 @@ export function renderNotesView() {
         <!-- List Panel -->
         <div id="vs-notes-list-panel" class="vs-notes-list-panel" style="width: ${listWidth}px;">
           <div class="vs-notes-list-header">
-            <h2 class="vs-notes-list-title">Notes</h2>
+            <div class="vs-notes-list-title-group">
+              <h2 class="vs-notes-list-title">Notes</h2>
+              <span class="vs-notes-list-subtitle">Personal &amp; private</span>
+            </div>
             ${window.IS_DEMO ? '' : `<button id="btn-note-new" class="vs-notes-new-btn" title="New note (⌘N)">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>`}
@@ -510,6 +513,10 @@ function renderEditor(note, opts = {}) {
                   title="Send to Chat (⌘⇧C)" aria-label="Send to Chat">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
           </button>
+          ${window.IS_DEMO ? '' : `<button id="btn-note-board" class="vs-note-toolbar-btn"
+                  title="Add to Board" aria-label="Add to Board">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+          </button>`}
           ${window.IS_DEMO ? '' : `<button id="btn-note-delete" class="vs-note-toolbar-btn vs-note-toolbar-btn--danger"
                   title="Delete note (⌘⌫)" aria-label="Delete note">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
@@ -657,6 +664,10 @@ function bindEditorEvents(note) {
   // Send to Chat — read live DOM content, not the stale closure `note`
   const sendBtn = document.getElementById('btn-note-send-chat');
   sendBtn?.addEventListener('click', () => sendNoteToChat());
+
+  // Add to Board (note promotion — copy-on-promote)
+  const boardBtn = document.getElementById('btn-note-board');
+  boardBtn?.addEventListener('click', () => addNoteToBoard(note));
 
   // Delete
   const deleteBtn = document.getElementById('btn-note-delete');
@@ -879,6 +890,43 @@ async function sendNoteToChat(noteOverride) {
   }, 150);
 }
 
+/**
+ * Promote a note to a board card (copy-on-promote).
+ *
+ * Copies the note's title and body into a new shared card on the Board.
+ * The card stores `source_note_id` as internal metadata — no live
+ * reference, no FK, no UI affordance to return to the private note.
+ *
+ * @param {object} [noteOverride] Cached note data (from context menu on non-active note)
+ */
+async function addNoteToBoard(noteOverride) {
+  if (demoGuard() || viewerGuard()) return;
+  await flushPendingSave();
+
+  let title, body, noteId;
+  if (noteOverride) {
+    title = noteOverride.title || '';
+    body = noteOverride.body || '';
+    noteId = noteOverride.id;
+  } else {
+    ({ title, body } = getLiveNoteContent());
+    noteId = activeNoteId;
+  }
+
+  const { ok, error } = await api.post('/cards', {
+    title: title || 'Untitled',
+    body,
+    column_name: 'todo',
+    source_note_id: noteId,
+  });
+
+  if (ok) {
+    showToast('Card added to Board.', 'success');
+  } else {
+    showToast(error?.message || 'Failed to add card.', 'error');
+  }
+}
+
 // ═══════════════════════════════════════════
 //  Context Menu
 // ═══════════════════════════════════════════
@@ -908,6 +956,9 @@ function showNoteContextMenu(e, noteId) {
     <button data-action="use" class="vs-note-ctx-item">
       Use as Prompt
     </button>
+    ${window.IS_DEMO ? '' : `<button data-action="board" class="vs-note-ctx-item">
+      Add to Board
+    </button>`}
     ${window.IS_DEMO ? '' : `<div class="vs-note-ctx-divider"></div>
     <button data-action="delete" class="vs-note-ctx-item vs-note-ctx-item--danger">
       Delete
@@ -975,6 +1026,9 @@ function showNoteContextMenu(e, noteId) {
       }
       case 'delete':
         deleteNote(noteId);
+        break;
+      case 'board':
+        addNoteToBoard(note);
         break;
     }
   });

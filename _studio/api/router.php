@@ -163,6 +163,15 @@ $routes = [
     ['PUT',    '/forms/:formId/submissions/:id',              'forms.php',       true],
     ['DELETE', '/forms/:formId/submissions/:id',              'forms.php',       true],
 
+    // Notes
+    ['GET',    '/notes',                  'notes.php',       true],
+    ['POST',   '/notes',                  'notes.php',       true],
+    ['GET',    '/notes/search',           'notes.php',       true],
+    ['GET',    '/notes/:id',              'notes.php',       true],
+    ['PUT',    '/notes/:id',              'notes.php',       true],
+    ['DELETE', '/notes/:id',              'notes.php',       true],
+    ['POST',   '/notes/:id/restore',      'notes.php',       true],
+
     // Agentic Actions
     ['GET',    '/agentic/actions',                                 'agentic-actions.php', true],
     ['POST',   '/agentic/actions',                                 'agentic-actions.php', true],

@@ -36,6 +36,7 @@ import { renderFormsView, renderFormDetailView } from './src/views/forms.js';
 import { renderTeamView, renderTeamModals } from './src/views/team.js';
 import { renderAssetsView } from './src/views/assets.js';
 import { renderDesignsView, confirmNewDesign, showSaveDesignModal } from './src/views/designs.js';
+import { renderNotesView, cleanupNotes } from './src/views/notes.js';
 import { showToast, showToastWithAction } from './src/ui/toasts.js';
 import { escapeHtml, escapeAttr, getCodeLanguage, formatRefUrl } from './src/helpers.js';
 import { closeModal, showConfirmModal, showPromptModal, onBackdropClick } from './src/ui/modals.js';
@@ -48,6 +49,7 @@ import { closeModal, showConfirmModal, showPromptModal, onBackdropClick } from '
 const NAV_ITEMS = [
   { route: 'chat',        label: 'Chat' },
   { route: 'editor',      label: 'Editor' },
+  { route: 'notes',       label: 'Notes' },
   { route: 'assets',      label: 'Assets' },
   // Collections removed from v1.0.0 — ships in v1.1 with full AI integration
   // { route: 'collections', label: 'Collections' },
@@ -96,10 +98,10 @@ function isMobile() {
 
 /** Mobile nav items — content management views that work on mobile */
 const MOBILE_NAV_ITEMS = [
+  { route: 'notes',      label: 'Notes',      icon: 'fileText' },
   { route: 'assets',     label: 'Assets',     icon: 'image' },
   { route: 'forms',      label: 'Forms',      icon: 'inbox' },
   { route: 'actions',    label: 'Actions',    icon: 'zap' },
-  { route: 'designs',   label: 'Designs',    icon: 'palette', roles: ['owner', 'editor'] },
   { route: 'more',       label: 'More',       icon: 'ellipsis' },
 ];
 
@@ -209,10 +211,19 @@ async function init() {
 
   router
     .beforeEach(async (to, from) => {
+      // Flush any pending auto-saves (Notes, Contacts, etc.)
+      for (const flush of (window.__vsFlushCallbacks || new Map()).values()) {
+        await flush();
+      }
+      // Existing editor guard
       if (from.startsWith('editor') && !to.startsWith('editor')) {
         if (window.__hasUnsavedEditorChanges?.()) {
           return await confirmUnsavedChanges();
         }
+      }
+      // Cleanup Notes state when leaving
+      if (from.startsWith('notes') && !to.startsWith('notes')) {
+        cleanupNotes();
       }
       return true;
     })
@@ -226,6 +237,7 @@ async function init() {
     // .on('collections/:slug', () => renderApp())
     .on('forms',             () => renderApp())
     .on('forms/:formId',     () => renderApp())
+    .on('notes',             () => renderApp())
     .on('actions',           () => renderApp())
     .on('actions/:actionId', () => renderApp())
     .on('designs',           () => renderApp())
@@ -317,6 +329,9 @@ function renderApp() {
     mainContent = renderDesktopOnlyNotice(route);
   } else if (route === 'editor') {
     mainContent = renderEditorLayout();
+  } else if (route === 'notes') {
+    // Notes has its own full-height split layout (list + editor)
+    mainContent = `<div class="h-full overflow-hidden">${renderNotesView()}</div>`;
   } else if (isDashboard) {
     mainContent = renderDashboardLayout();
   } else {
@@ -1860,6 +1875,14 @@ function renderMobileMoreSheet() {
       ${icons.pencil} Edit Profile
     </a>
   `;
+
+  if (role === 'owner' || role === 'editor') {
+    overflowHtml += `
+      <a href="#/designs" class="vs-mobile-more-item" data-mobile-more-nav>
+        ${icons.layoutGrid} Designs
+      </a>
+    `;
+  }
 
   if (role === 'owner') {
     overflowHtml += `

@@ -140,12 +140,23 @@ export function closeVisualEditorPanels() {
 /**
  * Cancel an in-flight AI generation started from the visual editor.
  * Returns true if a generation was actually cancelled, false if idle.
+ *
+ * This does TWO things:
+ * 1. Aborts the client-side fetch (AbortController)
+ * 2. Calls the server-side cancel endpoint so the PHP process actually
+ *    stops generation and rolls back any files written so far.
  */
 export function cancelVisualEditorAI() {
   if (aiEditAbortController) {
     aiEditAbortController.abort();
     aiEditAbortController = null;
     sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+    // Tell the server to stop — the PHP process checks this flag
+    // between token callbacks and before post-stream file writes.
+    if (aiEditPromptLogId) {
+      api.post('/ai/cancel-generation', { prompt_id: aiEditPromptLogId }).catch(() => {});
+      aiEditPromptLogId = null;
+    }
     // Don't show indicator here — onDone({ cancelled: true }) handles it
     return true;
   }
@@ -2662,6 +2673,7 @@ function makeModalDraggable(overlay) {
 // ═══════════════════════════════════════════
 
 let aiEditAbortController = null;
+let aiEditPromptLogId = null;
 
 function closeAIEditPanel() {
   const panel = document.getElementById('vx-ai-panel');
@@ -2799,6 +2811,7 @@ function openAIEditPanel(elementData) {
     sendToPreview({ type: 'vx-editor:show-ai-overlay', status: 'AI is editing…' });
 
     aiEditAbortController = new AbortController();
+    aiEditPromptLogId = null;
     const sectionHtml = elementData.outerHTML || '';
     const filePath = elementData.filePath || getCurrentPreviewPath();
     let tokenCount = 0;
@@ -2814,6 +2827,9 @@ function openAIEditPanel(elementData) {
         },
       }, {
         signal: aiEditAbortController.signal,
+        onPromptId(id) {
+          aiEditPromptLogId = id;
+        },
         onStatus(message) {
           sendToPreview({ type: 'vx-editor:update-ai-status', status: message || 'Working…', tokens: tokenCount });
         },
@@ -2825,11 +2841,13 @@ function openAIEditPanel(elementData) {
           sendToPreview({ type: 'vx-editor:update-ai-status', status: 'Generating…', tokens: tokenCount });
         },
         onError(err) {
+          aiEditPromptLogId = null;
           sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
           showSaveIndicator(err.message || 'AI edit failed', true);
         },
         onDone(res) {
           aiEditAbortController = null;
+          aiEditPromptLogId = null;
           sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
 
           if (res.cancelled) {
@@ -3056,6 +3074,7 @@ async function generateSection(requestData, sectionType, sectionDescription, use
 
   const filePath = requestData.filePath || getCurrentPreviewPath();
   aiEditAbortController = new AbortController();
+  aiEditPromptLogId = null;
   const abortController = aiEditAbortController;
 
   // Build the user prompt — include instruction if provided
@@ -3110,6 +3129,9 @@ async function generateSection(requestData, sectionType, sectionDescription, use
       },
     }, {
       signal: abortController.signal,
+      onPromptId(id) {
+        aiEditPromptLogId = id;
+      },
       onStatus(message) {
         sendToPreview({ type: 'vx-editor:update-ai-status', status: message || `Adding ${sectionType}…`, tokens: tokenCount });
       },
@@ -3128,12 +3150,14 @@ async function generateSection(requestData, sectionType, sectionDescription, use
       onError(err) {
         clearInterval(statusInterval);
         aiEditAbortController = null;
+        aiEditPromptLogId = null;
         sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
         showSaveIndicator(err.message || 'Failed to add section', true);
       },
       onDone(res) {
         clearInterval(statusInterval);
         aiEditAbortController = null;
+        aiEditPromptLogId = null;
         sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
 
         if (res.cancelled) {
@@ -3174,6 +3198,7 @@ async function generateSection(requestData, sectionType, sectionDescription, use
   } catch (err) {
     clearInterval(statusInterval);
     aiEditAbortController = null;
+    aiEditPromptLogId = null;
     if (err.name !== 'AbortError') {
       showSaveIndicator('Failed to add section', true);
     }

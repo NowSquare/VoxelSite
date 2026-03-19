@@ -2078,7 +2078,8 @@
     var startTime = Date.now();
     container.__vxTimerInterval = setInterval(function() {
       var secs = Math.round((Date.now() - startTime) / 1000);
-      if (timerEl) timerEl.textContent = secs + 's';
+      var display = secs < 60 ? secs + 's' : Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
+      if (timerEl) timerEl.textContent = display;
     }, 1000);
   }
 

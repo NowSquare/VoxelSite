@@ -4920,9 +4920,17 @@ async function handleSend() {
 
   // ── Abort controller for cancel support ──
   const abortController = new AbortController();
+  let streamPromptLogId = null;
   const stopBtn = aiBlock.querySelector('[data-role="stop-btn"]');
   if (stopBtn) {
-    stopBtn.addEventListener('click', () => abortController.abort());
+    stopBtn.addEventListener('click', () => {
+      abortController.abort();
+      // Tell the server to actually stop generation
+      if (streamPromptLogId) {
+        api.post('/ai/cancel-generation', { prompt_id: streamPromptLogId }).catch(() => {});
+        streamPromptLogId = null;
+      }
+    });
   }
 
   // Read action type from the input's data attribute (set by quick-prompt buttons)
@@ -4999,6 +5007,10 @@ async function handleSend() {
 
   await apiStream('/ai/prompt', requestBody, {
     signal: abortController.signal,
+
+    onPromptId(id) {
+      streamPromptLogId = id;
+    },
 
     onConversation(conversationId) {
       if (!conversationId) return;

@@ -33,6 +33,8 @@ class PromptEngine
     private ActionRegistry $actionRegistry;
     private bool $headless = false;
     private int $headlessJobId = 0;
+    private ?int $activePromptLogId = null;
+    private float $lastCancelCheckTime = 0;
 
     public function __construct(
         ?Database $db = null,
@@ -206,10 +208,21 @@ class PromptEngine
                 ]);
             }
 
+            // Emit prompt_log_id immediately so the client can cancel
+            // generation by calling POST /ai/cancel-generation.
+            $this->activePromptLogId = $promptLogId;
+            $this->emitSSE('prompt_id', ['prompt_id' => $promptLogId]);
+
             // ── Load system prompt with context budget awareness ──
             // Use the model's actual context window for budget calculations,
             // not the output token limit (ai_max_tokens).
             $maxTokens = (int) $this->settings->get('ai_max_tokens', 32000);
+
+            // Visual editor actions (section_edit, add_section) are single-file
+            // operations. They don't need the full 72KB system prompt or 64K
+            // output budget — the compact prompt + action addon is sufficient.
+            // This reduces input tokens by ~15K and speeds up TTFT dramatically.
+            $isVisualEditorAction = in_array($actionType, ['section_edit', 'add_section'], true);
 
             // Boost output budget for full site generation.
             // Creating a complete website (partials + CSS + JS + 6-10 pages +
@@ -223,12 +236,35 @@ class PromptEngine
                     'boosted'   => $maxTokens,
                 ]);
             }
+
+            // Cap visual editor actions — a single page file rarely exceeds 8K tokens.
+            // 16K gives generous headroom while avoiding the 32-64K budgets that
+            // make the model over-think (and over-generate) for a section tweak.
+            if ($isVisualEditorAction && $maxTokens > 16000) {
+                $maxTokens = 16000;
+            }
+
             $configuredModelForBudget = $configuredModel !== '' ? $configuredModel : ($this->provider->getModels()[0]['id'] ?? '');
             $contextWindow = $this->provider->getContextWindow($configuredModelForBudget);
 
-            // If max_tokens is small (≤8K), use the compact fallback prompt
-            // instead of the full 33KB system.md
-            if ($maxTokens <= 8000) {
+            // Visual editor actions use the compact system prompt + their
+            // action-specific addon. No need for the full 72KB system.md —
+            // that includes site generation rules, multi-page strategies,
+            // data layer schemas, etc. that section_edit never uses.
+            if ($isVisualEditorAction) {
+                $systemPrompt = $this->getDefaultSystemPrompt();
+                // Append the action-specific prompt (section_edit.md / add_section.md)
+                $actionPromptPath = dirname(__DIR__) . '/prompts/actions/' . $actionType . '.md';
+                if (file_exists($actionPromptPath)) {
+                    $actionPrompt = trim(file_get_contents($actionPromptPath));
+                    if ($actionPrompt !== '') {
+                        $systemPrompt .= "\n\n" . $actionPrompt;
+                    }
+                }
+                $systemPrompt .= "\n\n" . $this->getStructuredOutputContract();
+            } elseif ($maxTokens <= 8000) {
+                // If max_tokens is small (≤8K), use the compact fallback prompt
+                // instead of the full 33KB system.md
                 $systemPrompt = $this->getDefaultSystemPrompt();
             } else {
                 $systemPrompt = $this->loadSystemPrompt($actionType);
@@ -253,6 +289,16 @@ class PromptEngine
             if ($contextBudget < 0) {
                 // Floor: enough for site info + design tokens, but capped at reality
                 $contextBudget = max(0, min(4000, $inputBudgetChars));
+            }
+
+            // Visual editor actions edit a single section/file — they don't need
+            // 40K of CSS, 25K of icon names, or 20K of image library paths.
+            // Cap the context to ~10K tokens so the AI gets the focus page,
+            // design tokens, and essential structure — nothing more.
+            // Budget: essentials ~13.5K + focus page ~19K = ~33K, so 40K
+            // gives a comfortable margin without pulling in irrelevant bulk.
+            if ($isVisualEditorAction) {
+                $contextBudget = min($contextBudget, 40000);
             }
 
             // ── Import: fetch reference site HTML and reserve budget ──
@@ -336,6 +382,16 @@ class PromptEngine
             } else {
                 $effectivePageScope = $pageScope;
             }
+
+            // Normalize: the visual editor sends filenames ('index.php', 'about.php')
+            // but SiteContext::buildFocusPage() expects slugs ('index', 'about').
+            // Strip trailing .php so the focus page is found correctly.
+            if ($effectivePageScope !== null
+                && $effectivePageScope !== '__all__'
+                && str_ends_with($effectivePageScope, '.php')
+            ) {
+                $effectivePageScope = basename($effectivePageScope, '.php');
+            }
             $this->emitSSE('status', ['message' => 'Reading your site...']);
             $contextResult = $this->siteContext->build($effectivePageScope, $conversationId, $userId, $contextBudget, $actionType);
             $context = $contextResult['context'];
@@ -394,7 +450,16 @@ class PromptEngine
                 $messages,
 
                 // onToken: stream each chunk to the browser
-                function (string $token) use (&$fullResponse, &$completedPaths, &$lastTokenTime, &$beforeStateByPath, &$tailwindCompiledOnce) {
+                function (string $token) use (&$fullResponse, &$completedPaths, &$lastTokenTime, &$beforeStateByPath, &$tailwindCompiledOnce, &$tokenCount) {
+                    // Check for user cancellation every 50 tokens (throttled to
+                    // at most once per second to avoid hammering the DB).
+                    $tokenCount = ($tokenCount ?? 0) + 1;
+                    if ($tokenCount % 50 === 0) {
+                        if ($this->isCancelled()) {
+                            throw new RuntimeException('generation_cancelled');
+                        }
+                    }
+
                     $fullResponse .= $token;
                     $this->emitSSE('token', ['content' => $token]);
                     $lastTokenTime = microtime(true);
@@ -550,6 +615,26 @@ class PromptEngine
                 'di_merge'        => $hasDIMerge,
                 'user_prompt_len' => strlen($userPrompt),
             ]);
+
+            // ── Check for cancellation before post-processing ──
+            if ($this->isCancelled()) {
+                Logger::info('ai', 'Generation cancelled after streaming — rolling back', [
+                    'prompt_log_id' => $promptLogId,
+                    'files_written' => count($beforeStateByPath),
+                ]);
+                $rolledBack = $this->rollbackProgressiveWrites($beforeStateByPath);
+                if ($rolledBack > 0) {
+                    $this->fileManager->compileTailwind();
+                }
+                $shutdownDone = true;
+                $this->emitSSE('done', [
+                    'cancelled'      => true,
+                    'files_modified' => [],
+                    'message'        => 'Generation cancelled.',
+                    'rolled_back'    => $rolledBack,
+                ]);
+                return;
+            }
 
             // ── Create revision (before state already captured during streaming) ──
             $revisionId = null;
@@ -812,6 +897,34 @@ class PromptEngine
 
         } catch (RuntimeException $e) {
             $shutdownDone = true; // Error handled, don't double-process
+
+            // ── Cancellation: roll back and exit cleanly ──
+            if ($e->getMessage() === 'generation_cancelled' || $this->isCancelled()) {
+                Logger::info('ai', 'Generation cancelled — rolling back progressive writes', [
+                    'prompt_log_id' => $promptLogId,
+                    'files_written' => count($beforeStateByPath),
+                ]);
+                $rolledBack = $this->rollbackProgressiveWrites($beforeStateByPath);
+                if ($rolledBack > 0) {
+                    $this->fileManager->compileTailwind();
+                }
+                // Update status to cancelled (the cancel endpoint may have
+                // already set 'error' — this is fine, idempotent)
+                if ($promptLogId !== null) {
+                    $this->db->update('prompt_log', [
+                        'status'        => 'error',
+                        'error_message' => 'Generation was cancelled.',
+                    ], 'id = ?', [$promptLogId]);
+                }
+                $this->emitSSE('done', [
+                    'cancelled'      => true,
+                    'files_modified' => [],
+                    'message'        => 'Generation cancelled.',
+                    'rolled_back'    => $rolledBack,
+                ]);
+                return;
+            }
+
             $elapsed = round(microtime(true) - $streamStartTime, 1);
             Logger::error('ai', 'RuntimeException during AI stream', [
                 'exception'          => $e->getMessage(),
@@ -1396,6 +1509,46 @@ class PromptEngine
         }
 
         return null;
+    }
+
+    /**
+     * Check if the current generation has been cancelled.
+     *
+     * The /ai/cancel-generation endpoint sets the prompt_log status
+     * to 'error' with message "Generation was cancelled." This method
+     * reads that flag from the database. Called from the onToken
+     * callback during streaming and at key checkpoints.
+     *
+     * Throttled: queries the DB at most once per second to avoid
+     * write amplification during fast token delivery.
+     */
+    private function isCancelled(): bool
+    {
+        if ($this->activePromptLogId === null) {
+            return false;
+        }
+
+        $now = microtime(true);
+        if ($now - $this->lastCancelCheckTime < 1.0) {
+            return false; // Throttle: already checked within the last second
+        }
+        $this->lastCancelCheckTime = $now;
+
+        try {
+            $row = $this->db->queryOne(
+                'SELECT status, error_message FROM prompt_log WHERE id = ? LIMIT 1',
+                [$this->activePromptLogId]
+            );
+
+            if ($row && $row['status'] === 'error'
+                && str_contains((string) ($row['error_message'] ?? ''), 'cancelled')) {
+                return true;
+            }
+        } catch (\Throwable) {
+            // Database error — don't cancel, let the generation continue
+        }
+
+        return false;
     }
 
     /**

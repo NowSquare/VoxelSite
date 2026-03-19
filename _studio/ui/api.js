@@ -213,6 +213,7 @@ export const api = {
  * - token: { content } — a chunk of streaming text
  * - status: { message } — status update ("Reading your site...")
  * - conversation: { conversation_id } — active conversation identifier
+ * - prompt_id: { prompt_id } — prompt_log ID for cancellation
  * - file_complete: { path, action } — file operation completed
  * - done: { message, files_modified, revision_id } — stream complete
  * - evaluation: { issues } — post-generation quality review results
@@ -229,6 +230,7 @@ export async function apiStream(endpoint, body, callbacks = {}) {
     onToken  = () => {},
     onStatus = () => {},
     onConversation = () => {},
+    onPromptId = () => {},
     onFile   = () => {},
     onDone   = () => {},
     onEvaluation = () => {},
@@ -319,6 +321,9 @@ export async function apiStream(endpoint, body, callbacks = {}) {
         case 'conversation':
           trackedConversationId = parsed.conversation_id || trackedConversationId;
           onConversation(parsed.conversation_id || '');
+          break;
+        case 'prompt_id':
+          onPromptId(parsed.prompt_id || 0);
           break;
         case 'file_complete':
           filesCompleted++;

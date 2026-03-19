@@ -277,7 +277,7 @@
       </div>`,t.classList.add("vx-tb-visible"),B&&((x=t.querySelector('[data-action="open-code-editor"]'))==null||x.addEventListener("click",H=>{H.stopPropagation();let Q=H.currentTarget.dataset.file;Hs(Q),ze()}));return}let f="";h&&(v!=null&&v.sourceFile)&&(f+=`<div class="vx-tb-global-cue" title="Changes affect all pages that include this file">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
       <span>Global \u2014 ${He(v.sourceFile)}</span>
-    </div>`),i&&(f+=`<button class="vx-tb-btn" data-action="edit-text" title="Edit text">
+    </div>`),i&&s!=="IMG"&&(f+=`<button class="vx-tb-btn" data-action="edit-text" title="Edit text">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 22h-1a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4h1"/><path d="M7 22h1a4 4 0 0 0 4-4V6a4 4 0 0 0-4-4H7"/><line x1="12" y1="2" x2="12" y2="22"/></svg>
       <span>Edit</span></button>`),a&&(f+=`<button class="vx-tb-btn" data-action="swap-image" title="Change image">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>

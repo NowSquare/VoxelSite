@@ -698,7 +698,7 @@ function showContextToolbar(data) {
     </div>`;
   }
 
-  if (canInlineEdit) {
+  if (canInlineEdit && tagName !== 'IMG') {
     // I-beam (text cursor) icon — "enter text editing mode"
     // Safe for elements containing only inline children (a, em, strong, span, br, etc.).
     // Elements with block-level children (div, ul, section) must use Source editing.

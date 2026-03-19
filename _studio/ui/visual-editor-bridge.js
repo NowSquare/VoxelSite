@@ -1390,6 +1390,13 @@
   ]);
 
   function isPlainTextElement(el) {
+    // Void elements can't be text-edited via contentEditable
+    const VOID = new Set([
+      'AREA','BASE','BR','COL','EMBED','HR','IMG','INPUT',
+      'LINK','META','PARAM','SOURCE','TRACK','WBR',
+    ]);
+    if (VOID.has(el.tagName)) return false;
+
     for (let i = 0; i < el.children.length; i++) {
       if (!INLINE_SAFE.has(el.children[i].tagName)) return false;
     }

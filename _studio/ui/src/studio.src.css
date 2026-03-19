@@ -3102,6 +3102,76 @@ select.vs-input {
   filter: drop-shadow(0 0 3px rgba(244, 160, 36, 0.4));
 }
 
+/* ── Global Status Indicator (top bar) ──
+   Hidden by default. Only visible when an active state is applied
+   (saving, saved, loading, error). Silence = healthy (Figma/Notion). */
+
+.vs-global-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Hidden by default — fades in when active */
+  opacity: 0;
+  max-width: 0;
+  overflow: hidden;
+  transition: opacity 300ms ease, max-width 300ms ease;
+}
+
+/* Visible when an active state is present */
+.vs-global-status--active {
+  opacity: 1;
+  max-width: 200px;
+}
+
+.vs-global-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background-color 200ms ease;
+}
+
+.vs-global-status-text {
+  white-space: nowrap;
+  transition: color 200ms ease;
+}
+
+/* Saving / Loading — pulsing amber dot */
+.vs-global-status--saving .vs-global-status-dot,
+.vs-global-status--loading .vs-global-status-dot {
+  background-color: var(--vs-accent);
+  animation: vs-status-pulse 1s ease-in-out infinite;
+}
+.vs-global-status--saving .vs-global-status-text,
+.vs-global-status--loading .vs-global-status-text {
+  color: var(--vs-text-secondary);
+}
+
+/* Saved — green dot, success text */
+.vs-global-status--saved .vs-global-status-dot {
+  background-color: var(--vs-success);
+}
+.vs-global-status--saved .vs-global-status-text {
+  color: var(--vs-success);
+}
+
+/* Error — red dot */
+.vs-global-status--error .vs-global-status-dot {
+  background-color: var(--vs-error);
+}
+.vs-global-status--error .vs-global-status-text {
+  color: var(--vs-error);
+}
+
+@keyframes vs-status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 /* Banner on the login page — cream poured into a warm mold */
 .vs-demo-login-banner {
   position: relative;
@@ -6360,7 +6430,6 @@ select.vs-input {
   pointer-events: auto;
 }
 /* Fade all statusbar controls EXCEPT undo/redo */
-.vx-editing #status-text,
 .vx-editing #btn-preview-site,
 .vx-editing #btn-snapshot,
 .vx-editing #btn-download,
@@ -6556,10 +6625,28 @@ select.vs-input {
   background: var(--vs-accent-hover) !important;
   color: #fff !important;
 }
+.vx-rt-btn-save kbd {
+  display: inline-block;
+  font: 500 9px/1 var(--font-mono);
+  padding: 2px 4px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.8);
+  border: 1px solid rgba(255,255,255,0.15);
+}
 .vx-rt-btn-cancel {
   width: auto; padding: 0 8px;
   font: 500 11px/1 var(--font-sans);
   color: var(--vs-text-ghost);
+}
+.vx-rt-btn-cancel kbd {
+  display: inline-block;
+  font: 500 9px/1 var(--font-mono);
+  padding: 2px 4px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.06);
+  color: var(--vs-text-ghost);
+  border: 1px solid var(--vs-border-subtle);
 }
 .vx-rt-btn-cancel:hover {
   color: var(--vs-text-primary) !important;
@@ -7472,7 +7559,7 @@ select.vs-input {
 .vx-sp-apply:active { transform: scale(0.98); }
 /* ── Modals ── */
 .vx-modal-overlay {
-  position: fixed; inset: 0; z-index: 99999;
+  position: fixed; inset: 0; z-index: 200000;
   background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center;
   opacity: 0; transition: opacity 180ms var(--ease-out);
@@ -7532,6 +7619,12 @@ select.vs-input {
   border: 1px solid var(--vs-border-subtle); border-radius: var(--radius-md); outline: none;
 }
 .vx-form-input:focus { border-color: var(--vs-accent); box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+select.vx-form-input {
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+  padding-right: 32px; cursor: pointer;
+}
 
 /* Buttons */
 .vx-btn-primary { padding: 8px 16px; font: 600 12px/1 var(--font-sans); color: white; background: var(--vs-accent); border: none; border-radius: var(--radius-md); cursor: pointer; }
@@ -7772,6 +7865,11 @@ select.vs-input {
 
   /* Hide user dropdown — Profile, Settings, Sign Out are in More sheet */
   #user-menu-container {
+    display: none !important;
+  }
+
+  /* Hide global status — mobile topbar is compact */
+  .vs-global-status {
     display: none !important;
   }
 

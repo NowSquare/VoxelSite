@@ -1335,6 +1335,25 @@ function annotateSourceAddresses(string $html, string $pageFile): string
         ) ?? $html;
     }
 
+    // Step 3.5: Re-number main-file nodeKeys sequentially.
+    //
+    // After Step 3 reassigned partial elements to per-file counters,
+    // the remaining main-file elements still carry their Step 1 indices
+    // which counted ALL rendered tags (including from includes). The JS
+    // source extractor counts tags in the SOURCE file from 0, and the
+    // source file doesn't contain the include's expanded content. So
+    // nodeKey "index.php:30" would point to the 30th rendered tag but
+    // only the 4th source tag. Re-count so indices match source position.
+    $mainFileCounter = 0;
+    $escapedPageFile = htmlspecialchars($pageFile);
+    $html = preg_replace_callback(
+        '/data-vx-node-key="' . preg_quote($escapedPageFile, '/') . ':\d+"/',
+        function ($m) use ($escapedPageFile, &$mainFileCounter) {
+            return 'data-vx-node-key="' . $escapedPageFile . ':' . $mainFileCounter++ . '"';
+        },
+        $html
+    ) ?? $html;
+
     // Step 4: Strip provenance markers from final output.
     $html = preg_replace('/<!-- vx:partial:(?:start|end):[a-zA-Z0-9_\-\/]+\.php -->/', '', $html) ?? $html;
 

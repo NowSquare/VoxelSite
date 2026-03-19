@@ -257,7 +257,9 @@ let richTextActive = false;
 let richTextHasPhp = false;
 let richTextElementRect = null; // rect of the element being edited (iframe-relative)
 let lastFormatting = {};
-let lastBlockTag = 'P';
+let lastLink = null;
+let lastLinkClasses = [];
+let lastBlockTag = null;
 
 function onEditingStarted(data) {
   richTextActive = true;
@@ -287,12 +289,16 @@ function onSelectionState(data) {
   if (!data.hasSelection) {
     // Even without a selection, keep the bar visible — just clear active states
     lastFormatting = {};
+    lastLink = null;
+    lastLinkClasses = [];
     updateFormattingState();
     return;
   }
   // Update formatting state on the persistent bar
   lastFormatting = data.formatting || {};
   lastBlockTag = data.blockTag || lastBlockTag;
+  lastLink = data.link || null;
+  lastLinkClasses = data.linkClasses || [];
   updateFormattingState();
 }
 
@@ -361,18 +367,13 @@ function renderEditingBarContent(bar) {
     <button class="vx-rt-btn" data-cmd="insertLink" title="Link (⌘K)">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
     </button>
-    <div class="vx-rt-divider"></div>
-    <button class="vx-rt-btn vx-rt-btn-clear" data-cmd="removeFormat" title="Clear formatting">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>
-    </button>
     `}
     <div class="vx-rt-divider"></div>
     <button class="vx-rt-btn vx-rt-btn-cancel" data-action="cancel" title="Cancel (Esc)">
-      Cancel
+      Cancel <kbd>Esc</kbd>
     </button>
-    <button class="vx-rt-btn vx-rt-btn-save" data-action="save" title="Save (⌘↵)">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-      Save
+    <button class="vx-rt-btn vx-rt-btn-save" data-action="save" title="Apply (⌘↵)">
+      Apply <kbd>${navigator.platform?.includes('Mac') ? '⌘↵' : 'Ctrl+↵'}</kbd>
     </button>
   </div>`;
 
@@ -391,7 +392,7 @@ function renderEditingBarContent(bar) {
     });
   });
 
-  // Bind Save / Cancel
+  // Bind Apply / Cancel
   const cancelBtn = bar.querySelector('[data-action="cancel"]');
   const saveBtn = bar.querySelector('[data-action="save"]');
   if (cancelBtn) cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); sendToPreview({ type: 'vx-editor:cancel-edit' }); });
@@ -421,15 +422,113 @@ function dismissEditingBar() {
 function dismissRichTextToolbar() { dismissEditingBar(); }
 
 function promptForLink() {
-  const url = prompt('Enter URL:');
-  if (url !== null) {
-    const trimmed = url.trim();
-    if (trimmed) {
-      sendToPreview({ type: 'vx-editor:richtext-command', command: 'insertLink', value: trimmed });
+  // Don't dismiss the editing bar — we want it to stay visible
+  // (the modal z-index 200000 is well above the toolbar's 100000)
+  
+  const existingHref = lastLink ? lastLink.href : '';
+  const existingTarget = lastLink ? lastLink.target : '';
+  const existingClass = lastLink ? (lastLink.className || '') : '';
+
+  // Build class options from discovered page classes
+  const hasClasses = lastLinkClasses.length > 0 || !!existingClass;
+  let classOptionsHtml = `<option value=""${!existingClass ? ' selected' : ''}>No class</option>`;
+  if (lastLinkClasses.length > 0) {
+    const classInList = lastLinkClasses.includes(existingClass);
+    classOptionsHtml += lastLinkClasses.map(cls =>
+      `<option value="${escapeAttr(cls)}"${existingClass === cls ? ' selected' : ''}>${escapeHtml(cls)}</option>`
+    ).join('');
+    // If existing class isn't in the discovered list, show it as custom
+    if (existingClass && !classInList) {
+      classOptionsHtml += `<option value="${escapeAttr(existingClass)}" selected>${escapeHtml(existingClass)}</option>`;
+    }
+  } else if (existingClass) {
+    // No discovered classes but element has one — show it
+    classOptionsHtml += `<option value="${escapeAttr(existingClass)}" selected>${escapeHtml(existingClass)}</option>`;
+  }
+
+  const modal = document.createElement('div');
+  modal.className = 'vx-modal-overlay';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  
+  modal.innerHTML = `
+    <div class="vx-modal vx-modal-sm">
+      <div class="vx-modal-header"><span>${existingHref ? 'Edit' : 'Insert'} Link</span>
+        <button class="vx-modal-close" data-close>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button></div>
+      <div class="vx-modal-body">
+        <div class="vx-form-group"><label class="vx-form-label">URL</label>
+          <input type="url" id="vx-link-url" class="vx-form-input" value="${escapeAttr(existingHref)}" placeholder="https://" autocomplete="off" spellcheck="false">
+        </div>
+        ${hasClasses ? `<div class="vx-form-group"><label class="vx-form-label">Link Style</label>
+          <select class="vx-form-input" id="vx-link-class">${classOptionsHtml}</select>
+        </div>` : ''}
+        <div class="vx-form-group" style="margin-bottom:0;">
+          <label class="vs-checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; position: relative;">
+            <input type="checkbox" id="vx-link-blank" class="vs-checkbox" ${existingTarget === '_blank' ? 'checked' : ''}>
+            <span class="vs-checkbox-box"></span>
+            <span style="font: 400 13px/1.4 var(--font-sans); color: var(--vs-text-primary);">Open in new window</span>
+          </label>
+        </div>
+      </div>
+      <div class="vx-modal-footer">
+        ${existingHref ? `<button class="vx-btn-danger" data-remove style="margin-right: auto;">Remove</button>` : ''}
+        <button class="vx-btn-secondary" data-close>Cancel</button>
+        <button class="vx-btn-primary" data-confirm>Apply</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  modal.offsetHeight; // trigger reflow for animation
+  modal.classList.add('vx-modal-visible');
+
+  // Make draggable by header — same behavior as the class/style panel
+  makeModalDraggable(modal);
+
+  const urlInput = modal.querySelector('#vx-link-url');
+  setTimeout(() => { urlInput.focus(); urlInput.select(); }, 50);
+
+  const close = () => {
+    modal.classList.remove('vx-modal-visible');
+    if (modal.__vxDestroyDrag) modal.__vxDestroyDrag();
+    setTimeout(() => modal.remove(), 200);
+  };
+
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) close();
+  });
+
+  modal.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', close));
+
+  const removeBtn = modal.querySelector('[data-remove]');
+  if (removeBtn) {
+    removeBtn.addEventListener('click', () => {
+      sendToPreview({ type: 'vx-editor:richtext-command', command: 'removeLink' });
+      close();
+    });
+  }
+
+  const applyBtn = modal.querySelector('[data-confirm]');
+  const applyLink = () => {
+    const url = urlInput.value.trim();
+    if (url) {
+      const isBlank = modal.querySelector('#vx-link-blank').checked;
+      const linkClassEl = modal.querySelector('#vx-link-class');
+      const linkClass = linkClassEl ? linkClassEl.value : '';
+      sendToPreview({ type: 'vx-editor:richtext-command', command: 'insertLink', value: { url, targetBlank: isBlank, linkClass } });
     } else {
       sendToPreview({ type: 'vx-editor:richtext-command', command: 'removeLink' });
     }
-  }
+    close();
+  };
+
+  applyBtn.addEventListener('click', applyLink);
+  urlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); applyLink(); }
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+  });
 }
 
 // ═══════════════════════════════════════════
@@ -445,7 +544,7 @@ function showContextToolbar(data) {
     document.body.appendChild(toolbar);
   }
 
-  const { tagName, rect, hasText, hasImage } = data;
+  const { tagName, rect, hasText, canInlineEdit, hasImage } = data;
   const iframe = document.getElementById('preview-iframe');
   if (!iframe) return;
 
@@ -528,8 +627,10 @@ function showContextToolbar(data) {
     </div>`;
   }
 
-  if (hasText) {
+  if (canInlineEdit) {
     // I-beam (text cursor) icon — "enter text editing mode"
+    // Safe for elements containing only inline children (a, em, strong, span, br, etc.).
+    // Elements with block-level children (div, ul, section) must use Source editing.
     buttons += `<button class="vx-tb-btn" data-action="edit-text" title="Edit text">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 22h-1a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4h1"/><path d="M7 22h1a4 4 0 0 0 4-4V6a4 4 0 0 0-4-4H7"/><line x1="12" y1="2" x2="12" y2="22"/></svg>
       <span>Edit</span></button>`;
@@ -741,6 +842,40 @@ function extractSourceElementByNodeKey(fileContent, nodeKey, tagName) {
   }
 
   return null; // index out of range
+}
+
+/**
+ * Like extractSourceElementByNodeKey but takes a raw integer index
+ * and does NOT verify the tag name. Used by the save pipeline's
+ * nodeKey fallback when we don't know the expected tag.
+ */
+function extractSourceElementByIndex(fileContent, targetIndex) {
+  if (targetIndex < 0) return null;
+
+  const SKIP_TAGS = new Set([
+    'html','head','body','script','style','link','meta','noscript',
+    'br','hr','wbr','col','colgroup','iframe','template',
+    'svg','path','circle','line','polyline','rect','ellipse',
+    'polygon','g','defs','use','symbol','clippath','mask',
+  ]);
+
+  const tagPattern = /<([a-z][a-z0-9]*)[\s>]/gi;
+  let match;
+  let counter = 0;
+
+  while ((match = tagPattern.exec(fileContent)) !== null) {
+    const foundTag = match[1].toLowerCase();
+    if (SKIP_TAGS.has(foundTag)) continue;
+    const nearbyChars = fileContent.substring(match.index, match.index + 500);
+    if (nearbyChars.includes('data-vx-source')) continue;
+
+    if (counter === targetIndex) {
+      return extractFullElement(fileContent, match.index, foundTag);
+    }
+    counter++;
+  }
+
+  return null;
 }
 
 /**
@@ -1103,7 +1238,7 @@ async function openInlineSourceEditor(data) {
 async function applyInlineSourceEdit() {
   if (!inlineSourceEditor) return;
   if (window.demoGuard?.()) return;
-  const { monacoInstance, container, tagName, originalHTML, formattedHTML, sourceFile } = inlineSourceEditor;
+  const { monacoInstance, container, tagName, originalHTML, formattedHTML, sourceFile, cleanupDrag } = inlineSourceEditor;
   let newHTML;
   if (monacoInstance) {
     newHTML = monacoInstance.getValue().trim();
@@ -1129,29 +1264,35 @@ async function applyInlineSourceEdit() {
     return;
   }
 
-  // ── Pessimistic save: save FIRST, only touch DOM on success ──
-  const applyBtn = container.querySelector('[data-action="apply"]');
-  const cancelBtn = container.querySelector('[data-action="cancel"]');
-  if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = 'Saving…'; }
-  if (cancelBtn) cancelBtn.disabled = true;
+  // ── Close editor UI immediately ──
+  // The element's dim/hatch is underneath the editor, invisible to the user.
+  // Close the editor first so the saving state is visible.
+  if (monacoInstance) { try { monacoInstance.dispose(); } catch {} }
+  cleanupDrag();
+  container.classList.remove('vx-source-visible');
+  setTimeout(() => container.remove(), 200);
+  inlineSourceEditor = null;
 
-  const saved = await saveSourceEdit({
-    filePath: sourceFile,
-    originalHTML,
-    newHTML,
-  });
+  // ── Transition element to saving state ──
+  // Bridge still has the dim/hatch from startSourceEdit().
+  // Switch to animated saving state (pulse + stronger hatch).
+  sendToPreview({ type: 'vx-editor:source-edit-saving' });
 
+  // ── Pessimistic save ──
+  // Enforce a minimum 500ms duration so the animated saving state is
+  // actually visible to the user on fast local environments before clearing.
+  const [saved] = await Promise.all([
+    saveSourceEdit({ filePath: sourceFile, originalHTML, newHTML }),
+    new Promise(resolve => setTimeout(resolve, 500))
+  ]);
+
+  // ── Tell bridge to finalize ──
   if (saved) {
-    // Save succeeded — now apply to live DOM and close
-    closeInlineSourceEditor(true, newHTML);
+    // Save succeeded — apply new HTML to live DOM and clear treatment
+    sendToPreview({ type: 'vx-editor:end-source-edit', apply: true, html: newHTML });
   } else {
-    // Save failed — restore buttons, keep editor open
-    if (applyBtn) {
-      applyBtn.disabled = false;
-      applyBtn.innerHTML = `Apply <kbd>${navigator.platform?.includes('Mac') ? '⌘S' : 'Ctrl+S'}</kbd>`;
-    }
-    if (cancelBtn) cancelBtn.disabled = false;
-    // Error message already shown by saveSourceEdit
+    // Save failed — restore element to original state (cancel)
+    sendToPreview({ type: 'vx-editor:end-source-edit', apply: false });
   }
 }
 
@@ -2323,6 +2464,50 @@ function makeDraggable(panel, handle) {
   };
 }
 
+/**
+ * Make a .vx-modal-overlay's inner panel draggable by its header.
+ * Bridges the flexbox-centered modal layout with makeDraggable().
+ * On first drag, switches the inner panel from flex-centered to fixed positioning.
+ */
+function makeModalDraggable(overlay) {
+  const panel = overlay.querySelector('.vx-modal');
+  const header = overlay.querySelector('.vx-modal-header');
+  if (!panel || !header) return;
+
+  header.style.cursor = 'grab';
+  let converted = false;
+
+  // Convert from flex-centered to fixed before first drag
+  const convertToFixed = () => {
+    if (converted) return;
+    converted = true;
+    const rect = panel.getBoundingClientRect();
+    // Remove flex centering from overlay — it stays as a backdrop only
+    overlay.style.display = 'block';
+    // Position the panel with fixed coords
+    panel.style.position = 'fixed';
+    panel.style.left = `${rect.left}px`;
+    panel.style.top = `${rect.top}px`;
+    panel.style.margin = '0';
+  };
+
+  // Wrap the header mousedown to convert before drag starts
+  const origDown = (e) => {
+    if (e.target.closest('button, input, select')) return;
+    convertToFixed();
+  };
+  header.addEventListener('mousedown', origDown, { capture: true });
+  header.addEventListener('touchstart', origDown, { capture: true, passive: true });
+
+  const destroyDrag = makeDraggable(panel, header);
+
+  overlay.__vxDestroyDrag = () => {
+    header.removeEventListener('mousedown', origDown, { capture: true });
+    header.removeEventListener('touchstart', origDown, { capture: true });
+    destroyDrag();
+  };
+}
+
 // ═══════════════════════════════════════════
 //  AI Section Edit Panel
 // ═══════════════════════════════════════════
@@ -2904,33 +3089,222 @@ async function loadAssetImages(modal) {
 
 function openLinkEditor(elementData) {
   dismissToolbar();
+
+  const curHref = elementData.href || '';
+  const curText = elementData.text || '';
+  const curTarget = elementData.target || '';
+  const curClass = elementData.linkClass || '';
+  const discoveredClasses = elementData.linkClasses || [];
+  const filePath = elementData.filePath || getCurrentPreviewPath();
+
+  // Build class options from discovered page classes
+  let classOptionsHtml = `<option value=""${!curClass ? ' selected' : ''}>No class</option>`;
+  const classInList = discoveredClasses.includes(curClass);
+  discoveredClasses.forEach(cls => {
+    classOptionsHtml += `<option value="${escapeAttr(cls)}"${curClass === cls ? ' selected' : ''}>${escapeHtml(cls)}</option>`;
+  });
+  // If current class isn't in the discovered list, show it as custom
+  if (curClass && !classInList) {
+    classOptionsHtml += `<option value="${escapeAttr(curClass)}" selected>${escapeHtml(curClass)}</option>`;
+  }
+
   const modal = document.createElement('div');
   modal.className = 'vx-modal-overlay';
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-modal', 'true');
+
   modal.innerHTML = `<div class="vx-modal vx-modal-sm"><div class="vx-modal-header"><span>Edit Link</span>
     <button class="vx-modal-close" data-close><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="vx-modal-body">
-      <div class="vx-form-group"><label class="vx-form-label">URL</label><input type="text" class="vx-form-input" id="vx-link-href" value="${escapeAttr(elementData.href || '')}" placeholder="https://… or /page" spellcheck="false"></div>
-      <div class="vx-form-group"><label class="vx-form-label">Text</label><input type="text" class="vx-form-input" id="vx-link-text" value="${escapeAttr(elementData.text || '')}" placeholder="Link text"></div>
+      <div class="vx-form-group"><label class="vx-form-label">URL</label><input type="text" class="vx-form-input" id="vx-link-href" value="${escapeAttr(curHref)}" placeholder="https://… or /page" spellcheck="false"></div>
+      <div class="vx-form-group"><label class="vx-form-label">Text</label><input type="text" class="vx-form-input" id="vx-link-text" value="${escapeAttr(curText)}" placeholder="Link text"></div>
+      ${discoveredClasses.length > 0 || curClass ? `<div class="vx-form-group"><label class="vx-form-label">Link Style</label>
+        <select class="vx-form-input" id="vx-link-style">${classOptionsHtml}</select>
+      </div>` : ''}
+      <div class="vx-form-group" style="margin-bottom:0;">
+        <label class="vs-checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; position: relative;">
+          <input type="checkbox" id="vx-link-target" class="vs-checkbox" ${curTarget === '_blank' ? 'checked' : ''}>
+          <span class="vs-checkbox-box"></span>
+          <span style="font: 400 13px/1.4 var(--font-sans); color: var(--vs-text-primary);">Open in new window</span>
+        </label>
+      </div>
     </div>
     <div class="vx-modal-footer"><button class="vx-btn-secondary" data-close>Cancel</button><button class="vx-btn-primary" id="vx-link-save">Save</button></div></div>`;
+
   document.body.appendChild(modal);
   requestAnimationFrame(() => modal.classList.add('vx-modal-visible'));
+
+  // Make draggable by header — same behavior as the class/style panel
+  makeModalDraggable(modal);
+
   const close = () => {
     modal.classList.remove('vx-modal-visible');
     modal.removeEventListener('keydown', onKeydown);
+    if (modal.__vxDestroyDrag) modal.__vxDestroyDrag();
     setTimeout(() => modal.remove(), 200);
   };
   const onKeydown = (e) => { if (e.key === 'Escape') close(); };
   modal.addEventListener('keydown', onKeydown);
   modal.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
   onBackdropClick(modal, close);
-  document.getElementById('vx-link-save').addEventListener('click', () => {
-    sendToPreview({ type: 'vx-editor:update-link', href: document.getElementById('vx-link-href').value.trim(), text: document.getElementById('vx-link-text').value.trim() });
+
+  document.getElementById('vx-link-save').addEventListener('click', async () => {
+    if (window.demoGuard?.()) { close(); return; }
+
+    const newHref = document.getElementById('vx-link-href').value.trim();
+    const newText = document.getElementById('vx-link-text').value.trim();
+    const newTarget = document.getElementById('vx-link-target').checked ? '_blank' : '';
+    const styleEl = document.getElementById('vx-link-style');
+    const newClass = styleEl ? styleEl.value : '';
+
+    // Tell bridge to update the DOM (visual preview)
+    sendToPreview({ type: 'vx-editor:update-link', href: newHref, text: newText, target: newTarget, className: newClass });
+
+    // Direct save to source file — don't rely on serialize-from-DOM
+    const saved = await saveLinkToSource(filePath, {
+      oldHref: curHref, oldText: curText, oldTarget: curTarget, oldClass: curClass,
+      newHref, newText, newTarget, newClass,
+    });
+
+    if (saved) {
+      // Refresh selection highlight after a short delay (let DOM settle)
+      setTimeout(() => sendToPreview({ type: 'vx-editor:refresh-highlight' }), 100);
+    }
+
     close();
   });
+
   setTimeout(() => document.getElementById('vx-link-href')?.focus(), 100);
+}
+
+/**
+ * Save link attribute changes directly to the source file.
+ * Reads the file, finds the <a> tag by its original href, replaces
+ * attributes at the source level, and writes immediately.
+ */
+async function saveLinkToSource(filePath, { oldHref, oldText, oldTarget, oldClass, newHref, newText, newTarget, newClass }) {
+  const fp = filePath || getCurrentPreviewPath();
+
+  try {
+    const readResult = await api.get(`/files/content?path=${encodeURIComponent(fp)}`);
+    if (!readResult.ok) {
+      showSaveIndicator('Cannot read source file', true);
+      return false;
+    }
+
+    let content = readResult.data.content;
+
+    // Build a regex to find the specific <a> tag by its old href.
+    // Match the full <a ...>text</a> element.
+    const escRx = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const hrefPattern = escRx(oldHref);
+
+    // Match <a with href="oldHref" (anywhere in attributes), then content, then </a>
+    // This is flexible about attribute order and extra attributes
+    const tagRegex = new RegExp(
+      `(<a\\s[^>]*?href=["']${hrefPattern}["'][^>]*>)([\\s\\S]*?)(</a>)`,
+      'i'
+    );
+
+    const match = content.match(tagRegex);
+    if (!match) {
+      // Try partials
+      const saved = await saveLinkInPartials(fp, content, { oldHref, oldText, oldTarget, oldClass, newHref, newText, newTarget, newClass });
+      if (!saved) showSaveIndicator('Save failed — link not found in source', true);
+      return saved;
+    }
+
+    let openingTag = match[1];
+    let innerContent = match[2];
+    const closingTag = match[3];
+
+    // --- Apply attribute changes to the opening tag ---
+    // href
+    if (newHref !== oldHref) {
+      openingTag = openingTag.replace(
+        new RegExp(`href=["']${escRx(oldHref)}["']`),
+        `href="${newHref}"`
+      );
+    }
+
+    // target
+    if (newTarget !== oldTarget) {
+      if (newTarget && openingTag.includes('target=')) {
+        // Update existing target
+        openingTag = openingTag.replace(/target=["'][^"']*["']/, `target="${newTarget}"`);
+      } else if (newTarget && !openingTag.includes('target=')) {
+        // Add target before >
+        openingTag = openingTag.replace(/>$/, ` target="${newTarget}" rel="noopener">`);
+      } else if (!newTarget && openingTag.includes('target=')) {
+        // Remove target and rel
+        openingTag = openingTag.replace(/\s*target=["'][^"']*["']/, '');
+        openingTag = openingTag.replace(/\s*rel=["'][^"']*["']/, '');
+      }
+    }
+
+    // class
+    if (newClass !== oldClass) {
+      if (newClass && openingTag.includes('class=')) {
+        // Update existing class
+        openingTag = openingTag.replace(/class=["'][^"']*["']/, `class="${newClass}"`);
+      } else if (newClass && !openingTag.includes('class=')) {
+        // Add class before >
+        openingTag = openingTag.replace(/>$/, ` class="${newClass}">`);
+      } else if (!newClass && openingTag.includes('class=')) {
+        // Remove class
+        openingTag = openingTag.replace(/\s*class=["'][^"']*["']/, '');
+      }
+    }
+
+    // text content — only replace if it's simple text (no nested HTML)
+    if (newText !== oldText && !innerContent.includes('<')) {
+      innerContent = newText;
+    }
+
+    const newElement = openingTag + innerContent + closingTag;
+    const newContent = content.replace(match[0], newElement);
+
+    if (newContent === content) {
+      // Nothing changed
+      return true;
+    }
+
+    const saveResult = await api.put('/files/content', { path: fp, content: newContent });
+    if (saveResult.ok) {
+      const shortName = fp.split('/').pop();
+      showSaveIndicator(`Saved → ${shortName}`);
+      return true;
+    } else {
+      showSaveIndicator('Save failed', true);
+      return false;
+    }
+  } catch (err) {
+    console.error('[VX] saveLinkToSource error:', err);
+    showSaveIndicator('Save failed — unexpected error', true);
+    return false;
+  }
+}
+
+/**
+ * Search partial files for the link when not found in the main file.
+ */
+async function saveLinkInPartials(mainFile, mainContent, linkData) {
+  try {
+    const listResult = await api.get('/files');
+    if (!listResult.ok) return false;
+
+    const candidates = (listResult.data.files || [])
+      .filter(f => f.path.endsWith('.php') && f.path !== mainFile);
+
+    for (const file of candidates) {
+      const readResult = await api.get(`/files/content?path=${encodeURIComponent(file.path)}`);
+      if (!readResult.ok || !readResult.data?.content) continue;
+
+      const saved = await saveLinkToSource(file.path, linkData);
+      if (saved) return true;
+    }
+  } catch {}
+  return false;
 }
 
 // ═══════════════════════════════════════════
@@ -2991,7 +3365,7 @@ async function saveImageChange(data) {
     if (modified) {
       const saveResult = await api.put('/files/content', { path: fp, content });
       if (saveResult.ok) {
-        showSaveIndicator('Saved');
+        showSaveIndicator(`Saved → ${fp.split('/').pop()}`);
       } else {
         showSaveIndicator('Save failed', true);
       }
@@ -3076,7 +3450,14 @@ function replaceImgSrcByAlt(content, alt, newSrc) {
 
 function queueTextChange(data) {
   if (window.demoGuard?.()) return;
-  pendingChanges.push({ type: 'text', filePath: data.filePath, originalHTML: data.originalHTML, newHTML: data.newHTML, timestamp: Date.now() });
+  pendingChanges.push({
+    type: 'text',
+    filePath: data.filePath,
+    originalHTML: data.originalHTML,
+    newHTML: data.newHTML,
+    sourceAddress: data.sourceAddress || null,
+    timestamp: Date.now(),
+  });
   clearTimeout(queueTextChange._timer);
   queueTextChange._timer = setTimeout(() => saveAllPending(), 800);
 }
@@ -3286,39 +3667,92 @@ async function saveAllPending() {
           const needle = change.type === 'delete' ? change.outerHTML : change.originalHTML;
           if (!needle) continue;
 
+          // ── Strategy 1: nodeKey-based replacement (PREFERRED for text changes) ──
+          // The nodeKey precisely locates the element by index in the source file.
+          // No string matching → no false positives from ambiguous substrings.
+          if (change.sourceAddress?.nodeKey && change.type === 'text') {
+            const sa = change.sourceAddress;
+            const saFile = sa.sourceFile || filePath;
+            let saContent = content;
+            if (saFile !== filePath) {
+              try {
+                const saRead = await api.get(`/files/content?path=${encodeURIComponent(saFile)}`);
+                if (saRead.ok && saRead.data?.content) saContent = saRead.data.content;
+              } catch {}
+            }
+
+            const colonIdx = sa.nodeKey.lastIndexOf(':');
+            let nodeKeySaved = false;
+            if (colonIdx !== -1) {
+              const targetIndex = parseInt(sa.nodeKey.substring(colonIdx + 1), 10);
+              if (!isNaN(targetIndex)) {
+                const sourceElement = extractSourceElementByIndex(saContent, targetIndex);
+                if (sourceElement) {
+                  // Use extractOpeningTag to correctly handle > inside quoted attributes
+                  const openTag = extractOpeningTag(saContent, saContent.indexOf(sourceElement));
+                  if (openTag) {
+                    const innerStart = openTag.length;
+                    const closeTagStart = sourceElement.lastIndexOf('</');
+                    if (closeTagStart > innerStart) {
+                      const closeTag = sourceElement.substring(closeTagStart);
+                      const newElement = openTag + change.newHTML + closeTag;
+                      if (saFile !== filePath) {
+                        const newFileContent = saContent.replace(sourceElement, newElement);
+                        const saResult = await api.put('/files/content', { path: saFile, content: newFileContent });
+                        if (saResult.ok) {
+                          showSaveIndicator(`Saved → ${saFile.split('/').pop()}`);
+                          if (saResult.data?.tailwindCompiled) anyTailwind = true;
+                          nodeKeySaved = true;
+                        }
+                      } else {
+                        content = content.replace(sourceElement, newElement);
+                        modified = true;
+                        nodeKeySaved = true;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            if (nodeKeySaved) continue; // Success — skip to next change
+
+            // nodeKey extraction failed — fall through to content.includes
+            console.warn('[VX] nodeKey extraction failed for', sa.nodeKey, '— trying content match');
+          }
+
+          // ── Strategy 2: direct substring match ──
           if (content.includes(needle)) {
             content = change.type === 'delete'
               ? content.replace(needle, '')
               : content.replace(needle, change.newHTML);
             modified = true;
           } else if (change.type === 'class-change' && change.additions) {
-            // ── Subset Match ──
-            // Runtime JS may add classes (is-visible, active, open) not in the source.
-            // Find a class attribute whose source classes are a subset of the runtime classes,
-            // then apply only our additions/removals to the source-level classes.
+            // ── Strategy 3: Subset Match for class changes ──
             const runtimeClasses = new Set(originalClassesFromNeedle(needle));
             const subsetResult = applyClassDiffSubset(content, runtimeClasses, change.additions, change.removals);
             if (subsetResult) {
               content = subsetResult;
               modified = true;
             } else {
-              // Not found in main file — try partials
               const found = await findAndReplaceInPartials(filePath, change, partialSearchCache);
               if (found) { anyTailwind = true; continue; }
               console.warn('[VX] Not found in source:', needle.substring(0, 80));
+              showSaveIndicator('Save failed — source not found', true);
             }
           } else {
-            // Not found in main file — try partials
+            // ── Strategy 4: partial file search ──
             const found = await findAndReplaceInPartials(filePath, change, partialSearchCache);
             if (found) { anyTailwind = true; continue; }
             console.warn('[VX] Not found in source:', needle.substring(0, 80));
+            showSaveIndicator('Save failed — source not found', true);
           }
         }
 
         if (modified) {
           const saveResult = await api.put('/files/content', { path: filePath, content });
           if (saveResult.ok) {
-            showSaveIndicator('Saved');
+            showSaveIndicator(`Saved → ${filePath.split('/').pop()}`);
             if (saveResult.data?.tailwindCompiled) anyTailwind = true;
           } else {
             showSaveIndicator('Save failed', true);
@@ -3342,6 +3776,9 @@ async function saveAllPending() {
     if (pendingChanges.length > 0) {
       // Drain edits that arrived while the previous save was in flight.
       setTimeout(() => saveAllPending(), 0);
+    } else {
+      // All saves complete — clear the saving treatment in the preview
+      sendToPreview({ type: 'vx-editor:save-feedback' });
     }
   }
 }

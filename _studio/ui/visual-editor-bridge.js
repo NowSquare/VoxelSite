@@ -23,7 +23,8 @@
   let selectedEl = null;
   let isEditing = false;
   let isAIGenerating = false;
-  let originalContent = null;
+  let originalContent = null;     // normalized innerHTML (for save needle comparison)
+  let originalContentRaw = null;  // raw innerHTML (for cancel restore, retains data-vx-* attrs)
   let overlayLayer = null;
 
   const IGNORE_TAGS = new Set([
@@ -468,7 +469,7 @@
     hideHoverHighlight();
 
     const rect = el.getBoundingClientRect();
-    notifyParent({
+    const payload = {
       type: 'vx-editor:select', tagName: el.tagName, elementType: getElementType(el),
       hasText: isTextElement(el), hasImage: el.tagName === 'IMG',
       classList: Array.from(el.classList),
@@ -478,7 +479,15 @@
       rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
       filePath: getPageFilePath(),
       sourceAddress: getSourceAddress(el),
-    });
+      canInlineEdit: isPlainTextElement(el),
+    };
+    // Include link-specific attributes for <a> elements
+    if (el.tagName === 'A') {
+      payload.target = el.getAttribute('target') || '';
+      payload.linkClass = el.getAttribute('class') || '';
+      payload.linkClasses = discoverLinkClasses();
+    }
+    notifyParent(payload);
   }
 
   function deselectElement() {
@@ -520,8 +529,13 @@
 
   function startTextEditing() {
     if (!selectedEl || isEditing || !isTextElement(selectedEl)) return;
+    if (!isPlainTextElement(selectedEl)) return; // Safety gate against mixed HTML
     isEditing = true;
-    originalContent = selectedEl.innerHTML;
+    // Store the innerHTML normalized for source-matching:
+    // strip data-vx-* instrumentation attrs injected by the PHP annotator,
+    // which exist in the DOM but NOT in the source file.
+    originalContentRaw = selectedEl.innerHTML;  // raw for cancel restore
+    originalContent = normalizeForSource(originalContentRaw);
     selectedEl.contentEditable = 'true';
     selectedEl.focus();
     selectedEl.style.outline = '2px solid #3b82f6';
@@ -606,7 +620,10 @@
     if (!selectedEl || !isEditing) return;
     isEditing = false;
     stopSelectionMonitor();
-    const newContent = selectedEl.innerHTML;
+    // Normalize the new innerHTML the same way we normalized the original:
+    // strip data-vx-* instrumentation so the needle matches the source file
+    // and we don't inject instrumentation attributes into the saved source.
+    const newContent = normalizeForSource(selectedEl.innerHTML);
     selectedEl.contentEditable = 'false';
     selectedEl.removeAttribute('contenteditable');
     selectedEl.style.outline = ''; selectedEl.style.outlineOffset = '';
@@ -617,6 +634,7 @@
       notifyParent({ type: 'vx-editor:text-changed', filePath: getPageFilePath(), originalHTML: originalContent, newHTML: newContent, sourceAddress: getSourceAddress(selectedEl) });
     }
     originalContent = null;
+    originalContentRaw = null;
     // Fully deselect so the next click on the same element re-selects cleanly
     deselectElement();
     notifyParent({ type: 'vx-editor:deselect' });
@@ -627,7 +645,9 @@
     if (!selectedEl || !isEditing) return;
     isEditing = false;
     stopSelectionMonitor();
-    selectedEl.innerHTML = originalContent;
+    // Restore the RAW innerHTML (with data-vx-* attrs) so the DOM
+    // retains its instrumentation for subsequent interactions.
+    if (originalContentRaw) selectedEl.innerHTML = originalContentRaw;
     selectedEl.contentEditable = 'false';
     selectedEl.removeAttribute('contenteditable');
     selectedEl.style.outline = ''; selectedEl.style.outlineOffset = '';
@@ -635,6 +655,7 @@
     notifyParent({ type: 'vx-editor:editing-ended' });
     document.body.style.cursor = 'crosshair';  // Restore selection cursor
     originalContent = null;
+    originalContentRaw = null;
     // Fully deselect so the next click on the same element re-selects cleanly
     deselectElement();
     notifyParent({ type: 'vx-editor:deselect' });
@@ -803,6 +824,9 @@
       selectedEl.style.opacity = sourceEditSavedStyles.opacity;
       selectedEl.style.filter = sourceEditSavedStyles.filter;
       selectedEl.style.pointerEvents = sourceEditSavedStyles.pointerEvents;
+      selectedEl.style.transition = '';
+      selectedEl.style.animation = '';
+      selectedEl.classList.remove('vx-saving-pulse-active');
     }
     sourceEditSavedStyles = null;
 
@@ -891,6 +915,22 @@
       return;
     }
 
+    // Determine if the selection is inside a link, so we can pass its state
+    let linkNode = range.commonAncestorContainer;
+    if (linkNode.nodeType === Node.TEXT_NODE) linkNode = linkNode.parentElement;
+    let linkHref = null;
+    let linkTarget = null;
+    let linkClassName = null;
+    while (linkNode && linkNode !== selectedEl) {
+      if (linkNode.tagName === 'A') {
+        linkHref = linkNode.getAttribute('href');
+        linkTarget = linkNode.getAttribute('target');
+        linkClassName = linkNode.getAttribute('class');
+        break;
+      }
+      linkNode = linkNode.parentElement;
+    }
+
     // Get current formatting state
     const rect = range.getBoundingClientRect();
     notifyParent({
@@ -899,6 +939,8 @@
       text: text.substring(0, 100),
       rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
       elementRect,
+      link: linkHref !== null ? { href: linkHref, target: linkTarget, className: linkClassName || '' } : null,
+      linkClasses: discoverLinkClasses(),
       formatting: {
         bold: document.queryCommandState('bold'),
         italic: document.queryCommandState('italic'),
@@ -947,7 +989,35 @@
         document.execCommand('strikeThrough', false);
         break;
       case 'insertLink':
-        if (value) {
+        if (value && value.url !== undefined) {
+          document.execCommand('createLink', false, value.url);
+          // Standard execCommand doesn't support target="_blank", so we manually
+          // find the anchor(s) in the current selection range to apply it.
+          const sel = window.getSelection();
+          if (sel && sel.rangeCount > 0) {
+            let container = sel.getRangeAt(0).commonAncestorContainer;
+            if (container.nodeType === Node.TEXT_NODE) container = container.parentElement;
+            
+            let anchors = [];
+            // If the container itself is the newly created A
+            if (container.tagName === 'A') anchors.push(container);
+            // Or if the selection spans over elements holding the A
+            else anchors = Array.from(container.querySelectorAll('A'));
+            
+            for (let a of anchors) {
+              if (a.getAttribute('href') === value.url) {
+                if (value.targetBlank) a.setAttribute('target', '_blank');
+                else a.removeAttribute('target');
+                // Apply CSS class from the Link Style dropdown
+                if (value.linkClass) a.setAttribute('class', value.linkClass);
+                else a.removeAttribute('class');
+                // Also enforce standard link properties
+                if (value.targetBlank && !a.hasAttribute('rel')) a.setAttribute('rel', 'noopener');
+              }
+            }
+          }
+        } else if (typeof value === 'string' && value) {
+          // Fallback for legacy prompt calls
           document.execCommand('createLink', false, value);
         } else {
           document.execCommand('unlink', false);
@@ -967,9 +1037,6 @@
         if (value) {
           document.execCommand('formatBlock', false, `<${value}>`);
         }
-        break;
-      case 'removeFormat':
-        document.execCommand('removeFormat', false);
         break;
     }
 
@@ -1060,16 +1127,48 @@
     if (!selectedEl) return;
     const link = selectedEl.tagName === 'A' ? selectedEl : selectedEl.closest('a');
     if (!link) return;
-    const oldHref = link.getAttribute('href') || '';
-    const oldText = link.textContent || '';
-    if (data.href !== undefined && data.href !== oldHref) {
-      notifyParent({ type: 'vx-editor:text-changed', filePath: getPageFilePath(), originalHTML: `href="${oldHref}"`, newHTML: `href="${data.href}"` });
-      link.setAttribute('href', data.href);
-    }
-    if (data.text !== undefined && data.text !== oldText) {
-      notifyParent({ type: 'vx-editor:text-changed', filePath: getPageFilePath(), originalHTML: oldText, newHTML: data.text });
+
+    // DOM-only mutations for visual preview.
+    // The parent saves directly to the source file — no text-changed events needed.
+    if (data.href !== undefined) link.setAttribute('href', data.href);
+    if (data.text !== undefined && data.text !== (link.textContent || '')) {
       link.textContent = data.text;
     }
+    if (data.target !== undefined) {
+      if (data.target) {
+        link.setAttribute('target', data.target);
+        link.setAttribute('rel', 'noopener');
+      } else {
+        link.removeAttribute('target');
+        link.removeAttribute('rel');
+      }
+    }
+    if (data.className !== undefined) {
+      const oldClass = link.getAttribute('class') || '';
+      if (data.className !== oldClass) {
+        if (data.className) link.setAttribute('class', data.className);
+        else link.removeAttribute('class');
+      }
+    }
+
+    // Refresh the selection highlight to match the element's new dimensions
+    updateSelectionHighlight(selectedEl);
+  }
+
+  /**
+   * Discover CSS classes used by <a> elements on the current page.
+   * Returns a sorted, deduplicated array of meaningful class names,
+   * filtered to exclude layout/spacing utilities (Tailwind noise).
+   */
+  function discoverLinkClasses() {
+    const classSet = new Set();
+    const NOISE = /^(flex|grid|block|inline-|relative|absolute|fixed|sticky|hidden|overflow|min-|max-|w-|h-|p[xytblr]?-|m[xytblr]?-|gap-|space-|col-|row-|items-|justify-|self-|order-|z-|top-|right-|bottom-|left-|translate|rotate|scale|transform|transition|duration|ease|delay|animate|sr-|group|peer|dark:|hover:|focus:|active:|md:|lg:|xl:|sm:)/;
+    document.querySelectorAll('a[class]').forEach(a => {
+      a.classList.forEach(cls => {
+        if (!NOISE.test(cls) && cls.length > 1) classSet.add(cls);
+      });
+    });
+    return Array.from(classSet).sort();
   }
 
   // ═══════════════════════════════════════════
@@ -1154,6 +1253,29 @@
     };
   }
 
+  /**
+   * Can this element be safely inline-edited with contentEditable?
+   *
+   * Allows inline-level children that contentEditable handles correctly:
+   *   a, em, strong, b, i, u, s, span, br, sub, sup, small, mark, code,
+   *   abbr, cite, dfn, kbd, samp, var, time, q, wbr, del, ins
+   *
+   * Blocks block-level children (div, section, ul, ol, p, etc.) where
+   * contentEditable rewrites element boundaries unpredictably.
+   */
+  const INLINE_SAFE = new Set([
+    'A','ABBR','B','BDI','BDO','BR','CITE','CODE','DATA','DEL','DFN',
+    'EM','I','INS','KBD','MARK','Q','S','SAMP','SMALL','SPAN','STRONG',
+    'SUB','SUP','TIME','U','VAR','WBR',
+  ]);
+
+  function isPlainTextElement(el) {
+    for (let i = 0; i < el.children.length; i++) {
+      if (!INLINE_SAFE.has(el.children[i].tagName)) return false;
+    }
+    return true;
+  }
+
   function notifyParent(data) {
     try { window.parent.postMessage(data, '*'); } catch {}
   }
@@ -1196,6 +1318,39 @@
         if (h) h.classList.remove('is-loading');
         break;
       }
+      case 'vx-editor:source-edit-saving': {
+        if (selectedEl) {
+          selectedEl.style.transition = 'opacity 0.2s ease, filter 0.2s ease';
+          selectedEl.style.opacity = '0.55';
+          selectedEl.style.filter = 'grayscale(0)';
+          // Add pulse animation keyframes dynamically if not present
+          if (!document.getElementById('vx-saving-pulse')) {
+            const style = document.createElement('style');
+            style.id = 'vx-saving-pulse';
+            style.textContent = `
+              @keyframes vx-pulse-saving {
+                0% { opacity: 0.45; }
+                50% { opacity: 0.65; }
+                100% { opacity: 0.45; }
+              }
+              .vx-saving-pulse-active {
+                animation: vx-pulse-saving 1.5s infinite ease-in-out !important;
+              }
+            `;
+            document.head.appendChild(style);
+          }
+          selectedEl.classList.add('vx-saving-pulse-active');
+        }
+        const h = document.querySelector('.vx-source-edit-hatch');
+        if (h) {
+          h.classList.add('is-loading');
+          h.style.border = '1.5px solid rgba(59,130,246,0.6)';
+          h.style.background = `repeating-linear-gradient(
+            -45deg, transparent, transparent 6px, rgba(59,130,246,0.12) 6px, rgba(59,130,246,0.12) 7px
+          )`;
+        }
+        break;
+      }
       case 'vx-editor:end-source-edit': endSourceEdit(e.data); break;
       case 'vx-editor:swap-image': swapImage(e.data.src); break;
       case 'vx-editor:preview-class': previewClass(e.data); break;
@@ -1208,6 +1363,9 @@
       case 'vx-editor:update-ai-status': updateAIOverlayStatus(e.data.status); break;
       case 'vx-editor:rebuild-section-dividers': rebuildSectionDividers(); break;
       case 'vx-editor:scroll-to-section': scrollToSection(e.data.sectionIndex); break;
+      case 'vx-editor:refresh-highlight':
+        if (selectedEl) updateSelectionHighlight(selectedEl);
+        break;
     }
   });
 

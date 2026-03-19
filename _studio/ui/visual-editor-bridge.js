@@ -630,14 +630,22 @@
     selectedEl.removeEventListener('keydown', onEditKeydown);
     notifyParent({ type: 'vx-editor:editing-ended' });
     document.body.style.cursor = 'crosshair';  // Restore selection cursor
+
     if (newContent !== originalContent) {
+      // Content changed — show saving state and wait for disk confirmation.
+      // Keep selectedEl alive so we can clear the state when the save completes.
+      showTextSavingState(selectedEl);
       notifyParent({ type: 'vx-editor:text-changed', filePath: getPageFilePath(), originalHTML: originalContent, newHTML: newContent, sourceAddress: getSourceAddress(selectedEl) });
+      originalContent = null;
+      originalContentRaw = null;
+      // Don't deselect yet — parent sends vx-editor:text-save-complete after save.
+    } else {
+      // No change — deselect immediately
+      originalContent = null;
+      originalContentRaw = null;
+      deselectElement();
+      notifyParent({ type: 'vx-editor:deselect' });
     }
-    originalContent = null;
-    originalContentRaw = null;
-    // Fully deselect so the next click on the same element re-selects cleanly
-    deselectElement();
-    notifyParent({ type: 'vx-editor:deselect' });
   }
 
   /** Cancel editing — revert to original content and exit edit mode. */
@@ -657,6 +665,110 @@
     originalContent = null;
     originalContentRaw = null;
     // Fully deselect so the next click on the same element re-selects cleanly
+    deselectElement();
+    notifyParent({ type: 'vx-editor:deselect' });
+  }
+
+  // ═══════════════════════════════════════════
+  //  Text Edit Saving State
+  // ═══════════════════════════════════════════
+
+  let textSaveSavedStyles = null; // snapshot of original inline styles during text save
+
+  /**
+   * Show a visual "saving" state on the element being saved.
+   * Same treatment as source edit saving: opacity pulse + animated hatch overlay.
+   * The element stays selected and non-interactive until the save completes.
+   */
+  function showTextSavingState(el) {
+    if (!el) return;
+
+    // Snapshot existing inline styles so we can restore them
+    textSaveSavedStyles = {
+      opacity: el.style.opacity,
+      filter: el.style.filter,
+      pointerEvents: el.style.pointerEvents,
+      transition: el.style.transition,
+    };
+
+    // Apply saving visual treatment — match source edit saving state
+    el.style.transition = 'opacity 0.2s ease, filter 0.2s ease';
+    el.style.opacity = '0.55';
+    el.style.filter = 'grayscale(0)';
+    el.style.pointerEvents = 'none';
+
+    // Add pulse animation (reuse keyframes if already injected by source edit)
+    if (!document.getElementById('vx-saving-pulse')) {
+      const style = document.createElement('style');
+      style.id = 'vx-saving-pulse';
+      style.textContent = `
+        @keyframes vx-pulse-saving {
+          0% { opacity: 0.45; }
+          50% { opacity: 0.65; }
+          100% { opacity: 0.45; }
+        }
+        .vx-saving-pulse-active {
+          animation: vx-pulse-saving 1.5s infinite ease-in-out !important;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    el.classList.add('vx-saving-pulse-active');
+
+    // Add hatch overlay with animated stripe slide
+    const rect = el.getBoundingClientRect();
+    if (!document.getElementById('vx-hatch-anim-style')) {
+      const style = document.createElement('style');
+      style.id = 'vx-hatch-anim-style';
+      style.textContent = `
+        @keyframes vx-hatch-slide {
+          from { background-position: 0 0; }
+          to   { background-position: 28px 28px; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    const hatch = document.createElement('div');
+    hatch.className = 'vx-text-save-hatch';
+    hatch.style.cssText = `
+      position: absolute;
+      left: ${rect.left + window.scrollX}px;
+      top: ${rect.top + window.scrollY}px;
+      width: ${rect.width}px;
+      height: ${rect.height}px;
+      pointer-events: none;
+      z-index: 99997;
+      border: 1.5px solid rgba(59,130,246,0.6);
+      border-radius: 4px;
+      background: repeating-linear-gradient(
+        -45deg, transparent, transparent 6px, rgba(59,130,246,0.12) 6px, rgba(59,130,246,0.12) 7px
+      );
+      animation: vx-hatch-slide 0.8s linear infinite;
+      background-size: 28px 28px;
+    `;
+    document.body.appendChild(hatch);
+    hideSelectionHighlight();
+  }
+
+  /**
+   * Clear the text edit saving state and deselect the element.
+   * Called when the parent confirms the save completed (success or failure).
+   */
+  function clearTextSavingState() {
+    if (selectedEl && textSaveSavedStyles) {
+      selectedEl.style.opacity = textSaveSavedStyles.opacity;
+      selectedEl.style.filter = textSaveSavedStyles.filter;
+      selectedEl.style.pointerEvents = textSaveSavedStyles.pointerEvents;
+      selectedEl.style.transition = textSaveSavedStyles.transition;
+      selectedEl.classList.remove('vx-saving-pulse-active');
+    }
+    textSaveSavedStyles = null;
+
+    // Remove hatch overlay
+    const hatch = document.querySelector('.vx-text-save-hatch');
+    if (hatch) hatch.remove();
+
+    // Deselect
     deselectElement();
     notifyParent({ type: 'vx-editor:deselect' });
   }
@@ -1048,20 +1160,16 @@
   //  Image Swapping
   // ═══════════════════════════════════════════
 
+  /**
+   * Apply an image src swap to the live DOM.
+   * This is a pure DOM mutation — the parent frame handles persistence
+   * pessimistically and only sends this message after a successful file write.
+   */
   function swapImage(newSrc) {
     if (!selectedEl) return;
     const img = selectedEl.tagName === 'IMG' ? selectedEl : selectedEl.querySelector('img');
     if (!img) return;
-    const oldSrc = img.getAttribute('src');
     img.setAttribute('src', newSrc);
-    notifyParent({
-      type: 'vx-editor:image-changed',
-      filePath: getPageFilePath(),
-      oldSrc,
-      newSrc,
-      alt: img.getAttribute('alt') || '',
-      sourceAddress: getSourceAddress(img),
-    });
   }
 
   // ═══════════════════════════════════════════
@@ -1073,7 +1181,19 @@
     const outerHTML = selectedEl.outerHTML;
     const parent = selectedEl.parentElement;
     if (!parent) return;
-    notifyParent({ type: 'vx-editor:element-deleted', filePath: getPageFilePath(), outerHTML, sourceAddress: getSourceAddress(selectedEl) });
+
+    // Capture reinsertion context for deterministic undo
+    const siblingIndex = Array.from(parent.children).indexOf(selectedEl);
+    const parentAddress = getSourceAddress(parent);
+
+    notifyParent({
+      type: 'vx-editor:element-deleted',
+      filePath: getPageFilePath(),
+      outerHTML,
+      sourceAddress: getSourceAddress(selectedEl),
+      parentAddress,
+      siblingIndex,
+    });
     selectedEl.remove();
     selectedEl = null;
     originalClasses = null;
@@ -1365,6 +1485,17 @@
       case 'vx-editor:scroll-to-section': scrollToSection(e.data.sectionIndex); break;
       case 'vx-editor:refresh-highlight':
         if (selectedEl) updateSelectionHighlight(selectedEl);
+        break;
+      case 'vx-editor:text-save-complete':
+        // Parent confirmed text save completed — clear saving visual state and deselect
+        clearTextSavingState();
+        break;
+      case 'vx-editor:replay-op':
+        // VE-022: undo/redo replay — refresh the preview to reflect the change.
+        // The source file has already been updated by the parent; trigger a
+        // controlled preview refresh so the user sees the result promptly.
+        deselectElement();
+        window.location.reload();
         break;
     }
   });

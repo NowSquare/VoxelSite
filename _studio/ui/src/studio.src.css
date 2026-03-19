@@ -6635,7 +6635,7 @@ select.vs-input {
   border: 1px solid rgba(255,255,255,0.15);
 }
 .vx-rt-btn-cancel {
-  width: auto; padding: 0 8px;
+  width: auto; padding: 0 8px; gap: 4px;
   font: 500 11px/1 var(--font-sans);
   color: var(--vs-text-ghost);
 }

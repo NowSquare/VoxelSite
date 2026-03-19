@@ -21,6 +21,15 @@ import { api, apiStream } from './api.js';
 import { onBackdropClick } from './src/ui/modals.js';
 import { normalizeSourceAddress, isEditableAddress, getReadOnlyMessage, isGlobalAddress } from './visual-editor-addressing.js';
 import { openCodeEditorModal, ensureMonacoReady, monacoThemeForCurrentUi } from './src/views/editor.js';
+import {
+  OpType, opSetText, opSetClassList, opDeleteNode, opReplaceHtml, opSetAttribute,
+  opFallback, invertOp, validateOp, isSupportedOp, opLabel,
+  applyOp, locateByNodeKey,
+} from './visual-editor-ops.js';
+import {
+  pushOp, peekUndoEntry, commitUndo, peekRedoEntry, commitRedo,
+  canUndo, canRedo, clearHistory, invalidateFile, onHistoryChange,
+} from './visual-editor-history.js';
 
 // ═══════════════════════════════════════════
 //  State
@@ -31,7 +40,17 @@ let selectedElement = null;
 let selectedAddress = null; // VE-005: normalized source address for selected element
 let pendingChanges = [];
 let isSaving = false;
+
+// VE-014: Operation log — records every operation for instrumentation.
+// Capped at 200 entries to avoid unbounded memory growth.
+const _opLog = [];
+const OP_LOG_MAX = 200;
 let visualEditorInitialized = false;
+
+// VE-022: Counter to suppress history clear during controlled undo/redo replay.
+// Incremented by 2 before sending replay-op (one for iframe load, one for bridge-ready).
+// Each event decrements by 1. When >0, clearHistory() is skipped.
+let _historyReplayInFlight = 0;
 
 // ═══════════════════════════════════════════
 //  Tailwind Data
@@ -163,12 +182,41 @@ export function initVisualEditor() {
     }
   });
 
+  // VE-021: ⌘Z / Ctrl+Z → Undo, ⌘⇧Z / Ctrl+⇧Z → Redo
+  document.addEventListener('keydown', (e) => {
+    if (!editorActive) return;
+    if (!(e.metaKey || e.ctrlKey) || e.key !== 'z') return;
+
+    // Don't hijack undo/redo in form controls, contentEditable, or Monaco
+    const el = document.activeElement;
+    if (el) {
+      const tag = el.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (el.isContentEditable) return;
+      if (el.closest('.vs-modal, .vs-code-editor, .monaco-editor')) return;
+    }
+
+    e.preventDefault();
+    if (e.shiftKey) {
+      handleRedo();
+    } else {
+      handleUndo();
+    }
+  });
+
   // Safety net: if the iframe navigates while editing, cancel editing
   const iframe = document.getElementById('preview-iframe');
   if (iframe) {
     iframe.addEventListener('load', () => {
       if (richTextActive) {
         onEditingEnded();
+      }
+      // VE-023: Invalidate history on preview reload — unless this is a controlled
+      // undo/redo replay (flag set by handleUndo/handleRedo before sending replay-op)
+      if (_historyReplayInFlight > 0) {
+        _historyReplayInFlight--;
+      } else {
+        clearHistory('preview iframe reloaded');
       }
       // Re-send editor state after iframe reload (fallback for bridge-ready race)
       if (editorActive) {
@@ -195,12 +243,29 @@ function handlePreviewMessage(e) {
       break;
     case 'vx-editor:text-changed':
       queueTextChange(e.data);
+      // Text edits from explicit Apply — save immediately (no debounce).
+      // Class changes from the style panel use changeKind 'class' and
+      // don't show per-element saving state, so they keep the debounce.
+      if (!e.data.changeKind) {
+        clearTimeout(queueTextChange._timer);
+        (async () => {
+          // If another save is in flight, wait for it to finish first.
+          // Its finally-drain will pick up our queued change automatically.
+          while (isSaving) {
+            await new Promise(r => setTimeout(r, 50));
+          }
+          // Save our change (may be no-op if the drain already handled it).
+          // Enforce a minimum 400ms visible duration for the saving animation.
+          await Promise.all([
+            saveAllPending(),
+            new Promise(r => setTimeout(r, 400))
+          ]);
+          sendToPreview({ type: 'vx-editor:text-save-complete' });
+        })();
+      }
       break;
     case 'vx-editor:source-edit-changed':
       saveSourceEdit(e.data);
-      break;
-    case 'vx-editor:image-changed':
-      saveImageChange(e.data);
       break;
     case 'vx-editor:element-deleted':
       queueDeletion(e.data);
@@ -239,6 +304,12 @@ function handlePreviewMessage(e) {
       break;
     case 'vx-editor:bridge-ready':
       // Bridge just initialized (after iframe reload). Re-send editor state.
+      // VE-023: Clear history — unless this is a controlled undo/redo replay
+      if (_historyReplayInFlight > 0) {
+        _historyReplayInFlight--;
+      } else {
+        clearHistory('bridge re-initialized');
+      }
       if (editorActive) {
         sendToPreview({ type: 'vx-editor:toggle', active: true });
       }
@@ -1273,6 +1344,10 @@ async function applyInlineSourceEdit() {
   setTimeout(() => container.remove(), 200);
   inlineSourceEditor = null;
 
+  // VE-011: Produce a semantic replace_html operation
+  const op = opReplaceHtml(selectedAddress, originalHTML, newHTML, sourceFile);
+  logOp(op, 'created');
+
   // ── Transition element to saving state ──
   // Bridge still has the dim/hatch from startSourceEdit().
   // Switch to animated saving state (pulse + stronger hatch).
@@ -1285,6 +1360,9 @@ async function applyInlineSourceEdit() {
     saveSourceEdit({ filePath: sourceFile, originalHTML, newHTML }),
     new Promise(resolve => setTimeout(resolve, 500))
   ]);
+
+  // VE-014: Log save outcome
+  logOp(op, saved ? 'persisted' : 'failed');
 
   // ── Tell bridge to finalize ──
   if (saved) {
@@ -2358,6 +2436,11 @@ async function applyAndCompile(elementData) {
   const additions = [...newSet].filter(c => !origSet.has(c));
   const removals = [...origSet].filter(c => !newSet.has(c));
 
+  // VE-012: Produce a semantic set_class_list operation
+  const address = normalizeSourceAddress(elementData.sourceAddress || selectedAddress);
+  const op = opSetClassList(address, originalClassString, newClassStr, additions, removals, elementData.filePath);
+  logOp(op, 'created');
+
   // Queue class change for save
   pendingChanges.push({
     type: 'class-change',
@@ -2367,6 +2450,8 @@ async function applyAndCompile(elementData) {
     additions,
     removals,
     timestamp: Date.now(),
+    // VE-012: attach the semantic operation
+    _op: op,
   });
 
   stylePanelDirty = false;
@@ -3070,8 +3155,27 @@ async function loadAssetImages(modal) {
       return `<button class="vx-img-item" data-path="${img.path}"><img src="${thumbSrc}" alt="" loading="lazy"><span class="vx-img-name">${(img.filename || img.path).split('/').pop()}</span></button>`;
     }).join('');
     grid.querySelectorAll('.vx-img-item').forEach(item => {
-      item.addEventListener('click', () => {
-        sendToPreview({ type: 'vx-editor:swap-image', src: item.dataset.path });
+      item.addEventListener('click', async () => {
+        const newSrc = item.dataset.path;
+        const oldSrc = selectedElement?.src || '';
+        // Prefer the real source file from the address, not the preview page path
+        const fp = selectedAddress?.sourceFile || selectedElement?.filePath || getCurrentPreviewPath();
+
+        // Pessimistic save: persist to file FIRST, update preview only on success
+        const saved = await saveImageChange({
+          filePath: fp,
+          oldSrc,
+          newSrc,
+          alt: selectedElement?.outerHTML?.match(/alt="([^"]*)"/)?.[1] || '',
+          sourceAddress: selectedAddress,
+        });
+
+        if (saved) {
+          // File write succeeded — now update the live preview
+          sendToPreview({ type: 'vx-editor:swap-image', src: newSrc });
+        }
+        // If save failed, preview stays at last durable state
+
         modal.classList.remove('vx-modal-visible');
         setTimeout(() => modal.remove(), 200);
       });
@@ -3095,7 +3199,7 @@ function openLinkEditor(elementData) {
   const curTarget = elementData.target || '';
   const curClass = elementData.linkClass || '';
   const discoveredClasses = elementData.linkClasses || [];
-  const filePath = elementData.filePath || getCurrentPreviewPath();
+  const filePath = selectedAddress?.sourceFile || elementData.filePath || getCurrentPreviewPath();
 
   // Build class options from discovered page classes
   let classOptionsHtml = `<option value=""${!curClass ? ' selected' : ''}>No class</option>`;
@@ -3157,19 +3261,35 @@ function openLinkEditor(elementData) {
     const styleEl = document.getElementById('vx-link-style');
     const newClass = styleEl ? styleEl.value : '';
 
-    // Tell bridge to update the DOM (visual preview)
-    sendToPreview({ type: 'vx-editor:update-link', href: newHref, text: newText, target: newTarget, className: newClass });
+    // Collect semantic operations for all changed attributes
+    const address = selectedAddress;
+    const linkOps = [];
+    if (newHref !== curHref) {
+      linkOps.push(opSetAttribute(address, 'href', curHref, newHref, filePath));
+    }
+    if (newTarget !== curTarget) {
+      linkOps.push(opSetAttribute(address, 'target', curTarget || null, newTarget || null, filePath));
+    }
+    if (newClass !== curClass) {
+      linkOps.push(opSetAttribute(address, 'class', curClass || null, newClass || null, filePath));
+    }
+    if (newText !== curText) {
+      linkOps.push(opSetText(address, curText, newText, filePath));
+    }
+    linkOps.forEach(op => logOp(op, 'created'));
 
-    // Direct save to source file — don't rely on serialize-from-DOM
+    // Pessimistic save: persist to source FIRST, update preview only on success
     const saved = await saveLinkToSource(filePath, {
       oldHref: curHref, oldText: curText, oldTarget: curTarget, oldClass: curClass,
       newHref, newText, newTarget, newClass,
-    });
+    }, linkOps);
 
     if (saved) {
-      // Refresh selection highlight after a short delay (let DOM settle)
+      // File write succeeded — now update the live preview
+      sendToPreview({ type: 'vx-editor:update-link', href: newHref, text: newText, target: newTarget, className: newClass });
       setTimeout(() => sendToPreview({ type: 'vx-editor:refresh-highlight' }), 100);
     }
+    // If save failed, preview stays at last durable state — no optimistic mutation
 
     close();
   });
@@ -3178,133 +3298,164 @@ function openLinkEditor(elementData) {
 }
 
 /**
- * Save link attribute changes directly to the source file.
- * Reads the file, finds the <a> tag by its original href, replaces
- * attributes at the source level, and writes immediately.
+ * Try to find and replace a link in the given file content.
+ *
+ * Pure search-and-replace: does NOT read or write files, does NOT recurse.
+ * Returns:
+ *   - modified content string on unique match + success
+ *   - 'ambiguous' if multiple <a> tags match the same href (refuse to edit)
+ *   - null on no match
  */
-async function saveLinkToSource(filePath, { oldHref, oldText, oldTarget, oldClass, newHref, newText, newTarget, newClass }) {
+function tryLinkReplaceInContent(content, { oldHref, oldText, oldTarget, oldClass, newHref, newText, newTarget, newClass }) {
+  const escRx = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const hrefPattern = escRx(oldHref);
+
+  // Match <a with href="oldHref" (anywhere in attributes), then content, then </a>
+  const tagRegex = new RegExp(
+    `(<a\\s[^>]*?href=["']${hrefPattern}["'][^>]*>)([\\s\\S]*?)(</a>)`,
+    'gi'  // global flag to count all matches
+  );
+
+  // Count matches — refuse if ambiguous
+  const allMatches = [...content.matchAll(tagRegex)];
+  if (allMatches.length === 0) return null;
+  if (allMatches.length > 1) return 'ambiguous';
+
+  const match = allMatches[0];
+  let openingTag = match[1];
+  let innerContent = match[2];
+  const closingTag = match[3];
+
+  // --- Apply attribute changes to the opening tag ---
+  // href
+  if (newHref !== oldHref) {
+    openingTag = openingTag.replace(
+      new RegExp(`href=["']${escRx(oldHref)}["']`),
+      `href="${newHref}"`
+    );
+  }
+
+  // target
+  if (newTarget !== oldTarget) {
+    if (newTarget && openingTag.includes('target=')) {
+      openingTag = openingTag.replace(/target=["'][^"']*["']/, `target="${newTarget}"`);
+    } else if (newTarget && !openingTag.includes('target=')) {
+      openingTag = openingTag.replace(/>$/, ` target="${newTarget}" rel="noopener">`);
+    } else if (!newTarget && openingTag.includes('target=')) {
+      openingTag = openingTag.replace(/\s*target=["'][^"']*["']/, '');
+      openingTag = openingTag.replace(/\s*rel=["'][^"']*["']/, '');
+    }
+  }
+
+  // class
+  if (newClass !== oldClass) {
+    if (newClass && openingTag.includes('class=')) {
+      openingTag = openingTag.replace(/class=["'][^"']*["']/, `class="${newClass}"`);
+    } else if (newClass && !openingTag.includes('class=')) {
+      openingTag = openingTag.replace(/>$/, ` class="${newClass}">`);
+    } else if (!newClass && openingTag.includes('class=')) {
+      openingTag = openingTag.replace(/\s*class=["'][^"']*["']/, '');
+    }
+  }
+
+  // text content — only replace if it's simple text (no nested HTML)
+  if (newText !== oldText && !innerContent.includes('<')) {
+    innerContent = newText;
+  }
+
+  const newElement = openingTag + innerContent + closingTag;
+  const newContent = content.replace(match[0], newElement);
+
+  // If nothing actually changed after all replacements, treat as a no-op success
+  return newContent !== content ? newContent : content;
+}
+
+/**
+ * Save link attribute changes to the source file.
+ *
+ * Searches the main file first, then iterates partials — flat, no recursion.
+ * Accepts an optional `ops` array for lifecycle logging.
+ */
+async function saveLinkToSource(filePath, linkData, ops) {
   const fp = filePath || getCurrentPreviewPath();
 
   try {
+    // --- Strategy 1: Try the main file ---
     const readResult = await api.get(`/files/content?path=${encodeURIComponent(fp)}`);
     if (!readResult.ok) {
+      if (ops) ops.forEach(op => logOp(op, 'failed', { reason: 'cannot read file' }));
       showSaveIndicator('Cannot read source file', true);
       return false;
     }
 
-    let content = readResult.data.content;
+    const mainContent = readResult.data.content;
+    const modified = tryLinkReplaceInContent(mainContent, linkData);
 
-    // Build a regex to find the specific <a> tag by its old href.
-    // Match the full <a ...>text</a> element.
-    const escRx = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const hrefPattern = escRx(oldHref);
-
-    // Match <a with href="oldHref" (anywhere in attributes), then content, then </a>
-    // This is flexible about attribute order and extra attributes
-    const tagRegex = new RegExp(
-      `(<a\\s[^>]*?href=["']${hrefPattern}["'][^>]*>)([\\s\\S]*?)(</a>)`,
-      'i'
-    );
-
-    const match = content.match(tagRegex);
-    if (!match) {
-      // Try partials
-      const saved = await saveLinkInPartials(fp, content, { oldHref, oldText, oldTarget, oldClass, newHref, newText, newTarget, newClass });
-      if (!saved) showSaveIndicator('Save failed — link not found in source', true);
-      return saved;
-    }
-
-    let openingTag = match[1];
-    let innerContent = match[2];
-    const closingTag = match[3];
-
-    // --- Apply attribute changes to the opening tag ---
-    // href
-    if (newHref !== oldHref) {
-      openingTag = openingTag.replace(
-        new RegExp(`href=["']${escRx(oldHref)}["']`),
-        `href="${newHref}"`
-      );
-    }
-
-    // target
-    if (newTarget !== oldTarget) {
-      if (newTarget && openingTag.includes('target=')) {
-        // Update existing target
-        openingTag = openingTag.replace(/target=["'][^"']*["']/, `target="${newTarget}"`);
-      } else if (newTarget && !openingTag.includes('target=')) {
-        // Add target before >
-        openingTag = openingTag.replace(/>$/, ` target="${newTarget}" rel="noopener">`);
-      } else if (!newTarget && openingTag.includes('target=')) {
-        // Remove target and rel
-        openingTag = openingTag.replace(/\s*target=["'][^"']*["']/, '');
-        openingTag = openingTag.replace(/\s*rel=["'][^"']*["']/, '');
-      }
-    }
-
-    // class
-    if (newClass !== oldClass) {
-      if (newClass && openingTag.includes('class=')) {
-        // Update existing class
-        openingTag = openingTag.replace(/class=["'][^"']*["']/, `class="${newClass}"`);
-      } else if (newClass && !openingTag.includes('class=')) {
-        // Add class before >
-        openingTag = openingTag.replace(/>$/, ` class="${newClass}">`);
-      } else if (!newClass && openingTag.includes('class=')) {
-        // Remove class
-        openingTag = openingTag.replace(/\s*class=["'][^"']*["']/, '');
-      }
-    }
-
-    // text content — only replace if it's simple text (no nested HTML)
-    if (newText !== oldText && !innerContent.includes('<')) {
-      innerContent = newText;
-    }
-
-    const newElement = openingTag + innerContent + closingTag;
-    const newContent = content.replace(match[0], newElement);
-
-    if (newContent === content) {
-      // Nothing changed
-      return true;
-    }
-
-    const saveResult = await api.put('/files/content', { path: fp, content: newContent });
-    if (saveResult.ok) {
-      const shortName = fp.split('/').pop();
-      showSaveIndicator(`Saved → ${shortName}`);
-      return true;
-    } else {
-      showSaveIndicator('Save failed', true);
+    // Ambiguous match — refuse to write (multiple <a> tags with the same href)
+    if (modified === 'ambiguous') {
+      if (ops) ops.forEach(op => logOp(op, 'failed', { reason: 'ambiguous match — multiple links share this href' }));
+      showSaveIndicator('Save failed — link appears multiple times. Edit in the Code Editor instead.', true);
       return false;
     }
+
+    if (modified !== null) {
+      const saveResult = await api.put('/files/content', { path: fp, content: modified });
+      if (saveResult.ok) {
+        if (ops) ops.forEach(op => logOp(op, 'persisted', { strategy: 'contentMatch' }));
+        showSaveIndicator(`Saved → ${fp.split('/').pop()}`);
+        return true;
+      } else {
+        if (ops) ops.forEach(op => logOp(op, 'failed', { reason: 'API write failed' }));
+        showSaveIndicator('Save failed', true);
+        return false;
+      }
+    }
+
+    // --- Strategy 2: Search partials (flat iteration, no recursion) ---
+    const listResult = await api.get('/files');
+    if (listResult.ok) {
+      const candidates = (listResult.data.files || [])
+        .filter(f => f.path.endsWith('.php') && f.path !== fp);
+
+      for (const file of candidates) {
+        const partialRead = await api.get(`/files/content?path=${encodeURIComponent(file.path)}`);
+        if (!partialRead.ok || !partialRead.data?.content) continue;
+
+        const partialModified = tryLinkReplaceInContent(partialRead.data.content, linkData);
+
+        // Ambiguous — stop (same discipline as main file)
+        if (partialModified === 'ambiguous') {
+          if (ops) ops.forEach(op => logOp(op, 'failed', { reason: 'ambiguous match in partial', file: file.path }));
+          showSaveIndicator('Save failed — link appears multiple times. Edit in the Code Editor instead.', true);
+          return false;
+        }
+
+        if (partialModified !== null) {
+          const saveResult = await api.put('/files/content', { path: file.path, content: partialModified });
+          if (saveResult.ok) {
+            if (ops) ops.forEach(op => logOp(op, 'persisted', { strategy: 'partialSearch' }));
+            showSaveIndicator(`Saved → ${file.path.split('/').pop()}`);
+            return true;
+          } else {
+            // Write failed — terminal, don't keep searching (Fix 2: accurate error)
+            if (ops) ops.forEach(op => logOp(op, 'failed', { reason: 'API write failed in partial', file: file.path }));
+            showSaveIndicator('Save failed', true);
+            return false;
+          }
+        }
+      }
+    }
+
+    // --- Not found anywhere ---
+    if (ops) ops.forEach(op => logOp(op, 'failed', { reason: 'link not found in source' }));
+    showSaveIndicator('Save failed — link not found in source', true);
+    return false;
   } catch (err) {
     console.error('[VX] saveLinkToSource error:', err);
+    if (ops) ops.forEach(op => logOp(op, 'failed', { reason: 'exception', error: err.message }));
     showSaveIndicator('Save failed — unexpected error', true);
     return false;
   }
-}
-
-/**
- * Search partial files for the link when not found in the main file.
- */
-async function saveLinkInPartials(mainFile, mainContent, linkData) {
-  try {
-    const listResult = await api.get('/files');
-    if (!listResult.ok) return false;
-
-    const candidates = (listResult.data.files || [])
-      .filter(f => f.path.endsWith('.php') && f.path !== mainFile);
-
-    for (const file of candidates) {
-      const readResult = await api.get(`/files/content?path=${encodeURIComponent(file.path)}`);
-      if (!readResult.ok || !readResult.data?.content) continue;
-
-      const saved = await saveLinkToSource(file.path, linkData);
-      if (saved) return true;
-    }
-  } catch {}
-  return false;
 }
 
 // ═══════════════════════════════════════════
@@ -3320,16 +3471,22 @@ async function saveLinkInPartials(mainFile, mainContent, linkData) {
  *      (handles PHP-expression sources like `src="<?= $dish['image'] ?>"`)
  */
 async function saveImageChange(data) {
-  if (window.demoGuard?.()) return;
+  if (window.demoGuard?.()) return false;
   const { filePath, oldSrc, newSrc, alt } = data;
   const fp = filePath || getCurrentPreviewPath();
+
+  // Produce a semantic set_attribute operation for src
+  const address = normalizeSourceAddress(data.sourceAddress || selectedAddress);
+  const op = opSetAttribute(address, 'src', oldSrc, newSrc, fp);
+  logOp(op, 'created');
 
   try {
     const readResult = await api.get(`/files/content?path=${encodeURIComponent(fp)}`);
     if (!readResult.ok) {
       console.warn('[VX] Cannot read file for image save:', fp);
+      logOp(op, 'failed', { reason: 'cannot read file' });
       showSaveIndicator('Save failed', true);
-      return;
+      return false;
     }
 
     let content = readResult.data.content;
@@ -3337,7 +3494,14 @@ async function saveImageChange(data) {
 
     // Strategy 1a: Direct src attribute match (works for static <img src="...">)
     const literal = `src="${oldSrc}"`;
-    if (content.includes(literal)) {
+    const literalCount = content.split(literal).length - 1;
+    if (literalCount > 1) {
+      // Ambiguous — multiple elements share this src. Refuse to write.
+      logOp(op, 'failed', { reason: 'ambiguous match — multiple elements share this src' });
+      showSaveIndicator('Save failed — image source appears multiple times. Edit in the Code Editor instead.', true);
+      return false;
+    }
+    if (literalCount === 1) {
       content = content.replace(literal, `src="${newSrc}"`);
       modified = true;
     }
@@ -3345,8 +3509,13 @@ async function saveImageChange(data) {
     // Strategy 1b: Quoted path value match (handles PHP arrays like 'image' => '/path')
     // Also catches background-image: url('...'), data attributes, etc.
     if (!modified && content.includes(oldSrc)) {
-      // Replace the path itself regardless of surrounding context (src=, url(), =>, etc.)
-      // Only replace the first occurrence to avoid unintended side effects
+      const pathCount = content.split(oldSrc).length - 1;
+      if (pathCount > 1) {
+        // Ambiguous — the path appears in multiple contexts. Refuse to write.
+        logOp(op, 'failed', { reason: 'ambiguous match — image path appears multiple times in source' });
+        showSaveIndicator('Save failed — image path appears multiple times. Edit in the Code Editor instead.', true);
+        return false;
+      }
       content = content.replace(oldSrc, newSrc);
       modified = true;
     }
@@ -3355,6 +3524,11 @@ async function saveImageChange(data) {
     // (handles PHP-expression src like src="<?= $dish['image'] ?>")
     if (!modified && alt) {
       const altResult = replaceImgSrcByAlt(content, alt, newSrc);
+      if (altResult === 'ambiguous') {
+        logOp(op, 'failed', { reason: 'ambiguous alt-anchor match — multiple images share this alt text' });
+        showSaveIndicator('Save failed — multiple images share this alt text. Edit in the Code Editor instead.', true);
+        return false;
+      }
       if (altResult !== false) {
         content = altResult;
         modified = true;
@@ -3365,11 +3539,14 @@ async function saveImageChange(data) {
     if (modified) {
       const saveResult = await api.put('/files/content', { path: fp, content });
       if (saveResult.ok) {
+        logOp(op, 'persisted', { strategy: 'contentMatch' });
         showSaveIndicator(`Saved → ${fp.split('/').pop()}`);
+        return true;
       } else {
+        logOp(op, 'failed', { reason: 'API write failed' });
         showSaveIndicator('Save failed', true);
+        return false;
       }
-      return;
     }
 
     // Strategy 3: Search ALL other editable PHP files (partials, other pages)
@@ -3383,36 +3560,68 @@ async function saveImageChange(data) {
         if (!partialRead.ok || !partialRead.data.content) continue;
         let partialContent = partialRead.data.content;
 
-        // Try src attribute literal match
-        if (partialContent.includes(literal)) {
+        // Try src attribute literal match (with ambiguity check)
+        const partialLiteralCount = partialContent.split(literal).length - 1;
+        if (partialLiteralCount > 1) {
+          logOp(op, 'failed', { reason: 'ambiguous match in partial', file: file.path });
+          showSaveIndicator('Save failed — image source appears multiple times. Edit in the Code Editor instead.', true);
+          return false;
+        }
+        if (partialLiteralCount === 1) {
           partialContent = partialContent.replace(literal, `src="${newSrc}"`);
           const saveResult = await api.put('/files/content', { path: file.path, content: partialContent });
-          if (saveResult.ok) { showSaveIndicator(`Saved → ${file.path.split('/').pop()}`); return; }
+          if (saveResult.ok) { logOp(op, 'persisted', { strategy: 'partialSearch' }); showSaveIndicator(`Saved → ${file.path.split('/').pop()}`); return true; }
+          // Write failed — terminal
+          logOp(op, 'failed', { reason: 'API write failed in partial', file: file.path });
+          showSaveIndicator('Save failed', true);
+          return false;
         }
 
-        // Try quoted path value match
+        // Try quoted path value match (with ambiguity check)
         if (partialContent.includes(oldSrc)) {
+          const partialPathCount = partialContent.split(oldSrc).length - 1;
+          if (partialPathCount > 1) {
+            logOp(op, 'failed', { reason: 'ambiguous match in partial', file: file.path });
+            showSaveIndicator('Save failed — image path appears multiple times. Edit in the Code Editor instead.', true);
+            return false;
+          }
           partialContent = partialContent.replace(oldSrc, newSrc);
           const saveResult = await api.put('/files/content', { path: file.path, content: partialContent });
-          if (saveResult.ok) { showSaveIndicator(`Saved → ${file.path.split('/').pop()}`); return; }
+          if (saveResult.ok) { logOp(op, 'persisted', { strategy: 'partialSearch' }); showSaveIndicator(`Saved → ${file.path.split('/').pop()}`); return true; }
+          // Write failed — terminal
+          logOp(op, 'failed', { reason: 'API write failed in partial', file: file.path });
+          showSaveIndicator('Save failed', true);
+          return false;
         }
 
-        // Try alt-text anchored match
         if (alt) {
           const altResult = replaceImgSrcByAlt(partialContent, alt, newSrc);
+          if (altResult === 'ambiguous') {
+            logOp(op, 'failed', { reason: 'ambiguous alt-anchor match in partial', file: file.path });
+            showSaveIndicator('Save failed — multiple images share this alt text. Edit in the Code Editor instead.', true);
+            return false;
+          }
           if (altResult !== false) {
             const saveResult = await api.put('/files/content', { path: file.path, content: altResult });
-            if (saveResult.ok) { showSaveIndicator(`Saved → ${file.path.split('/').pop()}`); return; }
+            if (saveResult.ok) { logOp(op, 'persisted', { strategy: 'altAnchor' }); showSaveIndicator(`Saved → ${file.path.split('/').pop()}`); return true; }
+            // Write failed — terminal
+            logOp(op, 'failed', { reason: 'API write failed in partial', file: file.path });
+            showSaveIndicator('Save failed', true);
+            return false;
           }
         }
       }
     }
 
     console.warn('[VX] Image src not found in any source file. oldSrc:', oldSrc, 'alt:', alt);
+    logOp(op, 'failed', { reason: 'source not found' });
     showSaveIndicator('Save failed — source not found', true);
+    return false;
   } catch (err) {
     console.error('[VX] Image save error:', err);
+    logOp(op, 'failed', { reason: 'exception', error: err.message });
     showSaveIndicator('Save failed', true);
+    return false;
   }
 }
 
@@ -3420,36 +3629,53 @@ async function saveImageChange(data) {
  * Find an <img> tag by its alt text and replace its src attribute.
  * Uses pure string operations (no regex) to avoid catastrophic backtracking
  * when PHP tags (<?= ... ?>) are present inside img attributes.
- * Returns the modified content string, or false if no match found.
+ * Returns:
+ *   - modified content string on unique match
+ *   - 'ambiguous' if multiple <img> tags share this alt text
+ *   - false if no match found
  */
 function replaceImgSrcByAlt(content, alt, newSrc) {
   // Split by <img to isolate each img tag
   const parts = content.split('<img');
+
+  // First pass: count matching fragments
+  const matchingIndices = [];
   for (let i = 1; i < parts.length; i++) {
     const fragment = parts[i];
-    // Check if this <img fragment contains the alt text
-    if (!fragment.includes(`alt="${alt}"`) && !fragment.includes(`alt='${alt}'`)) continue;
-
-    // Find src= using indexOf (no regex)
-    const srcIdx = fragment.indexOf('src=');
-    if (srcIdx === -1) continue;
-
-    const quoteChar = fragment[srcIdx + 4]; // the " or ' after src=
-    if (quoteChar !== '"' && quoteChar !== "'") continue;
-
-    const valueStart = srcIdx + 5; // just after the opening quote
-    const valueEnd = fragment.indexOf(quoteChar, valueStart);
-    if (valueEnd === -1) continue;
-
-    // Replace the src value
-    parts[i] = fragment.substring(0, valueStart) + newSrc + fragment.substring(valueEnd);
-    return parts.join('<img');
+    if (fragment.includes(`alt="${alt}"`) || fragment.includes(`alt='${alt}'`)) {
+      // Verify it has a src= we can replace
+      const srcIdx = fragment.indexOf('src=');
+      if (srcIdx !== -1) {
+        const quoteChar = fragment[srcIdx + 4];
+        if ((quoteChar === '"' || quoteChar === "'") && fragment.indexOf(quoteChar, srcIdx + 5) !== -1) {
+          matchingIndices.push(i);
+        }
+      }
+    }
   }
-  return false;
+
+  if (matchingIndices.length === 0) return false;
+  if (matchingIndices.length > 1) return 'ambiguous';
+
+  // Unique match — apply the replacement
+  const idx = matchingIndices[0];
+  const fragment = parts[idx];
+  const srcIdx = fragment.indexOf('src=');
+  const quoteChar = fragment[srcIdx + 4];
+  const valueStart = srcIdx + 5;
+  const valueEnd = fragment.indexOf(quoteChar, valueStart);
+  parts[idx] = fragment.substring(0, valueStart) + newSrc + fragment.substring(valueEnd);
+  return parts.join('<img');
 }
 
 function queueTextChange(data) {
   if (window.demoGuard?.()) return;
+
+  // VE-011: Produce a semantic set_text operation
+  const address = normalizeSourceAddress(data.sourceAddress);
+  const op = opSetText(address, data.originalHTML, data.newHTML, data.filePath);
+  logOp(op, 'created');
+
   pendingChanges.push({
     type: 'text',
     filePath: data.filePath,
@@ -3457,6 +3683,8 @@ function queueTextChange(data) {
     newHTML: data.newHTML,
     sourceAddress: data.sourceAddress || null,
     timestamp: Date.now(),
+    // VE-011: attach the semantic operation
+    _op: op,
   });
   clearTimeout(queueTextChange._timer);
   queueTextChange._timer = setTimeout(() => saveAllPending(), 800);
@@ -3578,7 +3806,22 @@ async function attemptExactReplace(filePath, content, needle, replacement) {
 
 function queueDeletion(data) {
   if (window.demoGuard?.()) return;
-  pendingChanges.push({ type: 'delete', filePath: data.filePath, outerHTML: data.outerHTML, timestamp: Date.now() });
+
+  // Produce a semantic delete_node operation with reinsertion context
+  const address = normalizeSourceAddress(data.sourceAddress);
+  const parentAddress = data.parentAddress ? normalizeSourceAddress(data.parentAddress) : null;
+  const siblingIndex = typeof data.siblingIndex === 'number' ? data.siblingIndex : -1;
+  const op = opDeleteNode(address, data.outerHTML, data.filePath, parentAddress, siblingIndex);
+  logOp(op, 'created');
+
+  pendingChanges.push({
+    type: 'delete',
+    filePath: data.filePath,
+    outerHTML: data.outerHTML,
+    sourceAddress: data.sourceAddress || null,
+    timestamp: Date.now(),
+    _op: op,
+  });
   clearTimeout(queueDeletion._timer);
   queueDeletion._timer = setTimeout(() => saveAllPending(), 300);
 }
@@ -3641,10 +3884,13 @@ async function saveAllPending() {
   pendingChanges = [];
 
   try {
-    // Group changes by file
+    // Group changes by RESOLVED source file (prefer op address, then change filePath)
     const byFile = {};
     for (const change of changes) {
-      const fp = change.filePath || getCurrentPreviewPath();
+      const fp = change._op?.address?.sourceFile
+        || change.sourceAddress?.sourceFile
+        || change.filePath
+        || getCurrentPreviewPath();
       if (!byFile[fp]) byFile[fp] = [];
       byFile[fp].push(change);
     }
@@ -3662,14 +3908,33 @@ async function saveAllPending() {
 
         let content = readResult.data.content;
         let modified = false;
+        // Collect ops applied to this file — commit to log/history only after write success
+        const pendingOps = [];
 
         for (const change of fileChanges) {
+          // ═══════════════════════════════════════════
+          //  VE-013: Try op-based persistence FIRST
+          // ═══════════════════════════════════════════
+          if (change._op && change._op.type !== OpType.FALLBACK) {
+            const result = applyOp(change._op, content);
+            if (result.applied) {
+              content = result.content;
+              modified = true;
+              pendingOps.push({ op: change._op, strategy: result.strategy });
+              continue; // Success — skip legacy path entirely
+            }
+            // Op path failed — log the exact reason and try legacy
+            console.warn('[VX] applyOp failed:', result.reason, '— falling back to legacy for', change._op.type);
+            logOp(change._op, 'fallback', { fallbackReason: result.reason, via: 'applyOp' });
+          }
+
+          // ═══════════════════════════════════════════
+          //  Legacy fallback path
+          // ═══════════════════════════════════════════
           const needle = change.type === 'delete' ? change.outerHTML : change.originalHTML;
           if (!needle) continue;
 
-          // ── Strategy 1: nodeKey-based replacement (PREFERRED for text changes) ──
-          // The nodeKey precisely locates the element by index in the source file.
-          // No string matching → no false positives from ambiguous substrings.
+          // ── Legacy Strategy 1: nodeKey-based replacement ──
           if (change.sourceAddress?.nodeKey && change.type === 'text') {
             const sa = change.sourceAddress;
             const saFile = sa.sourceFile || filePath;
@@ -3688,7 +3953,6 @@ async function saveAllPending() {
               if (!isNaN(targetIndex)) {
                 const sourceElement = extractSourceElementByIndex(saContent, targetIndex);
                 if (sourceElement) {
-                  // Use extractOpeningTag to correctly handle > inside quoted attributes
                   const openTag = extractOpeningTag(saContent, saContent.indexOf(sourceElement));
                   if (openTag) {
                     const innerStart = openTag.length;
@@ -3697,17 +3961,26 @@ async function saveAllPending() {
                       const closeTag = sourceElement.substring(closeTagStart);
                       const newElement = openTag + change.newHTML + closeTag;
                       if (saFile !== filePath) {
+                        // Cross-file: immediate write — log at point of completion
                         const newFileContent = saContent.replace(sourceElement, newElement);
                         const saResult = await api.put('/files/content', { path: saFile, content: newFileContent });
                         if (saResult.ok) {
                           showSaveIndicator(`Saved → ${saFile.split('/').pop()}`);
                           if (saResult.data?.tailwindCompiled) anyTailwind = true;
                           nodeKeySaved = true;
+                          if (change._op) {
+                            logOp(change._op, 'persisted', { strategy: 'nodeKey', via: 'legacy' });
+                            pushOp(change._op, saFile);
+                          }
                         }
                       } else {
+                        // Same-file: defer log/history to after batched write
                         content = content.replace(sourceElement, newElement);
                         modified = true;
                         nodeKeySaved = true;
+                        if (change._op) {
+                          pendingOps.push({ op: change._op, strategy: 'nodeKey', via: 'legacy' });
+                        }
                       }
                     }
                   }
@@ -3715,37 +3988,71 @@ async function saveAllPending() {
               }
             }
 
-            if (nodeKeySaved) continue; // Success — skip to next change
+            if (nodeKeySaved) {
+              continue;
+            }
 
-            // nodeKey extraction failed — fall through to content.includes
-            console.warn('[VX] nodeKey extraction failed for', sa.nodeKey, '— trying content match');
+            console.warn('[VX] Legacy nodeKey extraction failed for', sa.nodeKey, '— trying content match');
+            if (change._op) logOp(change._op, 'fallback', { fallbackReason: 'legacy nodeKey extraction failed', nodeKey: sa.nodeKey });
           }
 
-          // ── Strategy 2: direct substring match ──
+          // ── Legacy Strategy 2: direct substring match ──
           if (content.includes(needle)) {
             content = change.type === 'delete'
               ? content.replace(needle, '')
               : content.replace(needle, change.newHTML);
             modified = true;
+            // Same-file: defer log/history to after batched write
+            if (change._op) {
+              pendingOps.push({ op: change._op, strategy: 'contentMatch', via: 'legacy' });
+            }
           } else if (change.type === 'class-change' && change.additions) {
-            // ── Strategy 3: Subset Match for class changes ──
+            // ── Legacy Strategy 3: Subset Match for class changes ──
             const runtimeClasses = new Set(originalClassesFromNeedle(needle));
             const subsetResult = applyClassDiffSubset(content, runtimeClasses, change.additions, change.removals);
             if (subsetResult) {
               content = subsetResult;
               modified = true;
+              // Same-file: defer log/history to after batched write
+              if (change._op) {
+                pendingOps.push({ op: change._op, strategy: 'subsetMatch', via: 'legacy' });
+              }
             } else {
-              const found = await findAndReplaceInPartials(filePath, change, partialSearchCache);
-              if (found) { anyTailwind = true; continue; }
-              console.warn('[VX] Not found in source:', needle.substring(0, 80));
-              showSaveIndicator('Save failed — source not found', true);
+              // Partial search: does its own immediate write
+              const partialResult = await findAndReplaceInPartials(filePath, change, partialSearchCache);
+              if (partialResult.status === 'saved') {
+                if (change._op) {
+                  logOp(change._op, 'persisted', { strategy: 'partialSearch', via: 'legacy', sourceFile: partialResult.path });
+                  pushOp(change._op, partialResult.path);
+                }
+                anyTailwind = true; continue;
+              }
+              if (partialResult.status === 'write_failed') {
+                if (change._op) logOp(change._op, 'failed', { reason: 'partial write failed', file: partialResult.path });
+              } else {
+                console.warn('[VX] Not found in source:', needle.substring(0, 80));
+                if (change._op) logOp(change._op, 'failed', { reason: 'source not found' });
+                showSaveIndicator('Save failed — source not found', true);
+              }
             }
           } else {
-            // ── Strategy 4: partial file search ──
-            const found = await findAndReplaceInPartials(filePath, change, partialSearchCache);
-            if (found) { anyTailwind = true; continue; }
-            console.warn('[VX] Not found in source:', needle.substring(0, 80));
-            showSaveIndicator('Save failed — source not found', true);
+            // ── Legacy Strategy 4: partial file search ──
+            // Does its own immediate write — log at point of completion
+            const partialResult = await findAndReplaceInPartials(filePath, change, partialSearchCache);
+            if (partialResult.status === 'saved') {
+              if (change._op) {
+                logOp(change._op, 'persisted', { strategy: 'partialSearch', via: 'legacy', sourceFile: partialResult.path });
+                pushOp(change._op, partialResult.path);
+              }
+              anyTailwind = true; continue;
+            }
+            if (partialResult.status === 'write_failed') {
+              if (change._op) logOp(change._op, 'failed', { reason: 'partial write failed', file: partialResult.path });
+            } else {
+              console.warn('[VX] Not found in source:', needle.substring(0, 80));
+              if (change._op) logOp(change._op, 'failed', { reason: 'source not found' });
+              showSaveIndicator('Save failed — source not found', true);
+            }
           }
         }
 
@@ -3754,8 +4061,17 @@ async function saveAllPending() {
           if (saveResult.ok) {
             showSaveIndicator(`Saved → ${filePath.split('/').pop()}`);
             if (saveResult.data?.tailwindCompiled) anyTailwind = true;
+            // NOW commit op log + history entries — write succeeded
+            for (const { op, strategy, via } of pendingOps) {
+              logOp(op, 'persisted', { strategy, via: via || 'applyOp' });
+              pushOp(op, filePath);
+            }
           } else {
             showSaveIndicator('Save failed', true);
+            // Write failed — log ops as failed, do NOT push to history
+            for (const { op, via } of pendingOps) {
+              logOp(op, 'failed', { reason: 'file write failed', via: via || 'applyOp' });
+            }
           }
         }
       } catch (err) {
@@ -3786,6 +4102,11 @@ async function saveAllPending() {
 /**
  * When edited content (e.g. nav, footer) lives in a partial file rather
  * than the main page, scan common partial directories to find the right file.
+ *
+ * Returns a structured result:
+ *   { status: 'saved',        path: '/actual/partial.php' }
+ *   { status: 'write_failed', path: '/actual/partial.php' }
+ *   { status: 'not_found' }
  */
 async function findAndReplaceInPartials(mainFile, change, cacheParam = null) {
   const needle = change.type === 'delete' ? change.outerHTML : change.originalHTML;
@@ -3797,7 +4118,7 @@ async function findAndReplaceInPartials(mainFile, change, cacheParam = null) {
     let phpFiles = cache.filesByMain.get(mainFile);
     if (!phpFiles) {
       const listResult = await api.get('/files');
-      if (!listResult.ok) return false;
+      if (!listResult.ok) return { status: 'not_found' };
       phpFiles = (listResult.data.files || [])
         .filter(f => f.path.endsWith('.php') && f.path !== mainFile)
         .filter(f => partialDirs.some(d => f.path.includes(d + '/')) || f.path.includes('partial') || f.path.includes('header') || f.path.includes('footer') || f.path.includes('nav'));
@@ -3822,14 +4143,17 @@ async function findAndReplaceInPartials(mainFile, change, cacheParam = null) {
         if (saveResult.ok) {
           cache.contentByPath.set(file.path, newContent);
           showSaveIndicator(`Saved → ${file.path.split('/').pop()}`);
-          return true;
+          return { status: 'saved', path: file.path };
         }
+        // Matched but write failed — stop searching, don't pretend it's not found
+        showSaveIndicator('Save failed', true);
+        return { status: 'write_failed', path: file.path };
       }
     }
   } catch (err) {
     console.error('[VX] Partial search error:', err);
   }
-  return false;
+  return { status: 'not_found' };
 }
 
 // ═══════════════════════════════════════════
@@ -4062,3 +4386,172 @@ function detectActiveColorProp(classes) {
 }
 function escapeAttr(s) { return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function escapeHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ═══════════════════════════════════════════
+//  VE-014: Operation Instrumentation
+// ═══════════════════════════════════════════
+
+/**
+ * Log an operation event for instrumentation.
+ * Events: 'created', 'persisted', 'fallback', 'failed'
+ *
+ * @param {VxOperation} op     - the operation
+ * @param {string}      event  - lifecycle event
+ * @param {Object}      [meta] - extra context (fallbackReason, error, etc.)
+ */
+function logOp(op, event, meta = {}) {
+  const entry = {
+    opId:       op?.id || 'unknown',
+    type:       op?.type || 'unknown',
+    event,
+    sourceKind: op?.address?.sourceKind || 'unknown',
+    sourceFile: op?.address?.sourceFile || op?.filePath || 'unknown',
+    timestamp:  Date.now(),
+    ...meta,
+  };
+
+  _opLog.push(entry);
+  if (_opLog.length > OP_LOG_MAX) _opLog.shift();
+
+  // Console output for development visibility
+  if (event === 'failed' || event === 'fallback') {
+    console.warn(`[VX-OPS] ${event}:`, opLabel(op?.type), entry);
+  } else {
+    console.debug(`[VX-OPS] ${event}:`, opLabel(op?.type), entry.sourceFile);
+  }
+}
+
+/**
+ * Get the operation log for diagnostics.
+ * @returns {Array}
+ */
+export function getOpLog() { return [..._opLog]; }
+
+
+// ═══════════════════════════════════════════
+//  VE-021 / VE-022: Undo & Redo Handlers
+// ═══════════════════════════════════════════
+
+/**
+ * Handle an undo action: peek entry, apply inverse op, save, then commit stack move.
+ * Two-phase: stack is only modified after successful file write.
+ */
+async function handleUndo() {
+  const entry = peekUndoEntry();
+  if (!entry) {
+    showSaveIndicator('Nothing to undo');
+    return;
+  }
+
+  const fp = entry.filePath;
+  if (!fp) {
+    showSaveIndicator('Undo failed — no file path', true);
+    return;
+  }
+
+  try {
+    const readResult = await api.get(`/files/content?path=${encodeURIComponent(fp)}`);
+    if (!readResult.ok) {
+      showSaveIndicator('Undo failed — cannot read file', true);
+      return;
+    }
+
+    const result = applyOp(entry.inverseOp, readResult.data.content);
+    if (!result.applied) {
+      console.warn('[VX History] Undo applyOp failed:', result.reason);
+      showSaveIndicator('Undo failed — source has changed', true);
+      return;
+    }
+
+    const saveResult = await api.put('/files/content', { path: fp, content: result.content });
+    if (!saveResult.ok) {
+      showSaveIndicator('Undo failed — save error', true);
+      return;
+    }
+
+    // File write succeeded — NOW commit the stack move
+    commitUndo();
+    logOp(entry.inverseOp, 'persisted', { strategy: result.strategy, via: 'undo' });
+    showSaveIndicator('Undone');
+
+    // VE-022: Replay in preview — suppress history clear for this controlled reload.
+    // Increment by 2: one for iframe load event, one for bridge-ready event.
+    _historyReplayInFlight += 2;
+    sendToPreview({
+      type: 'vx-editor:replay-op',
+      op: entry.inverseOp,
+    });
+
+    if (saveResult.data?.tailwindCompiled) {
+      setTimeout(() => {
+        const iframe = document.getElementById('preview-iframe');
+        if (iframe?.contentWindow) iframe.contentWindow.postMessage('voxelsite:reload-css', '*');
+      }, 300);
+    }
+  } catch (err) {
+    console.error('[VX History] Undo error:', err);
+    showSaveIndicator('Undo failed', true);
+  }
+}
+
+/**
+ * Handle a redo action: peek entry, apply forward op, save, then commit stack move.
+ * Two-phase: stack is only modified after successful file write.
+ */
+async function handleRedo() {
+  const entry = peekRedoEntry();
+  if (!entry) {
+    showSaveIndicator('Nothing to redo');
+    return;
+  }
+
+  const fp = entry.filePath;
+  if (!fp) {
+    showSaveIndicator('Redo failed — no file path', true);
+    return;
+  }
+
+  try {
+    const readResult = await api.get(`/files/content?path=${encodeURIComponent(fp)}`);
+    if (!readResult.ok) {
+      showSaveIndicator('Redo failed — cannot read file', true);
+      return;
+    }
+
+    const result = applyOp(entry.forwardOp, readResult.data.content);
+    if (!result.applied) {
+      console.warn('[VX History] Redo applyOp failed:', result.reason);
+      showSaveIndicator('Redo failed — source has changed', true);
+      return;
+    }
+
+    const saveResult = await api.put('/files/content', { path: fp, content: result.content });
+    if (!saveResult.ok) {
+      showSaveIndicator('Redo failed — save error', true);
+      return;
+    }
+
+    // File write succeeded — NOW commit the stack move
+    commitRedo();
+    logOp(entry.forwardOp, 'persisted', { strategy: result.strategy, via: 'redo' });
+    showSaveIndicator('Redone');
+
+    // VE-022: Replay in preview — suppress history clear for this controlled reload.
+    // Increment by 2: one for iframe load event, one for bridge-ready event.
+    _historyReplayInFlight += 2;
+    sendToPreview({
+      type: 'vx-editor:replay-op',
+      op: entry.forwardOp,
+    });
+
+    if (saveResult.data?.tailwindCompiled) {
+      setTimeout(() => {
+        const iframe = document.getElementById('preview-iframe');
+        if (iframe?.contentWindow) iframe.contentWindow.postMessage('voxelsite:reload-css', '*');
+      }, 300);
+    }
+  } catch (err) {
+    console.error('[VX History] Redo error:', err);
+    showSaveIndicator('Redo failed', true);
+  }
+}

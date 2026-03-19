@@ -41,6 +41,7 @@ import { renderBoardView, cleanupBoard } from './src/views/board.js';
 import { showToast, showToastWithAction } from './src/ui/toasts.js';
 import { escapeHtml, escapeAttr, getCodeLanguage, formatRefUrl } from './src/helpers.js';
 import { closeModal, showConfirmModal, showPromptModal, onBackdropClick } from './src/ui/modals.js';
+import { initTooltips } from './tooltips.js';
 
 
 // ═══════════════════════════════════════════
@@ -322,6 +323,7 @@ const appRoot = document.getElementById('app');
 async function init() {
   initializeTheme();
   initVisualEditor();
+  initTooltips();
 
   // Configure marked to escape raw HTML in AI responses.
   // Without this, HTML tags in streamed code (e.g. <div>, <section>)
@@ -827,7 +829,8 @@ function renderDashboardLayout() {
           <iframe id="preview-iframe" class="w-full h-full border-0" src="/_studio/api/router.php?_path=%2Fpreview&path=${encodeURIComponent(initialPreviewPath)}"
             sandbox="allow-scripts allow-same-origin"
             data-voxelsite-preview
-            title="Website preview"></iframe>
+            title="Website preview"
+            data-tooltip-skip></iframe>
         </div>
       </div>
     </div>

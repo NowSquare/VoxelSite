@@ -285,7 +285,7 @@
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg>
     <span>Style</span></button>`,s==="A"&&(f+=`<button class="vx-tb-btn" data-action="edit-link" title="Edit link">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-      <span>Link</span></button>`),v!=null&&v.sourceFile&&(f+=`<button class="vx-tb-btn" data-action="open-source" title="View source code" data-file="${He(v.sourceFile)}">
+      <span>Link</span></button>`),v!=null&&v.sourceFile&&(f+=`<button class="vx-tb-btn" data-action="open-source" title="Edit source code" data-file="${He(v.sourceFile)}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
       <span>Source</span></button>`),f+=`<div class="vx-tb-divider"></div>
     <button class="vx-tb-btn vx-tb-btn-danger" data-action="delete" title="Delete element">

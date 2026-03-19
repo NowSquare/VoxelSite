@@ -1366,8 +1366,21 @@ async function applyInlineSourceEdit() {
 
   // ── Tell bridge to finalize ──
   if (saved) {
-    // Save succeeded — apply new HTML to live DOM and clear treatment
-    sendToPreview({ type: 'vx-editor:end-source-edit', apply: true, html: newHTML });
+    // Does the new source contain PHP? If so, we can't replace outerHTML
+    // client-side — the browser would strip <?php ?> tags. Instead, clear
+    // the element's visual state and refresh the preview iframe so the
+    // server renders the PHP correctly.
+    const containsPhp = /\<\?(?:php\b|=)/.test(newHTML);
+    if (containsPhp) {
+      sendToPreview({ type: 'vx-editor:end-source-edit', apply: false });
+      // History push before refresh (pushOp is done by saveSourceEdit; op
+      // log already recorded above). Refresh the preview to render the PHP.
+      const iframe = document.getElementById('preview-iframe');
+      if (iframe) iframe.contentWindow.location.reload();
+    } else {
+      // Pure HTML — safe to replace in the live DOM
+      sendToPreview({ type: 'vx-editor:end-source-edit', apply: true, html: newHTML });
+    }
   } else {
     // Save failed — restore element to original state (cancel)
     sendToPreview({ type: 'vx-editor:end-source-edit', apply: false });
@@ -1440,6 +1453,17 @@ function preflightSourceHTML(html, expectedTagName) {
   }
 
   // ── Tag balance ──
+  // Skip strict tag-balance checking when the source contains PHP control-flow
+  // constructs (foreach, for, while, if). These create tag pairs that appear
+  // once in source but are replicated at runtime — the static checker can't
+  // reason about their balance. Security and root-element checks still ran.
+  const hasPhpControlFlow = /\<\?(?:php\s+)?(?:foreach|for|while|if|else|elseif|switch)\b/.test(trimmed)
+    || /\<\?(?:php\s+)?(?:endforeach|endfor|endwhile|endif|endswitch)\b/.test(trimmed);
+
+  if (hasPhpControlFlow) {
+    return null; // pass — can't validate balance with PHP control flow
+  }
+
   // Count opening vs closing tags per tag name, tracking line numbers.
   const VOID_TAGS = new Set([
     'area','base','br','col','embed','hr','img','input',

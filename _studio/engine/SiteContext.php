@@ -625,9 +625,10 @@ class SiteContext
     /**
      * Available Lucide icons from /assets/icons/.
      *
-     * Lists all SVG filenames (without extension) so the AI
-     * can reference them by name. Returns null if no icons
-     * are installed.
+     * Instead of listing all 1,900+ icon names (which would consume
+     * ~6K tokens), we tell the AI that the full Lucide set is
+     * available and how to reference them. The AI already knows
+     * Lucide icon names natively.
      */
     private function buildIconList(): ?string
     {
@@ -636,30 +637,27 @@ class SiteContext
             return null;
         }
 
-        $icons = [];
-        $files = scandir($iconDir);
+        $count = 0;
+        $files = @scandir($iconDir);
         if ($files === false) {
             return null;
         }
 
         foreach ($files as $file) {
-            if (str_starts_with($file, '.')) continue;
-            if (!str_ends_with($file, '.svg')) continue;
-            $icons[] = basename($file, '.svg');
+            if (!str_starts_with($file, '.') && str_ends_with($file, '.svg')) {
+                $count++;
+            }
         }
 
-        if (empty($icons)) {
+        if ($count === 0) {
             return null;
         }
 
-        sort($icons);
-
-        $list = "=== AVAILABLE ICONS ===\n";
-        $list .= "Lucide SVG icons in /assets/icons/. Use inline SVG (preferred) or <img> reference.\n";
-        $list .= "Total: " . count($icons) . " icons\n";
-        $list .= "Names: " . implode(', ', $icons) . "\n";
-
-        return $list;
+        return "=== AVAILABLE ICONS ===\n"
+            . "{$count} Lucide SVG icons in /assets/icons/. "
+            . "Use any standard Lucide icon name as /assets/icons/{name}.svg "
+            . "(e.g. /assets/icons/arrow-right.svg, /assets/icons/check.svg, /assets/icons/menu.svg). "
+            . "Embed as inline SVG (preferred) or <img> reference.";
     }
 
     /**

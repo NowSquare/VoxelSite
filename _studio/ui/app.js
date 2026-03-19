@@ -394,9 +394,6 @@ async function init() {
     .on('pages',             () => renderApp())
     .on('pages/:slug',       () => renderApp())
     .on('assets',            () => renderApp())
-    // Collections routes disabled for v1.0.0
-    // .on('collections',       () => renderApp())
-    // .on('collections/:slug', () => renderApp())
     .on('forms',             () => renderApp())
     .on('forms/:formId',     () => renderApp())
     .on('notes',             () => renderApp())

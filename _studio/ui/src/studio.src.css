@@ -1657,6 +1657,24 @@ select.vs-input {
   height: 18px;
 }
 
+/* ── Voice Input Recording State ── */
+.vs-prompt-attach-btn.is-recording {
+  color: var(--vs-danger, #ef4444);
+  background: color-mix(in srgb, var(--vs-danger, #ef4444) 12%, transparent);
+  animation: vs-mic-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes vs-mic-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vs-prompt-attach-btn.is-recording {
+    animation: none;
+  }
+}
+
 /* ── Image Attachments Thumbnail Strip ── */
 .vs-image-attachments {
   display: flex;

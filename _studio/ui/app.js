@@ -762,6 +762,12 @@ function renderDashboardLayout() {
                   title="Use website as reference">
                   ${icons.globe}
                 </button>
+                ${(window.SpeechRecognition || window.webkitSpeechRecognition) ? `
+                <button id="btn-voice-input"
+                  class="vs-prompt-attach-btn"
+                  title="Voice input">
+                  ${icons.mic}
+                </button>` : ''}
               </div>
               <button id="btn-send"
                 class="vs-prompt-send"
@@ -3399,6 +3405,88 @@ function bindAppEvents() {
 
   // ── Website Reference Attachment Events ──
   bindWebsiteRefEvents();
+
+  // ── Voice Input Events ──
+  const voiceBtn = document.getElementById('btn-voice-input');
+  if (voiceBtn) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let isListening = false;
+
+    const stopListening = () => {
+      isListening = false;
+      voiceBtn.classList.remove('is-recording');
+      voiceBtn.innerHTML = icons.mic;
+    };
+
+    voiceBtn.addEventListener('click', () => {
+      if (isListening) {
+        if (recognition) recognition.stop();
+        return;
+      }
+
+      // HTTPS check — Chrome requires secure context for SpeechRecognition
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        showToast('Voice input requires HTTPS', 'warning');
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = navigator.language || 'en-US';
+
+      recognition.onstart = () => {
+        isListening = true;
+        voiceBtn.classList.add('is-recording');
+      };
+
+      recognition.onresult = (e) => {
+        const transcript = e.results[0]?.[0]?.transcript;
+        if (!transcript) return;
+
+        const textarea = document.getElementById('prompt-input');
+        if (!textarea) return;
+
+        const current = textarea.value;
+        textarea.value = current + (current.length > 0 ? ' ' : '') + transcript;
+
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.style.height = 'auto';
+        textarea.style.height = textarea.scrollHeight + 'px';
+        textarea.focus();
+      };
+
+      recognition.onerror = (e) => {
+        if (e.error === 'no-speech') return;
+
+        const messages = {
+          'audio-capture':  'No microphone found',
+          'not-allowed':    'Microphone permission denied',
+          'network':        'Speech service unavailable',
+          'aborted':        null,
+        };
+
+        const msg = messages[e.error];
+        if (msg) showToast(msg, 'warning');
+        else if (msg !== null) console.warn('[VoxelSite] Voice input error:', e.error);
+      };
+
+      recognition.onend = () => {
+        stopListening();
+        const textarea = document.getElementById('prompt-input');
+        if (textarea) textarea.focus();
+      };
+
+      try {
+        recognition.start();
+      } catch (err) {
+        console.warn('[VoxelSite] Voice input failed to start:', err.message);
+        showToast('Voice input unavailable', 'warning');
+        stopListening();
+      }
+    });
+  }
 
   // Drag-and-drop on the prompt area
   const promptArea = document.querySelector('.vs-prompt-area');

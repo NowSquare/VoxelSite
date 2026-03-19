@@ -123,6 +123,34 @@ export function toggleVisualEditor() {
 }
 
 export function isVisualEditorActive() { return editorActive; }
+export function hasVisualEditorSelection() { return editorActive && selectedElement !== null; }
+export function hasVisualEditorFloatingPanel() {
+  return !!document.getElementById('vx-style-panel') || !!document.getElementById('vx-ai-panel');
+}
+
+/**
+ * Close floating panels (style editor, AI panel) without deselecting.
+ * The element remains selected and the context toolbar returns.
+ */
+export function closeVisualEditorPanels() {
+  closeStylePanel();
+  closeAIEditPanel();
+}
+
+/**
+ * Cancel an in-flight AI generation started from the visual editor.
+ * Returns true if a generation was actually cancelled, false if idle.
+ */
+export function cancelVisualEditorAI() {
+  if (aiEditAbortController) {
+    aiEditAbortController.abort();
+    aiEditAbortController = null;
+    sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+    // Don't show indicator here — onDone({ cancelled: true }) handles it
+    return true;
+  }
+  return false;
+}
 
 export function deactivateVisualEditor() {
   if (!editorActive) return;
@@ -153,6 +181,8 @@ export function dismissVisualEditorSelection() {
   selectedElement = null;
   selectedAddress = null;
   richTextActive = false;
+  // Tell the bridge to deselect (remove highlight outline in preview)
+  sendToPreview({ type: 'vx-editor:deselect-from-parent' });
 }
 
 export function initVisualEditor() {
@@ -239,6 +269,8 @@ function handlePreviewMessage(e) {
     case 'vx-editor:select':
       selectedElement = e.data;
       selectedAddress = normalizeSourceAddress(e.data.sourceAddress);
+      closeStylePanel();
+      closeAIEditPanel();
       showContextToolbar(e.data);
       break;
     case 'vx-editor:text-changed':
@@ -274,6 +306,7 @@ function handlePreviewMessage(e) {
       dismissToolbar();
       dismissRichTextToolbar();
       closeStylePanel();
+      closeAIEditPanel();
       selectedElement = null;
       selectedAddress = null;
       break;
@@ -316,6 +349,13 @@ function handlePreviewMessage(e) {
       break;
     case 'vx-editor:source-edit-ready':
       openInlineSourceEditor(e.data);
+      break;
+    case 'vx-editor:escape-pressed':
+      // Escape pressed in the iframe — bridge already deselected if needed.
+      // Handle cancellation or editor deactivation on the parent side.
+      if (cancelVisualEditorAI()) break;
+      if (hasVisualEditorFloatingPanel()) { closeVisualEditorPanels(); break; }
+      deactivateVisualEditor();
       break;
   }
 }
@@ -2642,7 +2682,6 @@ function openAIEditPanel(elementData) {
   closeAIEditPanel();
 
   const label = getElementLabel(elementData.tagName, elementData.classList);
-  const preview = (elementData.text || '').substring(0, 80).replace(/\s+/g, ' ').trim();
 
   const panel = document.createElement('div');
   panel.id = 'vx-ai-panel';
@@ -2661,11 +2700,10 @@ function openAIEditPanel(elementData) {
         </button>
       </div>
     </div>
-    ${preview ? `<div class="vx-ai-preview">${escapeHtml(preview.length >= 78 ? preview + '…' : preview)}</div>` : ''}
     <div class="vx-ai-body">
       <div class="vx-ai-input-wrap">
-        <textarea class="vx-ai-input" id="vx-ai-input" rows="2" placeholder="Describe your changes…" spellcheck="false"></textarea>
-        <button class="vx-ai-send" id="vx-ai-send" title="Generate (Enter)">
+        <textarea class="vx-ai-input" id="vx-ai-input" rows="1" placeholder="Describe your changes…" spellcheck="false"></textarea>
+        <button class="vx-ai-send" id="vx-ai-send" title="Generate (⌘↵)">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
         </button>
         <button class="vx-ai-cancel" id="vx-ai-cancel-btn" hidden title="Cancel generation">
@@ -2680,9 +2718,9 @@ function openAIEditPanel(elementData) {
 
   document.body.appendChild(panel);
 
-  // Position near the iframe, right side
-  positionStylePanel(panel);
-  panel.__vxOnResize = () => positionStylePanel(panel);
+  // Position centered above/below the element
+  positionAIPanel(panel, null, elementData.rect);
+  panel.__vxOnResize = () => positionAIPanel(panel, null, elementData.rect);
   window.addEventListener('resize', panel.__vxOnResize);
 
   requestAnimationFrame(() => panel.classList.add('vx-ai-visible'));
@@ -2703,13 +2741,22 @@ function openAIEditPanel(elementData) {
   panel.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
+      e.stopPropagation(); // Don't let it bubble to the global Escape handler
       closeAIEditPanel();
     }
   });
 
-  // Send on Enter (Shift+Enter for newline)
+  // Auto-grow textarea (max ~6 rows)
+  const autoGrow = () => {
+    input.style.height = 'auto';
+    const maxHeight = parseFloat(getComputedStyle(input).lineHeight || '20') * 6 + 28; // 6 lines + padding
+    input.style.height = Math.min(input.scrollHeight, maxHeight) + 'px';
+  };
+  input.addEventListener('input', autoGrow);
+
+  // ⌘Enter / Ctrl+Enter to send (Enter for newline)
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       doSend();
     }
@@ -2754,6 +2801,7 @@ function openAIEditPanel(elementData) {
     aiEditAbortController = new AbortController();
     const sectionHtml = elementData.outerHTML || '';
     const filePath = elementData.filePath || getCurrentPreviewPath();
+    let tokenCount = 0;
 
     try {
       await apiStream('/ai/prompt', {
@@ -2767,13 +2815,14 @@ function openAIEditPanel(elementData) {
       }, {
         signal: aiEditAbortController.signal,
         onStatus(message) {
-          sendToPreview({ type: 'vx-editor:update-ai-status', status: message || 'Working…' });
+          sendToPreview({ type: 'vx-editor:update-ai-status', status: message || 'Working…', tokens: tokenCount });
         },
         onFile() {
-          sendToPreview({ type: 'vx-editor:update-ai-status', status: 'Applying changes…' });
+          sendToPreview({ type: 'vx-editor:update-ai-status', status: 'Applying changes…', tokens: tokenCount });
         },
         onToken() {
-          sendToPreview({ type: 'vx-editor:update-ai-status', status: 'Generating…' });
+          tokenCount++;
+          sendToPreview({ type: 'vx-editor:update-ai-status', status: 'Generating…', tokens: tokenCount });
         },
         onError(err) {
           sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
@@ -3006,7 +3055,8 @@ async function generateSection(requestData, sectionType, sectionDescription, use
   sendToPreview({ type: 'vx-editor:show-ai-overlay', status: `Adding ${sectionType}…` });
 
   const filePath = requestData.filePath || getCurrentPreviewPath();
-  const abortController = new AbortController();
+  aiEditAbortController = new AbortController();
+  const abortController = aiEditAbortController;
 
   // Build the user prompt — include instruction if provided
   let userPrompt = `Add a ${sectionType} section to this page.`;
@@ -3019,10 +3069,10 @@ async function generateSection(requestData, sectionType, sectionDescription, use
   let tokenCount = 0;
   const updateOverlayStatus = () => {
     if (tokenCount > 0) {
-      const formatted = tokenCount.toLocaleString();
       sendToPreview({
         type: 'vx-editor:update-ai-status',
-        status: `Generating ${sectionType}… (${formatted} tokens)`,
+        status: `Generating ${sectionType}…`,
+        tokens: tokenCount,
       });
     } else {
       const elapsed = Math.round((Date.now() - startTime) / 1000);
@@ -3061,10 +3111,10 @@ async function generateSection(requestData, sectionType, sectionDescription, use
     }, {
       signal: abortController.signal,
       onStatus(message) {
-        sendToPreview({ type: 'vx-editor:update-ai-status', status: message || `Adding ${sectionType}…` });
+        sendToPreview({ type: 'vx-editor:update-ai-status', status: message || `Adding ${sectionType}…`, tokens: tokenCount });
       },
       onFile() {
-        sendToPreview({ type: 'vx-editor:update-ai-status', status: 'Writing files…' });
+        sendToPreview({ type: 'vx-editor:update-ai-status', status: 'Writing files…', tokens: tokenCount });
       },
       onToken() {
         tokenCount++;
@@ -3077,11 +3127,13 @@ async function generateSection(requestData, sectionType, sectionDescription, use
       },
       onError(err) {
         clearInterval(statusInterval);
+        aiEditAbortController = null;
         sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
         showSaveIndicator(err.message || 'Failed to add section', true);
       },
       onDone(res) {
         clearInterval(statusInterval);
+        aiEditAbortController = null;
         sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
 
         if (res.cancelled) {
@@ -3121,6 +3173,7 @@ async function generateSection(requestData, sectionType, sectionDescription, use
     });
   } catch (err) {
     clearInterval(statusInterval);
+    aiEditAbortController = null;
     if (err.name !== 'AbortError') {
       showSaveIndicator('Failed to add section', true);
     }
@@ -3130,6 +3183,7 @@ async function generateSection(requestData, sectionType, sectionDescription, use
 
 function openImagePicker(elementData) {
   dismissToolbar();
+  let imageSelected = false;
   const modal = document.createElement('div');
   modal.className = 'vx-modal-overlay';
   modal.setAttribute('role', 'dialog');
@@ -3142,9 +3196,21 @@ function openImagePicker(elementData) {
   const close = () => {
     modal.classList.remove('vx-modal-visible');
     modal.removeEventListener('keydown', onKeydown);
-    setTimeout(() => modal.remove(), 200);
+    setTimeout(() => {
+      modal.remove();
+      // Restore toolbar if no image was selected and an element is still selected
+      if (!imageSelected && selectedElement) {
+        showContextToolbar(selectedElement);
+      }
+    }, 200);
   };
-  const onKeydown = (e) => { if (e.key === 'Escape') close(); };
+  const onKeydown = (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation(); // Prevent global Escape handler from also deselecting
+      e.preventDefault();
+      close();
+    }
+  };
   modal.addEventListener('keydown', onKeydown);
   modal.querySelector('[data-close]').addEventListener('click', close);
   onBackdropClick(modal, close);
@@ -3199,6 +3265,9 @@ async function loadAssetImages(modal) {
           sendToPreview({ type: 'vx-editor:swap-image', src: newSrc });
         }
         // If save failed, preview stays at last durable state
+
+        // Deselect the element — the image changed, clean slate
+        dismissVisualEditorSelection();
 
         modal.classList.remove('vx-modal-visible');
         setTimeout(() => modal.remove(), 200);
@@ -4395,6 +4464,55 @@ function positionStylePanel(panel) {
   const desiredTop = Math.max(ir.top + 12, minTop);
   const maxTop = Math.max(minTop, window.innerHeight - panelHeight - gutter);
   const clampedTop = Math.min(desiredTop, maxTop);
+
+  panel.style.left = `${clampedLeft}px`;
+  panel.style.top = `${clampedTop}px`;
+  panel.style.right = 'auto';
+}
+
+/**
+ * Position the AI edit panel above the selected element, centered horizontally.
+ * Panel bottom sits just above the element top (4px gap).
+ * Falls below the element if insufficient room above.
+ * anchorRect: DOMRect of the AI button (screen-space coords) — unused for vertical, used for initial horizontal.
+ * elementRect: element rect from the bridge (iframe-relative coords) — primary positioning source.
+ */
+function positionAIPanel(panel, anchorRect, elementRect) {
+  const panelWidth = panel.offsetWidth || 380;
+  const panelHeight = panel.offsetHeight || 180;
+  const gutter = 16;
+  const minTop = 56;
+
+  const iframe = document.getElementById('preview-iframe');
+  if (!iframe || !elementRect) {
+    positionStylePanel(panel);
+    return;
+  }
+
+  const ir = iframe.getBoundingClientRect();
+  const elemTop = ir.top + elementRect.top;
+  const elemBottom = ir.top + elementRect.top + elementRect.height;
+  const elemCenterX = ir.left + elementRect.left + elementRect.width / 2;
+
+  // Horizontal: center-align with the element (same pattern as toolbar)
+  let desiredLeft = elemCenterX - panelWidth / 2;
+
+  // Vertical: panel bottom sits just above the element top (4px gap)
+  let desiredTop;
+  const aboveTop = elemTop - panelHeight - 4;
+  if (aboveTop >= minTop) {
+    desiredTop = aboveTop;
+  } else {
+    // Not enough room above — place below the element
+    desiredTop = elemBottom + 8;
+  }
+
+  // Clamp within viewport
+  const maxLeft = Math.max(gutter, window.innerWidth - panelWidth - gutter);
+  const minLeft = gutter;
+  const clampedLeft = Math.min(Math.max(desiredLeft, minLeft), maxLeft);
+  const maxTop = Math.max(minTop, window.innerHeight - panelHeight - gutter);
+  const clampedTop = Math.min(Math.max(desiredTop, minTop), maxTop);
 
   panel.style.left = `${clampedLeft}px`;
   panel.style.top = `${clampedTop}px`;

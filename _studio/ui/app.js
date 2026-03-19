@@ -22,7 +22,7 @@ import { store } from './state.js';
 import { router } from './router.js';
 import { api, apiStream } from './api.js';
 import { initializeTheme, toggleTheme } from './theme.js';
-import { initVisualEditor, toggleVisualEditor, deactivateVisualEditor, isVisualEditorActive, dismissVisualEditorSelection } from './visual-editor.js';
+import { initVisualEditor, toggleVisualEditor, deactivateVisualEditor, isVisualEditorActive, dismissVisualEditorSelection, hasVisualEditorSelection, hasVisualEditorFloatingPanel, closeVisualEditorPanels, cancelVisualEditorAI } from './visual-editor.js';
 
 // ═══════════════════════════════════════════
 //  Icons (inline SVG, no external requests)
@@ -3695,9 +3695,23 @@ function bindAppEvents() {
         toggleVisualEditor();
       }
 
-      // Escape: deactivate visual editor if active
+      // Escape: visual editor layered dismiss
+      // Priority: AI generation → floating panel → selected element → deactivate
       if (e.key === 'Escape' && isVisualEditorActive()) {
         e.preventDefault();
+        // 1. Cancel in-flight AI generation if running
+        if (cancelVisualEditorAI()) return;
+        // 2. Close any floating panel (style editor, AI panel) — keep element selected
+        if (hasVisualEditorFloatingPanel()) {
+          closeVisualEditorPanels();
+          return;
+        }
+        // 3. Deselect current element
+        if (hasVisualEditorSelection()) {
+          dismissVisualEditorSelection();
+          return;
+        }
+        // 4. Nothing selected — deactivate the editor
         deactivateVisualEditor();
         return;
       }

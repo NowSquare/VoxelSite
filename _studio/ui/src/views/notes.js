@@ -49,8 +49,7 @@ let previewBodyCache = '';
 /** Save state: 'idle' | 'saving' | 'saved' | 'error' */
 let saveState = 'idle';
 
-/** Timer for the "Saved" fade-out. */
-let savedFadeTimer = null;
+
 
 /** Mobile view state: 'list' | 'detail' */
 let mobileView = 'list';
@@ -498,7 +497,7 @@ function renderEditor(note, opts = {}) {
       <!-- Toolbar -->
       <div class="vs-note-toolbar">
         <div class="vs-note-toolbar-left">
-          <span id="vs-note-save-status" class="vs-note-save-status${window.IS_DEMO ? ' vs-note-save-status--readonly' : ''}">${window.IS_DEMO ? 'Read-only' : ''}</span>
+          ${window.IS_DEMO ? '<span class="vs-note-save-status vs-note-save-status--readonly">Read-only</span>' : ''}
         </div>
         <div class="vs-note-toolbar-right">
           ${window.IS_DEMO ? '' : `<button id="btn-note-pin" class="vs-note-toolbar-btn ${isPinned ? 'vs-note-toolbar-btn--active' : ''}"
@@ -571,7 +570,7 @@ function renderMobileDetail(note) {
         Notes
       </button>
       <div class="vs-note-mobile-actions">
-        <span id="vs-note-save-status" class="vs-note-save-status${window.IS_DEMO ? ' vs-note-save-status--readonly' : ''}">${window.IS_DEMO ? 'Read-only' : ''}</span>
+        ${window.IS_DEMO ? '<span class="vs-note-save-status vs-note-save-status--readonly">Read-only</span>' : ''}
         ${window.IS_DEMO ? '' : `<button id="btn-note-pin" class="vs-note-toolbar-btn ${isPinned ? 'vs-note-toolbar-btn--active' : ''}">
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="${isPinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
         </button>`}
@@ -621,8 +620,6 @@ function bindEditorEvents(note) {
   // Auto-save on input
   const onInput = () => {
     if (saveTimer) clearTimeout(saveTimer);
-    saveState = 'idle';
-    updateSaveStatus();
     saveTimer = setTimeout(() => saveActiveNote(), SAVE_DEBOUNCE_MS);
   };
 
@@ -690,15 +687,9 @@ async function saveActiveNote() {
   const title = titleInput?.value ?? '';
   const body = bodyTextarea?.value ?? '';
 
-  saveState = 'saving';
-  updateSaveStatus();
-
   const { ok, data } = await api.put(`/notes/${activeNoteId}`, { title, body });
 
   if (ok && data?.note) {
-    saveState = 'saved';
-    updateSaveStatus();
-
     // Update cached note
     const idx = notes.findIndex(n => n.id === activeNoteId);
     if (idx >= 0) {
@@ -707,41 +698,13 @@ async function saveActiveNote() {
 
     // Refresh list to reflect title/time changes
     renderNotesList();
-
-    // Fade "Saved" after display period
-    if (savedFadeTimer) clearTimeout(savedFadeTimer);
-    savedFadeTimer = setTimeout(() => {
-      saveState = 'idle';
-      updateSaveStatus();
-    }, SAVED_DISPLAY_MS);
-  } else {
-    saveState = 'error';
-    updateSaveStatus();
   }
+  // Save status feedback is handled by the global indicator in api.js
 }
 
-function updateSaveStatus() {
-  const el = document.getElementById('vs-note-save-status');
-  if (!el) return;
-
-  switch (saveState) {
-    case 'saving':
-      el.textContent = '';
-      el.className = 'vs-note-save-status';
-      break;
-    case 'saved':
-      el.textContent = 'Saved';
-      el.className = 'vs-note-save-status vs-note-save-status--saved';
-      break;
-    case 'error':
-      el.textContent = 'Could not save';
-      el.className = 'vs-note-save-status vs-note-save-status--error';
-      break;
-    default:
-      el.textContent = '';
-      el.className = 'vs-note-save-status';
-  }
-}
+// Note: save status feedback is now handled entirely by the global
+// status indicator in the top bar, wired through api.js.
+// No inline save status element is rendered.
 
 // ═══════════════════════════════════════════
 //  Note Actions
@@ -832,8 +795,6 @@ function togglePreview() {
       newTextarea.addEventListener('input', () => {
         autoGrow(newTextarea);
         if (saveTimer) clearTimeout(saveTimer);
-        saveState = 'idle';
-        updateSaveStatus();
         saveTimer = setTimeout(() => saveActiveNote(), SAVE_DEBOUNCE_MS);
       });
       newTextarea.focus();
@@ -1215,10 +1176,7 @@ export function cleanupNotes() {
     clearTimeout(searchTimer);
     searchTimer = null;
   }
-  if (savedFadeTimer) {
-    clearTimeout(savedFadeTimer);
-    savedFadeTimer = null;
-  }
+
   // Reset ephemeral view state that shouldn't leak across navigation.
   searchQuery = '';
   previewMode = false;

@@ -151,11 +151,6 @@ async function loadSnapshots() {
       const { ok, error } = await api.post(`/snapshots/${id}/restore`);
 
       if (ok) {
-        const statusEl = document.getElementById('status-text');
-        if (statusEl) {
-          statusEl.textContent = '✓ Snapshot restored';
-          setTimeout(() => { if (statusEl) statusEl.textContent = 'Ready'; }, 4000);
-        }
         showToast('Snapshot restored.', 'success');
         loadSnapshots();
       } else {

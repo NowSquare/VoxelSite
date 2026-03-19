@@ -517,12 +517,17 @@ function renderApp() {
     mainContent = renderContentLayout();
   }
 
+  // Status bar is Chat-only — other pages get the full content height.
+  // Mobile always hides the status bar (CSS) and uses the bottom nav instead.
+  const showStatusBar = route === 'chat' && !isMobile();
+  const contentBottom = showStatusBar ? 'bottom-[32px]' : 'bottom-0';
+
   appRoot.innerHTML = `
     ${renderTopBar()}
-    <div class="fixed top-[48px] bottom-[32px] left-0 right-0 overflow-hidden">
+    <div class="fixed top-[48px] ${contentBottom} left-0 right-0 overflow-hidden">
       ${mainContent}
     </div>
-    ${renderStatusBar()}
+    ${showStatusBar ? renderStatusBar() : ''}
     ${renderMobileNav()}
     ${renderMobileMoreSheet()}
     ${renderCommandPalette()}
@@ -602,6 +607,10 @@ function renderTopBar() {
               ${icons.eye} Demo
             </span>
           ` : ''}
+          <span id="vs-global-status" class="vs-global-status">
+            <span class="vs-global-status-dot"></span>
+            <span class="vs-global-status-text"></span>
+          </span>
         </div>
 
         <!-- Center: Route tabs (contextual mode) -->
@@ -1984,17 +1993,13 @@ function shuffleArray(arr) {
 }
 
 // ═══════════════════════════════════════════
-//  Status Bar (36px)
+//  Status Bar (32px) — Chat-only footer bar
 // ═══════════════════════════════════════════
 
 function renderStatusBar() {
   return `
     <footer class="vs-statusbar">
       <div class="flex items-center gap-3">
-        <div class="flex items-center gap-1.5">
-          <span class="w-1.5 h-1.5 rounded-full bg-vs-success" title="Connected"></span>
-          <span id="status-text" class="text-xs text-vs-text-ghost">Ready</span>
-        </div>
         <button id="btn-undo-status" class="vs-btn vs-btn-ghost vs-btn-xs" title="Undo (⌘Z)">
           ${icons.undo} Undo
         </button>
@@ -3818,32 +3823,97 @@ function ensurePublishState() {
   return window.__vsPublishState;
 }
 
-function setStatusText(message, tone = 'neutral', resetAfterMs = 0) {
-  const statusEl = document.getElementById('status-text');
-  if (!statusEl) return;
+/**
+ * Global status indicator (top bar).
+ *
+ * The indicator is INVISIBLE by default. It only appears when something
+ * is happening: saving, loading, or flashing a result (saved/error).
+ * Silence = healthy. No "Ready" label.
+ *
+ * States:
+ *   'idle'    — hidden (default)
+ *   'saving'  — amber pulsing dot, "Saving…"
+ *   'saved'   — green dot, "Saved" → auto-hides after 2s
+ *   'loading' — amber pulsing dot, "Loading…"
+ *   'error'   — red dot → auto-hides after 4s
+ *
+ * Callable from any view via window.__vsSetGlobalStatus(state, message?).
+ * Also wired automatically in api.js for all mutations.
+ */
+function setGlobalStatus(state, message) {
+  const container = document.getElementById('vs-global-status');
+  if (!container) return;
 
-  statusEl.textContent = message;
-  statusEl.className = tone === 'success'
-    ? 'text-xs text-vs-success'
-    : tone === 'error'
-      ? 'text-xs text-vs-error'
-      : 'text-xs text-vs-text-ghost';
+  const dot = container.querySelector('.vs-global-status-dot');
+  const text = container.querySelector('.vs-global-status-text');
+  if (!dot || !text) return;
 
+  // Clear any pending reset timer
   if (window.__vsStatusResetTimer) {
     clearTimeout(window.__vsStatusResetTimer);
     window.__vsStatusResetTimer = null;
   }
 
+  // Remove all state classes
+  container.className = 'vs-global-status';
+
+  switch (state) {
+    case 'saving':
+      container.classList.add('vs-global-status--active', 'vs-global-status--saving');
+      text.textContent = message || 'Saving…';
+      break;
+
+    case 'saved':
+      container.classList.add('vs-global-status--active', 'vs-global-status--saved');
+      text.textContent = message || 'Saved';
+      // Auto-hide after 2s
+      window.__vsStatusResetTimer = setTimeout(() => {
+        setGlobalStatus('idle');
+      }, 2000);
+      break;
+
+    case 'loading':
+      container.classList.add('vs-global-status--active', 'vs-global-status--loading');
+      text.textContent = message || 'Loading…';
+      break;
+
+    case 'error':
+      container.classList.add('vs-global-status--active', 'vs-global-status--error');
+      text.textContent = message || 'Error';
+      // Auto-hide after 4s
+      window.__vsStatusResetTimer = setTimeout(() => {
+        setGlobalStatus('idle');
+      }, 4000);
+      break;
+
+    case 'idle':
+    default:
+      // Hidden — no dot, no text
+      text.textContent = '';
+      break;
+  }
+}
+
+// Backward-compatible wrapper — existing callers in the codebase
+// use setStatusText(message, tone, resetAfterMs). Route through
+// the new global status API.
+function setStatusText(message, tone = 'neutral', resetAfterMs = 0) {
+  const state = tone === 'success' ? 'saved'
+    : tone === 'error' ? 'error'
+    : 'idle';
+  setGlobalStatus(state, message);
+
   if (resetAfterMs > 0) {
+    if (window.__vsStatusResetTimer) clearTimeout(window.__vsStatusResetTimer);
     window.__vsStatusResetTimer = setTimeout(() => {
-      const current = document.getElementById('status-text');
-      if (!current) return;
-      current.textContent = 'Ready';
-      current.className = 'text-xs text-vs-text-ghost';
-      window.__vsStatusResetTimer = null;
+      setGlobalStatus('idle');
     }, resetAfterMs);
   }
 }
+
+// Expose to view modules (notes.js, board.js, etc.) so they can
+// signal save/load state without import coupling.
+window.__vsSetGlobalStatus = setGlobalStatus;
 
 function applyPublishStateUi() {
   const state = ensurePublishState();

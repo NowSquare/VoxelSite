@@ -451,8 +451,8 @@ async function uploadAssets(fileList) {
   if (demoGuard()) return;
   if (viewerGuard()) return;
 
-  const statusEl = document.getElementById('status-text');
-  if (statusEl) statusEl.textContent = `Uploading ${fileList.length} file(s)...`;
+  const setStatus = window.__vsSetGlobalStatus;
+  if (setStatus) setStatus('saving', `Uploading ${fileList.length} file(s)…`);
 
   const formData = new FormData();
   for (const file of fileList) {
@@ -473,19 +473,15 @@ async function uploadAssets(fileList) {
     if (result.ok) {
       const count = result.data?.uploaded?.length || 0;
       showToast(`${count} file(s) uploaded.`, 'success');
-      if (statusEl) statusEl.textContent = `✓ ${count} file(s) uploaded`;
+      if (setStatus) setStatus('saved', `✓ ${count} file(s) uploaded`);
     } else {
       const msg = result.error?.message || 'Upload failed';
       showToast(msg, 'error');
-      if (statusEl) statusEl.textContent = '✗ ' + msg;
+      if (setStatus) setStatus('error', '✗ ' + msg);
     }
-    if (statusEl) setTimeout(() => { if (statusEl) statusEl.textContent = 'Ready'; }, 4000);
   } catch (e) {
     showToast('Upload failed.', 'error');
-    if (statusEl) {
-      statusEl.textContent = '✗ Upload failed';
-      setTimeout(() => { if (statusEl) statusEl.textContent = 'Ready'; }, 4000);
-    }
+    if (setStatus) setStatus('error', '✗ Upload failed');
   }
 }
 

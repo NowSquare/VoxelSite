@@ -272,7 +272,6 @@ function renderCardExpanded(card, col, editable) {
         </select>
       </div>
       <div class="vs-board-card-expand-footer">
-        <div class="vs-board-card-save-status" data-save-status="${card.id}"></div>
         <div class="vs-board-card-actions">
           <button class="vs-btn vs-btn-ghost vs-btn-xs" data-card-archive="${card.id}">Archive</button>
           <button class="vs-btn vs-btn-ghost vs-btn-xs" data-card-delete="${card.id}" style="color: var(--vs-error);">Delete</button>
@@ -403,34 +402,9 @@ async function flushSave() {
 /**
  * Show save status in the expanded card footer.
  */
-function showSaveStatus(cardId, status) {
-  const el = document.querySelector(`[data-save-status="${cardId}"]`);
-  if (!el) return;
-
-  switch (status) {
-    case 'saving':
-      el.textContent = 'Saving…';
-      el.className = 'vs-board-card-save-status vs-board-save-active';
-      break;
-    case 'saved':
-      el.textContent = 'Saved ✓';
-      el.className = 'vs-board-card-save-status vs-board-save-done';
-      // Fade out after 2s
-      setTimeout(() => {
-        if (el.textContent === 'Saved ✓') {
-          el.className = 'vs-board-card-save-status vs-board-save-fade';
-        }
-      }, 2000);
-      break;
-    case 'error':
-      el.textContent = 'Save failed';
-      el.className = 'vs-board-card-save-status vs-board-save-error';
-      break;
-    default:
-      el.textContent = '';
-      el.className = 'vs-board-card-save-status';
-  }
-}
+// Save status feedback is handled by the global top-bar indicator
+// wired through api.js. This stub keeps callers working.
+function showSaveStatus() {}
 
 function autoResizeTextarea(textarea) {
   textarea.style.height = 'auto';

@@ -477,11 +477,6 @@ function bindHistoryEvents(container) {
       const { ok, error } = await api.post(`/snapshots/${id}/restore`);
 
       if (ok) {
-        const statusEl = document.getElementById('status-text');
-        if (statusEl) {
-          statusEl.textContent = '✓ Snapshot restored';
-          setTimeout(() => { if (statusEl) statusEl.textContent = 'Ready'; }, 4000);
-        }
         showToast('Snapshot restored.', 'success');
         loadHistory();
       } else {
@@ -1095,12 +1090,7 @@ async function refreshAfterDesignSwitch() {
       iframe.src = iframe.src;
     }
 
-    // Update status bar
-    const statusEl = document.getElementById('status-text');
-    if (statusEl) {
-      statusEl.textContent = '✓ Design switched';
-      setTimeout(() => { if (statusEl) statusEl.textContent = 'Ready'; }, 4000);
-    }
+
   } catch (e) {
     // Non-critical — the page will be correct on next navigation
     console.warn('[designs] Post-switch refresh failed:', e);

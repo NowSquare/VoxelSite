@@ -7,6 +7,7 @@
  * - Session expiry detection (auto-redirect to login)
  * - SSE streaming for AI responses
  * - Error normalization
+ * - Global status indicator (centrally wired)
  *
  * Usage:
  *   import { api, apiStream } from './api.js';
@@ -14,6 +15,9 @@
  *   // Standard request
  *   const { ok, data, error } = await api.get('/pages');
  *   const { ok, data } = await api.post('/ai/prompt', { prompt: '...' });
+ *
+ *   // Silent request (won't trigger the global status indicator)
+ *   const { ok, data } = await api.get('/preview/diff', { silent: true });
  *
  *   // SSE streaming
  *   await apiStream('/ai/prompt', { prompt: '...' }, {
@@ -32,6 +36,46 @@ import { store } from './state.js';
 const BASE = '/_studio/api/router.php';
 
 // ═══════════════════════════════════════════
+//  Global Status — Flight Counter
+// ═══════════════════════════════════════════
+//
+// The indicator is INVISIBLE by default: silence = healthy (Figma/Notion).
+// It only appears when mutation requests are in-flight or flashing a result.
+//
+// - Mutation starts (POST/PUT/DELETE): "Saving…" with pulsing amber dot
+// - Mutation succeeds: flashes "Saved" with green dot → fades out after 2s
+// - Any error: flashes error with red dot → fades out after 4s
+// - GET requests: silent (too fast to warrant an indicator)
+// - Background/polling: opt out with { silent: true }
+
+let _inflightMutations = 0;
+
+function notifyRequestStart(method, silent) {
+  if (silent) return;
+  if (!['POST', 'PUT', 'DELETE'].includes(method)) return;
+
+  _inflightMutations++;
+  if (_inflightMutations === 1) {
+    window.__vsSetGlobalStatus?.('saving');
+  }
+}
+
+function notifyRequestEnd(method, ok, silent) {
+  if (silent) return;
+  if (!['POST', 'PUT', 'DELETE'].includes(method)) return;
+
+  _inflightMutations = Math.max(0, _inflightMutations - 1);
+
+  if (_inflightMutations === 0) {
+    if (ok) {
+      window.__vsSetGlobalStatus?.('saved');
+    } else {
+      window.__vsSetGlobalStatus?.('error');
+    }
+  }
+}
+
+// ═══════════════════════════════════════════
 //  Core Fetch Wrapper
 // ═══════════════════════════════════════════
 
@@ -41,10 +85,13 @@ const BASE = '/_studio/api/router.php';
  * @param {string} method - HTTP method
  * @param {string} endpoint - API path (e.g., '/pages')
  * @param {object|null} body - Request body (auto-serialized to JSON)
- * @param {object} options - Additional fetch options
+ * @param {object} options - Additional fetch options. Pass { silent: true }
+ *                           to suppress the global status indicator.
  * @returns {Promise<{ok: boolean, data?: any, error?: {code: string, message: string}}>}
  */
 async function request(method, endpoint, body = null, options = {}) {
+  const { silent = false, ...fetchOverrides } = options;
+
   const headers = {
     'Accept': 'application/json',
   };
@@ -65,12 +112,14 @@ async function request(method, endpoint, body = null, options = {}) {
     method,
     headers,
     credentials: 'same-origin', // Send cookies
-    ...options,
+    ...fetchOverrides,
   };
 
   if (body !== null) {
     fetchOptions.body = JSON.stringify(body);
   }
+
+  notifyRequestStart(method, silent);
 
   try {
     // Build URL: append _path as query param, preserve any existing query params in the endpoint
@@ -92,6 +141,8 @@ async function request(method, endpoint, body = null, options = {}) {
         store.set('user', null);
       }
 
+      notifyRequestEnd(method, false, silent);
+
       // Return the server's error if available, otherwise a generic message
       if (json?.error) {
         return { ok: false, error: json.error };
@@ -100,20 +151,32 @@ async function request(method, endpoint, body = null, options = {}) {
     }
 
     if (!json.ok && json.error) {
-      // Demo mode — show toast for blocked actions automatically
+      // Demo mode — show toast for blocked actions automatically.
+      // Don't flash the error indicator — the toast is sufficient.
       if (json.error.code === 'demo_mode') {
         if (window.showToast) {
           window.showToast(json.error.message || 'Demo mode — this action is disabled.', 'warning');
         }
+        // Suppress the indicator entirely — it's not a real save.
+        // Directly reset to idle to balance the inflight counter.
+        if (!silent && ['POST', 'PUT', 'DELETE'].includes(method)) {
+          _inflightMutations = Math.max(0, _inflightMutations - 1);
+          if (_inflightMutations === 0) window.__vsSetGlobalStatus?.('idle');
+        }
+      } else {
+        notifyRequestEnd(method, false, silent);
       }
       return { ok: false, error: json.error };
     }
+
+    notifyRequestEnd(method, true, silent);
 
     // The server wraps successful responses as { ok: true, data: { ... } }.
     // Return the inner `data` so callers access `result.data.user` directly
     // instead of `result.data.data.user`.
     return { ok: true, data: json.data || json };
   } catch (err) {
+    notifyRequestEnd(method, false, silent);
     return {
       ok: false,
       error: {

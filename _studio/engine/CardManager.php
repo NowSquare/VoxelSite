@@ -236,7 +236,11 @@ class CardManager
     }
 
     /**
-     * Restore an archived card (moves to Done column).
+     * Restore an archived card back to its original column.
+     *
+     * The archive() method preserves column_name, so we simply
+     * unset the archived flag and recalculate a top position
+     * in the card's existing column.
      *
      * @return array<string, mixed>|null The restored card, or null if not found.
      */
@@ -247,14 +251,15 @@ class CardManager
             return null;
         }
 
-        $topPosition = $this->getTopPosition('done');
+        // Restore to the column the card was in when it was archived
+        $originalColumn = $card['column_name'];
+        $topPosition = $this->getTopPosition($originalColumn);
         $now = gmdate('Y-m-d\TH:i:s\Z');
 
         $this->db->update(
             'cards',
             [
                 'archived'           => 0,
-                'column_name'        => 'done',
                 'position'           => $topPosition,
                 'updated_at'         => $now,
                 'updated_by_user_id' => $userId,

@@ -9545,8 +9545,12 @@ select.vx-form-input {
   transform: translateY(0) scale(1);
 }
 
+/* ── Dropdown items with icons ── */
+
 .vs-board-card-dropdown-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   padding: 7px 12px;
   border: none;
@@ -9560,21 +9564,65 @@ select.vx-form-input {
   transition: background 100ms ease-out, color 100ms ease-out;
 }
 
+.vs-board-card-dropdown-item svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
 .vs-board-card-dropdown-item:hover {
   background: var(--vs-bg-hover);
   color: var(--vs-text-primary);
 }
 
+.vs-board-card-dropdown-item:hover svg {
+  opacity: 1;
+}
+
 .vs-board-card-dropdown-danger {
-  color: var(--vs-error);
+  color: var(--vs-text-ghost);
 }
 
 .vs-board-card-dropdown-danger:hover {
-  background: color-mix(in srgb, var(--vs-error) 10%, transparent);
   color: var(--vs-error);
+  background: color-mix(in srgb, var(--vs-error) 8%, transparent);
 }
 
-/* ── Card (expanded — inline editing) ── */
+.vs-board-card-dropdown-divider {
+  height: 1px;
+  background: var(--vs-border-subtle);
+  margin: 3px 4px;
+}
+
+/* ── Card footer (expanded — actions + meta) ── */
+
+.vs-board-card-expand-footer {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--vs-border-subtle);
+}
+
+.vs-board-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vs-board-card-actions .vs-btn svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.vs-board-card-meta {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--vs-text-ghost);
+  letter-spacing: 0.02em;
+  padding-top: 10px;
+  opacity: 0.7;
+}
 
 .vs-board-card-expanded {
   cursor: default;
@@ -9727,52 +9775,6 @@ select.vx-form-input {
   box-shadow: 0 0 0 2px var(--border-focus);
 }
 
-/* ── Save status ── */
-
-.vs-board-card-expand-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--vs-border-subtle);
-}
-
-.vs-board-card-save-status {
-  font-size: 11px;
-  font-weight: 500;
-  min-height: 16px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  transition: opacity 300ms ease-out, color 300ms ease-out;
-}
-
-.vs-board-save-active {
-  color: var(--vs-text-ghost);
-  opacity: 1;
-}
-
-.vs-board-save-done {
-  color: var(--vs-success);
-  opacity: 1;
-}
-
-.vs-board-save-fade {
-  color: var(--vs-success);
-  opacity: 0;
-}
-
-.vs-board-save-error {
-  color: var(--vs-error);
-  opacity: 1;
-}
-
-.vs-board-card-actions {
-  display: flex;
-  gap: 4px;
-}
-
 /* ── Read-only expanded ── */
 
 .vs-board-card-body-full {
@@ -9789,14 +9791,6 @@ select.vx-form-input {
   color: var(--vs-text-ghost);
   font-style: italic;
   margin-bottom: 8px;
-}
-
-.vs-board-card-meta {
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--vs-text-ghost);
-  letter-spacing: 0.02em;
-  margin-top: 8px;
 }
 
 /* ── Drop zone (empty column) ── */

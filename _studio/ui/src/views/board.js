@@ -273,12 +273,18 @@ function renderCardExpanded(card, col, editable) {
       </div>
       <div class="vs-board-card-expand-footer">
         <div class="vs-board-card-actions">
-          <button class="vs-btn vs-btn-ghost vs-btn-xs" data-card-archive="${card.id}">Archive</button>
-          <button class="vs-btn vs-btn-ghost vs-btn-xs" data-card-delete="${card.id}" style="color: var(--vs-error);">Delete</button>
+          <button class="vs-btn vs-btn-ghost vs-btn-xs" data-card-archive="${card.id}" title="Archive this card">
+            ${icons.archive}
+            Archive
+          </button>
+          <button class="vs-btn vs-btn-danger vs-btn-xs" data-card-delete="${card.id}" title="Permanently delete">
+            ${icons.trash}
+            Delete
+          </button>
         </div>
-      </div>
-      <div class="vs-board-card-meta">
-        Created ${formatDate(card.created_at)}${card.updated_at !== card.created_at ? ` · Updated ${formatDate(card.updated_at)}` : ''}
+        <div class="vs-board-card-meta">
+          Created ${formatDate(card.created_at)}${card.updated_at !== card.created_at ? ` · Updated ${formatDate(card.updated_at)}` : ''}
+        </div>
       </div>
     </div>
   `;
@@ -480,9 +486,12 @@ function showCardMenu(cardId, anchorEl) {
   menu.id = 'vs-board-card-dropdown';
   menu.innerHTML = `
     <button class="vs-board-card-dropdown-item" data-action="archive" data-id="${cardId}">
+      ${icons.archive}
       Archive
     </button>
+    <div class="vs-board-card-dropdown-divider"></div>
     <button class="vs-board-card-dropdown-item vs-board-card-dropdown-danger" data-action="delete" data-id="${cardId}">
+      ${icons.trash}
       Delete
     </button>
   `;

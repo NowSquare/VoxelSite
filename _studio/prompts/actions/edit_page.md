@@ -85,3 +85,13 @@ When editing structured content (menu items, services, products, team members, F
 - **New pages must feel like they belong to the same site.** If the index page has vibrant gradients, geometric shapes, hover animations, and generous spacing, the new page must have the same level of polish. A plain page with no visual treatment is UNACCEPTABLE.
 - Study the REFERENCE PAGE code and replicate its patterns — not the content, but the structural and visual approach.
 
+## Icons
+
+When adding or changing icons, use `data-lucide` placeholders:
+
+```html
+<i class="icon" data-lucide="phone" aria-hidden="true"></i>
+```
+
+Never output raw SVG `<path>` data. The shipped `icon-resolver.js` hydrates placeholders into inline SVGs at runtime from `/assets/icons/`.
+

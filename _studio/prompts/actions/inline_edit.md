@@ -67,3 +67,11 @@ Do NOT return the full file. Output ONLY the replacement that should take the pl
 Return the entire rewritten file using a standard `<file path="path/to/file.ext">` tag. Do NOT omit portions of the file with comments like `// ... rest of file ...`.
 
 Do not explain your changes — just output the code.
+
+## Icons
+
+When adding or changing icons, use `data-lucide` placeholders. Never output raw SVG `<path>` data:
+
+```html
+<i class="icon" data-lucide="phone" aria-hidden="true"></i>
+```

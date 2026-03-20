@@ -566,6 +566,7 @@ A one-page portfolio might just have a centered copyright. A SaaS might have 4 c
   ```html
   <script src="/assets/js/main.js" defer></script>
   <script src="/assets/js/navigation.js" defer></script>
+  <script src="/assets/js/icon-resolver.js" defer></script>
   ```
 - Use **Tailwind utility classes** for all styling
 
@@ -715,6 +716,7 @@ Preflight-style resets (box-sizing, link underlines, list bullets, img block dis
 
 - `assets/js/main.js` — Global behavior: smooth scrolling, scroll-to-top, lazy loading initialization
 - `assets/js/navigation.js` — **Shipped file (do NOT generate).** Auto-deployed by the engine. Handles mobile menu toggle (.is-open), scroll lock, Escape key, link-click close, overlay-click close, scroll-aware header (.is-scrolled). The AI writes HTML structure and CSS only.
+- `assets/js/icon-resolver.js` — **Shipped file (do NOT generate).** Auto-deployed by the engine. Hydrates `data-lucide` placeholders into inline SVGs from `/assets/icons/`. The AI writes only `<i data-lucide="name">` placeholders.
 - `assets/js/components.js` — Interactive components: accordions, tabs, carousels, lightboxes, form validation
 
 ### JS Quality Standards
@@ -806,26 +808,23 @@ The website ships with the complete Lucide icon library as individual SVG files 
 
 ### How to Use Icons
 
-**Preferred method — inline SVG** (styleable via CSS, inherits `currentColor`):
+**Use `data-lucide` placeholders.** The shipped `icon-resolver.js` runtime hydrates them into inline SVGs at page load. You never need to output raw SVG `<path>` data.
 
 ```html
-<svg class="icon" width="24" height="24" viewBox="0 0 24 24" fill="none" 
-     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <path d="..."></path>
-</svg>
+<i class="icon" data-lucide="phone" aria-hidden="true"></i>
 ```
 
-Copy the `<path>` (and any other shape elements) from the corresponding file in `/assets/icons/[name].svg`. Do not copy the outer `<svg>` wrapper — use your own with the `icon` class.
+The runtime fetches the actual SVG from `/assets/icons/phone.svg`, extracts the paths, and replaces the `<i>` with a proper inline `<svg>` that inherits `currentColor`, preserving all classes, ARIA attributes, and data attributes.
 
-**Alternative — img reference** (simpler, when styling isn't needed):
+**Rules:**
+- ✅ Always use `<i class="icon" data-lucide="name" aria-hidden="true"></i>`
+- ✅ Add extra classes for sizing: `icon-sm`, `icon-lg`, `icon-xl`
+- ✅ Add Tailwind color classes: `text-primary`, `text-white`, `text-gray-500`
+- ❌ Never output raw SVG `<path>` or `<circle>` data for Lucide icons
+- ❌ Never use `<img src="/assets/icons/...">` for theme-colored icons (they can't inherit `currentColor`)
+- ❌ Never generate or modify `icon-resolver.js` — it is shipped infrastructure
 
-```html
-<img src="/assets/icons/phone.svg" alt="" class="icon" width="24" height="24">
-```
-
-### Icon CSS
-
-Include this `.icon` class in `style.css`:
+**Size classes** (include in `style.css`):
 
 ```css
 .icon {
@@ -839,6 +838,39 @@ Include this `.icon` class in `style.css`:
 .icon-sm { width: 1em; height: 1em; }
 .icon-lg { width: 1.5em; height: 1.5em; }
 .icon-xl { width: 2em; height: 2em; }
+```
+
+### Examples
+
+Feature card with icon:
+```html
+<div class="flex items-start gap-4">
+  <i class="icon-lg text-primary" data-lucide="shield" aria-hidden="true"></i>
+  <div>
+    <h3 class="font-semibold">Secure Payments</h3>
+    <p class="text-gray-600">All transactions are encrypted end-to-end.</p>
+  </div>
+</div>
+```
+
+Social icons in footer:
+```html
+<div class="flex gap-4">
+  <a href="#" class="text-gray-400 hover:text-white transition-colors">
+    <i class="icon" data-lucide="facebook" aria-hidden="true"></i>
+  </a>
+  <a href="#" class="text-gray-400 hover:text-white transition-colors">
+    <i class="icon" data-lucide="instagram" aria-hidden="true"></i>
+  </a>
+</div>
+```
+
+Mobile nav toggle (icon-swap pattern):
+```html
+<button id="nav-toggle" aria-label="Open navigation">
+  <i id="icon-menu" class="icon" data-lucide="menu" aria-hidden="true"></i>
+  <i id="icon-close" class="icon hidden" data-lucide="x" aria-hidden="true"></i>
+</button>
 ```
 
 ### Common Icon Names
@@ -868,7 +900,7 @@ Use these icon names (matching filenames in `/assets/icons/`):
 | Twitter/X | `twitter` | LinkedIn | `linkedin` |
 | YouTube | `youtube` | GitHub | `github` |
 
-When in doubt about an icon name, describe its purpose — the full list of 1,500+ icons covers virtually any need.
+When in doubt about an icon name, describe its purpose — the full list of 1,500+ icons covers virtually any need. The runtime includes an alias map for common variations (e.g. `email` → `mail`, `location` → `map-pin`), but always prefer the canonical Lucide name.
 
 ### When NOT to Use Icons
 
@@ -893,7 +925,8 @@ When creating a website, always produce these files:
 | `assets/css/style.css` | Design tokens (`:root`), `@keyframes`, `[data-reveal]` transitions, nav/mobile-menu structural CSS |
 | `assets/js/main.js` | Global behavior + IntersectionObserver scroll reveal + sticky header |
 | `assets/js/navigation.js` | **Shipped (do NOT generate).** Auto-deployed. Mobile menu toggle, scroll lock, header scroll class |
-| `assets/icons/[name].svg` | Lucide SVG icons (pre-installed, use as needed) |
+| `assets/js/icon-resolver.js` | **Shipped (do NOT generate).** Auto-deployed. Hydrates `data-lucide` placeholders into inline SVGs |
+| `assets/icons/[name].svg` | Lucide SVG icons (pre-installed, resolved by icon-resolver.js at runtime) |
 
 Additional files as needed:
 | `assets/js/components.js` | Interactive components (if the site uses tabs, accordions, etc.) |

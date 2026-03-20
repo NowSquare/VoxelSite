@@ -176,3 +176,13 @@ Write thorough design intelligence noting:
 - What structural adjustments were made to accommodate the new design
 
 This is your design log. It must explain every visual decision to future AI agents editing this site.
+
+## Icons
+
+When restyling icons, use `data-lucide` placeholders. If the existing site has raw SVG icons, convert them:
+
+```html
+<i class="icon text-primary" data-lucide="phone" aria-hidden="true"></i>
+```
+
+Never output raw SVG `<path>` data. The shipped `icon-resolver.js` hydrates placeholders into inline SVGs at runtime.

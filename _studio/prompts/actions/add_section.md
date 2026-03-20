@@ -33,3 +33,11 @@ Output ONLY the section snippet wrapped in a `<file>` tag with the special path 
 ```
 
 Do NOT return the full page. Do NOT include `<!DOCTYPE>`, `<html>`, `<head>`, `<body>`, or any content outside the `<section>` tags. Output ONLY the new section HTML and nothing else.
+
+## Icons
+
+When adding icons to the new section, use `data-lucide` placeholders. Never output raw SVG `<path>` data:
+
+```html
+<i class="icon text-primary" data-lucide="shield" aria-hidden="true"></i>
+```

@@ -32,3 +32,11 @@ Return the **same type of element** you received. If you received a `<section>`,
 Do NOT return the full page file. Do NOT include `<!DOCTYPE>`, `<html>`, `<head>`, `<body>`, `<?php`, or content outside the given element.
 
 Do not explain your changes — just output the modified element.
+
+## Icons
+
+When adding or changing icons, use `data-lucide` placeholders. Never output raw SVG `<path>` data:
+
+```html
+<i class="icon" data-lucide="phone" aria-hidden="true"></i>
+```

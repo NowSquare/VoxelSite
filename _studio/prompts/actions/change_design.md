@@ -106,3 +106,10 @@ These preferences persist across conversations, ensuring the AI never repeats a 
 - Creating a design that looks good on desktop but breaks on mobile
 - **Forgetting to update design intelligence.** Every design change needs a DI merge.
 
+## Icons
+
+When adding or changing icons during design changes, use `data-lucide` placeholders. Never output raw SVG `<path>` data:
+
+```html
+<i class="icon text-primary" data-lucide="phone" aria-hidden="true"></i>
+```

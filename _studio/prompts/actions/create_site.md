@@ -35,7 +35,8 @@ Always output a complete, coherent first version in one response.
    - `assets/css/style.css` (`:root` design tokens at top, then `@keyframes`, `[data-reveal]` transitions, and nav/mobile-menu structural CSS — nothing else)
 3. JavaScript files (output third — interactive behavior):
    - `assets/js/main.js`
-   - `assets/js/navigation.js`
+   - `assets/js/navigation.js` — **shipped (do NOT generate content)**
+   - `assets/js/icon-resolver.js` — **shipped (do NOT generate content)**
    - `assets/js/components.js` (if interactive components are used)
 4. Page files (output fourth — uses the partials, CSS, and JS above):
    - `index.php` (always — this is the star of the show)
@@ -196,6 +197,16 @@ If the site includes a contact page, booking system, order form, or any kind of 
 3. **Add to features array** — include `"contact_form"` (or `"booking"`, `"order"`, etc.) in the `site.json` features array.
 
 Form AJAX handling is **shipped code** — the engine automatically injects `form-handler.js` into the footer partial when any page has `action="/submit.php"`. You do NOT generate any form JavaScript.
+
+## Icons
+
+When adding icons (feature cards, contact info, navigation, social links), use the `data-lucide` placeholder pattern:
+
+```html
+<i class="icon text-primary" data-lucide="phone" aria-hidden="true"></i>
+```
+
+Never output raw SVG `<path>` data. The shipped `icon-resolver.js` hydrates placeholders into inline SVGs at runtime from `/assets/icons/`. Do NOT generate `icon-resolver.js` — it is auto-deployed by the engine.
 
 Field names in the HTML `name` attributes must **exactly match** the `name` properties in the schema JSON. The `submit.php` handler reads the schema to validate submissions.
 

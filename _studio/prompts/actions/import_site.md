@@ -129,3 +129,13 @@ Write thorough design intelligence noting:
 - Typography mapping ("Source used Inter for headings and system sans for body — preserved both")
 
 This is your design log. It must explain every visual decision to future AI agents editing this site.
+
+## Icons
+
+When the imported site uses icons, convert them to `data-lucide` placeholders:
+
+```html
+<i class="icon" data-lucide="phone" aria-hidden="true"></i>
+```
+
+Never copy raw SVG `<path>` data from the source site. The shipped `icon-resolver.js` hydrates placeholders into inline SVGs at runtime from `/assets/icons/`.

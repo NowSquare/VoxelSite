@@ -430,6 +430,19 @@ CSS;
             return $content;
         }
 
+        // Icon resolver: Replace AI-generated icon-resolver.js with the shipped version.
+        // Like navigation.js — the shipped version is canonical and handles
+        // data-lucide hydration, alias mapping, and fallback behavior.
+        if ($path === 'assets/js/icon-resolver.js') {
+            $this->ensureShippedIconResolver();
+            return $content;
+        }
+
+        // NOTE: icon-resolver.js injection into footer is NOT done per-file.
+        // It is called unconditionally by PromptEngine after all writes,
+        // so ordering doesn't matter. See ensureShippedIconResolver() and
+        // injectIconResolverIntoFooter().
+
         // Nav partial: structural fixes for mobile menu.
         // 1. Move #mobile-menu outside <header> (backdrop-filter trap)
         // 2. Ensure a close button exists inside the menu
@@ -438,6 +451,15 @@ CSS;
             $content = $this->fixMobileMenuPlacement($content);
             $content = $this->ensureMobileMenuCloseButton($content);
             $this->ensureMobileNavCss();
+        }
+
+        // PHP/HTML: Normalize data-lucide icon names.
+        // Auto-fix safe aliases (underscore→hyphen, known misspellings)
+        // so the icon resolver can find the file on disk.
+        if ((str_ends_with($path, '.php') || str_ends_with($path, '.html'))
+            && str_contains($content, 'data-lucide=')
+        ) {
+            $content = $this->normalizeDataLucideNames($content);
         }
 
         return $content;
@@ -660,6 +682,180 @@ SAFETY;
     }
 
     /**
+     * Safe alias map for common AI hallucinations in data-lucide values.
+     * Mirrors a subset of the alias map in icon-resolver.js for server-side normalization.
+     *
+     * IMPORTANT: Only alias names that do NOT exist as files in /assets/icons/.
+     * If a name has a real .svg file on disk, the AI may have chosen it deliberately.
+     * Verified against Lucide icon set — each source name confirmed missing.
+     *
+     * @var array<string, string>
+     */
+    private const ICON_ALIASES = [
+        'email'       => 'mail',
+        'location'    => 'map-pin',
+        'time'        => 'clock',
+        'cancel'      => 'x',
+        'telephone'   => 'phone',
+        'call'        => 'phone',
+        'address'     => 'map-pin',
+        'envelope'    => 'mail',
+        'right-arrow' => 'arrow-right',
+        'left-arrow'  => 'arrow-left',
+        'tick'        => 'check',
+        'checkmark'   => 'check',
+        'remove'      => 'x',
+        'close'       => 'x',
+        'pencil-edit' => 'pencil',
+        'gear'        => 'settings',
+        'question'    => 'help-circle',
+        'login'       => 'log-in',
+        'logout'      => 'log-out',
+        'signin'      => 'log-in',
+        'signout'     => 'log-out',
+        'profile'     => 'user',
+        'account'     => 'user',
+        'person'      => 'user',
+        'people'      => 'users',
+        'team'        => 'users',
+        'photo'       => 'image',
+        'picture'     => 'image',
+        'hide'        => 'eye-off',
+        'visible'     => 'eye',
+        'invisible'   => 'eye-off',
+        'cart'        => 'shopping-cart',
+        'basket'      => 'shopping-cart',
+        'bag'         => 'shopping-bag',
+        'payment'     => 'credit-card',
+        'money'       => 'dollar-sign',
+        'dollar'      => 'dollar-sign',
+        'lightning'   => 'zap',
+        'fast'        => 'zap',
+        'magic'       => 'sparkles',
+        'refresh'     => 'refresh-cw',
+        'reload'      => 'refresh-cw',
+        'sync'        => 'refresh-cw',
+        'like'        => 'thumbs-up',
+        'dislike'     => 'thumbs-down',
+        'happy'       => 'smile',
+        'sad'         => 'frown',
+        'directions'  => 'map',
+        'chart'       => 'bar-chart-2',
+        'graph'       => 'bar-chart-2',
+        'analytics'   => 'bar-chart-2',
+        'trending'    => 'trending-up',
+        'growth'      => 'trending-up',
+        'sort'        => 'arrow-up-down',
+        'stop'        => 'square',
+        'print'       => 'printer',
+        'price'       => 'tag',
+    ];
+
+    /**
+     * Normalize data-lucide icon names in file content.
+     *
+     * Applies safe alias mapping server-side so the written file
+     * already contains the canonical icon name. This works alongside
+     * the client-side alias map in icon-resolver.js as defense in depth.
+     */
+    private function normalizeDataLucideNames(string $content): string
+    {
+        return preg_replace_callback(
+            '/data-lucide=["\']([^"\']+)["\']/i',
+            function (array $m): string {
+                $raw = trim(strtolower($m[1]));
+                $normalized = str_replace('_', '-', $raw);
+                $resolved = self::ICON_ALIASES[$normalized] ?? $normalized;
+                if ($resolved !== $raw) {
+                    return 'data-lucide="' . $resolved . '"';
+                }
+                return $m[0];
+            },
+            $content
+        );
+    }
+
+    /**
+     * Validate data-lucide icon names in written PHP files against assets/icons/.
+     *
+     * Scans the given list of written file paths for data-lucide="..." references,
+     * checks each icon name exists as a .svg file in assets/icons/, and logs any
+     * unresolved names for supportability.
+     *
+     * This is a post-write validation pass — it does not modify files.
+     * The inline normalizeDataLucideNames() handles auto-fix during write.
+     *
+     * @param string[] $writtenPaths Relative file paths that were written
+     * @return array{valid: int, missing: array<string, string[]>}
+     */
+    public function validateIconNames(array $writtenPaths): array
+    {
+        $iconDir = $this->assetsPath . '/icons';
+        $valid = 0;
+        $missing = [];  // name => [file1, file2, ...]
+
+        // Build a set of available icon names (without .svg extension)
+        $available = [];
+        if (is_dir($iconDir)) {
+            $files = @scandir($iconDir);
+            if ($files !== false) {
+                foreach ($files as $file) {
+                    if (!str_starts_with($file, '.') && str_ends_with($file, '.svg')) {
+                        $available[substr($file, 0, -4)] = true;
+                    }
+                }
+            }
+        }
+
+        if (empty($available)) {
+            return ['valid' => 0, 'missing' => []];
+        }
+
+        foreach ($writtenPaths as $relativePath) {
+            if (!str_ends_with($relativePath, '.php') && !str_ends_with($relativePath, '.html')) {
+                continue;
+            }
+
+            try {
+                $absolutePath = $this->resolvePath($relativePath, false);
+            } catch (\Throwable) {
+                continue;
+            }
+            if (!file_exists($absolutePath)) {
+                continue;
+            }
+
+            $content = @file_get_contents($absolutePath);
+            if ($content === false || !str_contains($content, 'data-lucide=')) {
+                continue;
+            }
+
+            if (preg_match_all('/data-lucide=["\']([^"\']+)["\']/i', $content, $matches)) {
+                foreach ($matches[1] as $name) {
+                    $normalized = str_replace('_', '-', trim(strtolower($name)));
+                    $resolved = self::ICON_ALIASES[$normalized] ?? $normalized;
+
+                    if (isset($available[$resolved])) {
+                        $valid++;
+                    } else {
+                        $missing[$resolved][] = $relativePath;
+                    }
+                }
+            }
+        }
+
+        // Log any missing icons for supportability
+        if (!empty($missing)) {
+            Logger::warning('files', 'Unresolved data-lucide icon names', [
+                'missing' => array_map(fn($files) => array_unique($files), $missing),
+                'valid_count' => $valid,
+            ]);
+        }
+
+        return ['valid' => $valid, 'missing' => $missing];
+    }
+
+    /**
      * Copy the shipped form-handler.js into assets/js/.
      * Always overwrites — ensures bug fixes in the shipped code propagate
      * to existing sites without requiring a full site regeneration.
@@ -745,6 +941,86 @@ SAFETY;
                 $footer
             );
             file_put_contents($footerPath, $footer);
+        }
+    }
+
+    /**
+     * Copy the shipped icon-resolver.js into assets/js/.
+     *
+     * Like navigation.js: the AI may generate an icon-resolver.js, but we
+     * replace it with the canonical version that handles:
+     *   - data-lucide → inline SVG hydration from /assets/icons/
+     *   - Alias mapping for common AI hallucinations
+     *   - Graceful fallback for missing icons
+     *   - MutationObserver for dynamic content
+     *
+     * Called unconditionally by PromptEngine after all writes.
+     */
+    public function ensureShippedIconResolver(): void
+    {
+        $dest = $this->assetsPath . '/js/icon-resolver.js';
+        $source = dirname(__DIR__) . '/static/icon-resolver.js';
+
+        if (!file_exists($source)) {
+            return;
+        }
+
+        $dir = dirname($dest);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        // Always overwrite — shipped version takes precedence
+        copy($source, $dest);
+    }
+
+    /**
+     * Inject icon-resolver.js into _partials/footer.php.
+     *
+     * Unconditionally ensures icon-resolver.js is loaded. Handles both
+     * partial-based sites (footer.php) and monolithic pages (standalone
+     * PHP files with </body>). Called by PromptEngine after all writes.
+     */
+    public function injectIconResolverIntoFooter(): void
+    {
+        // 1. Try partial-based: inject into _partials/footer.php
+        $footerPath = $this->resolvePath('_partials/footer.php', true);
+        if (file_exists($footerPath)) {
+            $footer = file_get_contents($footerPath);
+            if (!str_contains($footer, 'icon-resolver.js') && str_contains($footer, '</body>')) {
+                $footer = str_replace(
+                    '</body>',
+                    '<script src="/assets/js/icon-resolver.js" defer></script>' . "\n</body>",
+                    $footer
+                );
+                file_put_contents($footerPath, $footer);
+            }
+            return; // Footer partial exists — partial-based site, done.
+        }
+
+        // 2. Monolithic fallback: scan preview PHP files for </body>
+        $previewDir = $this->previewPath;
+        if (!is_dir($previewDir)) {
+            return;
+        }
+
+        $phpFiles = glob($previewDir . '/*.php') ?: [];
+        foreach ($phpFiles as $file) {
+            if (!is_file($file)) {
+                continue;
+            }
+            $content = file_get_contents($file);
+            if ($content === false) {
+                continue;
+            }
+            if (str_contains($content, '</body>') && !str_contains($content, 'icon-resolver.js')) {
+                $content = str_replace(
+                    '</body>',
+                    '<script src="/assets/js/icon-resolver.js" defer></script>' . "\n</body>",
+                    $content
+                );
+                file_put_contents($file, $content);
+            }
         }
     }
 
@@ -1596,7 +1872,7 @@ SAFETY;
         // 4. Delete AI-generated JS files (skip shipped handlers)
         $jsDir = $this->assetsPath . '/js';
         if (is_dir($jsDir)) {
-            $skipJs = ['form-handler.js', 'actions-bar.js', 'navigation.js'];
+            $skipJs = ['form-handler.js', 'actions-bar.js', 'navigation.js', 'icon-resolver.js'];
             $jsFiles = glob($jsDir . '/*.js') ?: [];
             foreach ($jsFiles as $file) {
                 if (is_file($file) && !in_array(basename($file), $skipJs, true)) {

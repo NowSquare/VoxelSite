@@ -624,9 +624,9 @@ class SiteContext
      * Available Lucide icons from /assets/icons/.
      *
      * Instead of listing all 1,900+ icon names (which would consume
-     * ~6K tokens), we tell the AI that the full Lucide set is
-     * available and how to reference them. The AI already knows
-     * Lucide icon names natively.
+     * ~6K tokens), we tell the AI how to reference them via the
+     * data-lucide placeholder contract. The shipped icon-resolver.js
+     * runtime hydrates placeholders into inline SVGs at page load.
      */
     private function buildIconList(): ?string
     {
@@ -653,9 +653,9 @@ class SiteContext
 
         return "=== AVAILABLE ICONS ===\n"
             . "{$count} Lucide SVG icons in /assets/icons/. "
-            . "Use any standard Lucide icon name as /assets/icons/{name}.svg "
-            . "(e.g. /assets/icons/arrow-right.svg, /assets/icons/check.svg, /assets/icons/menu.svg). "
-            . "Embed as inline SVG (preferred) or <img> reference.";
+            . "Use data-lucide placeholders: <i class=\"icon\" data-lucide=\"name\" aria-hidden=\"true\"></i>. "
+            . "The shipped icon-resolver.js hydrates these into inline SVGs at runtime. "
+            . "Never output raw SVG <path> data for icons — only use data-lucide=\"name\".";
     }
 
     /**

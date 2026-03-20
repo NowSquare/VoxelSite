@@ -306,14 +306,20 @@ class ResponseParser
             $searchRegion = substr($bufferSoFar, $this->streamCursor, ($closePos + $closingLen) - $this->streamCursor);
 
             if (preg_match(
-                '/<file\s+path="([^"]+)"\s+action="write"\s*>(.*?)\n<\/file>$/s',
+                '/<file\s+path="([^"]+)"(?:\s+action="write")?\s*>(.*?)\n<\/file>$/s',
                 $searchRegion,
                 $match
             )) {
                 $path = trim($match[1]);
                 $content = ltrim($match[2], "\n");
 
-                if ($this->validatePath($path) === null && $this->validateContent($path, $content) === null) {
+                // Skip content validation for virtual paths (__section_snippet__, __inline_snippet__)
+                // — they'll be transformed into real file writes by PromptEngine post-processing.
+                $isVirtualPath = str_starts_with($path, '__') && str_ends_with($path, '__');
+                $pathValid = $this->validatePath($path) === null;
+                $contentValid = $isVirtualPath || $this->validateContent($path, $content) === null;
+
+                if ($pathValid && $contentValid) {
                     $completed[] = [
                         'path'    => $path,
                         'action'  => 'write',

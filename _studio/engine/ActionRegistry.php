@@ -518,13 +518,19 @@ class ActionRegistry
      */
     private function buildInlineEditPrompt(string $userPrompt, array $data): string
     {
-        $parts = ["Modify the specific file and code block requested. Integrate your changes into the exact location of the selected code, and return THE ENTIRE REWRITTEN FILE using the standard <file> tags. DO NOT return partial files."];
+        $hasSelection = !empty($data['selection']);
+
+        if ($hasSelection) {
+            $parts = ["Replace the selected code block with your modification. Return ONLY the replacement snippet in a `<file path=\"__inline_snippet__\">` tag — not the full file."];
+        } else {
+            $parts = ["Modify the file as requested and return THE ENTIRE REWRITTEN FILE using the standard <file> tags."];
+        }
 
         if (!empty($data['path'])) {
             $parts[] = "\n## Target File\n{$data['path']}";
         }
 
-        if (!empty($data['selection'])) {
+        if ($hasSelection) {
             $parts[] = "\n## Selected Code to Replace\n```php\n{$data['selection']}\n```";
         }
 
@@ -539,19 +545,23 @@ class ActionRegistry
      */
     private function buildSectionEditPrompt(string $userPrompt, array $data): string
     {
-        $parts = ["Modify the specific section described below. Apply the user's instruction to this section only, preserving the page's overall design language. Return THE ENTIRE REWRITTEN FILE using the standard <file> tags."];
+        $parts = ["Modify the specific section described below. Apply the user's instruction to this section only, preserving the page's overall design language."];
 
         if (!empty($data['path'])) {
             $parts[] = "\n## Target File\n{$data['path']}";
         }
 
         if (!empty($data['sectionHtml'])) {
-            $parts[] = "\n## Section HTML (the exact section the user clicked)\n```html\n{$data['sectionHtml']}\n```";
+            // Strip visual editor tracking attributes (data-vx-*, style="")
+            // from the HTML — they waste tokens and could confuse the model.
+            $cleanHtml = preg_replace('/\s+data-vx-[a-z-]+="[^"]*"/', '', $data['sectionHtml']);
+            $cleanHtml = preg_replace('/\s+style=""/', '', $cleanHtml);
+            $parts[] = "\n## Section HTML (the exact section the user clicked)\n```html\n{$cleanHtml}\n```";
         }
 
         $parts[] = "\n## User's Instruction\n{$userPrompt}";
 
-        $parts[] = "\n## IMPORTANT\nModify ONLY this section. Do NOT change other parts of the page. Preserve existing Tailwind classes and design tokens unless explicitly asked to change them. Generate the complete rewritten file.";
+        $parts[] = "\n## IMPORTANT\nModify ONLY this section. Do NOT change other parts of the page. Preserve existing Tailwind classes and design tokens unless explicitly asked to change them. Return ONLY the modified section snippet in a `<file path=\"__section_snippet__\">` tag — not the full page.";
 
         return implode("\n", $parts);
     }

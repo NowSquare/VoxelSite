@@ -291,13 +291,14 @@ class PromptEngine
                 $contextBudget = max(0, min(4000, $inputBudgetChars));
             }
 
-            // Visual editor actions edit a single section/file — they don't need
+            // Single-file actions edit one file — they don't need
             // 40K of CSS, 25K of icon names, or 20K of image library paths.
             // Cap the context to ~10K tokens so the AI gets the focus page,
             // design tokens, and essential structure — nothing more.
             // Budget: essentials ~13.5K + focus page ~19K = ~33K, so 40K
             // gives a comfortable margin without pulling in irrelevant bulk.
-            if ($isVisualEditorAction) {
+            $isSingleFileAction = $isVisualEditorAction || $actionType === 'inline_edit';
+            if ($isSingleFileAction) {
                 $contextBudget = min($contextBudget, 40000);
             }
 
@@ -588,6 +589,30 @@ class PromptEngine
             // This is 5-6x faster because the AI only outputs ~2K tokens instead of ~12K.
             if ($actionType === 'add_section' && !empty($actionData['path'])) {
                 $parsed['operations'] = $this->transformSectionSnippet(
+                    $parsed['operations'],
+                    $actionData
+                );
+            }
+
+            // ── section_edit snippet replacement ──
+            // Same virtual path (__section_snippet__), different transform:
+            // the AI returns only the modified section, and we replace the
+            // original section HTML (sent as actionData.sectionHtml) in the
+            // target file. Reduces output tokens by ~85%.
+            if ($actionType === 'section_edit' && !empty($actionData['path'])) {
+                $parsed['operations'] = $this->transformSectionEditSnippet(
+                    $parsed['operations'],
+                    $actionData
+                );
+            }
+
+            // ── inline_edit snippet replacement ──
+            // When the user selects code in Monaco and uses Cmd+K, the AI
+            // returns only the replacement snippet (__inline_snippet__).
+            // We swap it into the file at the selection position.
+            // Reduces output tokens by ~95% for selection-based edits.
+            if ($actionType === 'inline_edit' && !empty($actionData['selection'])) {
+                $parsed['operations'] = $this->transformInlineEditSnippet(
                     $parsed['operations'],
                     $actionData
                 );
@@ -1512,6 +1537,289 @@ class PromptEngine
     }
 
     /**
+     * Transform a __section_snippet__ for section_edit into a real file write.
+     *
+     * When section_edit returns only the modified section HTML (not the full
+     * file), this method reads the target file, finds the original section
+     * using the sectionHtml anchor from actionData, and replaces it with
+     * the AI's modified snippet.
+     *
+     * Falls through gracefully if the AI returned a full file write instead.
+     */
+    private function transformSectionEditSnippet(array $operations, array $actionData): array
+    {
+        // Find the snippet operation
+        $snippetIndex = null;
+        $snippetContent = null;
+        foreach ($operations as $i => $op) {
+            if ($op['path'] === '__section_snippet__' && $op['action'] === 'write') {
+                $snippetIndex = $i;
+                $snippetContent = $op['content'];
+                break;
+            }
+        }
+
+        // No snippet found — the AI returned a full file write (backward compatible)
+        if ($snippetIndex === null) {
+            return $operations;
+        }
+
+        $targetPath = $actionData['path'] ?? '';
+        $originalHtml = $actionData['sectionHtml'] ?? '';
+
+        // The visual editor injects data-vx-* attributes, data-vx-editable,
+        // and style="" into the outerHTML for its own tracking. These don't
+        // exist in the source file, so we must strip them before matching.
+        $originalHtml = $this->stripVisualEditorAttributes($originalHtml);
+
+        if (empty($targetPath) || empty($originalHtml)) {
+            Logger::warning('ai', 'Section edit snippet missing path or sectionHtml — fallback to full write', [
+                'has_path'         => !empty($targetPath),
+                'has_section_html' => !empty($originalHtml),
+            ]);
+            return $operations;
+        }
+
+        // Read the current file content
+        $currentContent = $this->fileManager->readFile($targetPath);
+        if ($currentContent === null) {
+            Logger::warning('ai', 'Cannot read target file for section edit snippet', [
+                'path' => $targetPath,
+            ]);
+            return $operations;
+        }
+
+        // Find and replace the original section in the file
+        $newContent = $this->replaceSectionHtml(
+            $currentContent,
+            trim($originalHtml),
+            trim($snippetContent)
+        );
+
+        if ($newContent === null) {
+            Logger::warning('ai', 'Could not find section anchor for replacement — AI output used as-is', [
+                'target_path'   => $targetPath,
+                'anchor_length' => strlen($originalHtml),
+            ]);
+            // Cannot locate the original section — fall through.
+            // The snippet operation will fail validation (virtual path),
+            // so remove it to avoid a confusing error.
+            unset($operations[$snippetIndex]);
+            return array_values($operations);
+        }
+
+        // Replace the snippet operation with a real file write
+        $operations[$snippetIndex] = [
+            'path'    => $targetPath,
+            'action'  => 'write',
+            'content' => $newContent,
+        ];
+
+        Logger::info('ai', 'Section edit snippet replaced', [
+            'target_path'     => $targetPath,
+            'anchor_length'   => strlen($originalHtml),
+            'snippet_length'  => strlen($snippetContent),
+            'original_length' => strlen($currentContent),
+            'new_length'      => strlen($newContent),
+        ]);
+
+        return $operations;
+    }
+
+    /**
+     * Replace a section's HTML in the full file content.
+     *
+     * Uses exact match first, then falls back to whitespace-normalized
+     * matching. The visual editor captures outerHTML from the rendered
+     * DOM, which may normalize whitespace differently from the source
+     * file (e.g., collapsing runs of spaces, trimming newlines inside
+     * attributes).
+     *
+     * @return string|null The new file content, or null if anchor not found
+     */
+    private function replaceSectionHtml(string $fileContent, string $originalHtml, string $newHtml): ?string
+    {
+        // Strategy 1: exact substring match (fast path)
+        $pos = strpos($fileContent, $originalHtml);
+        if ($pos !== false) {
+            return substr($fileContent, 0, $pos)
+                . $newHtml
+                . substr($fileContent, $pos + strlen($originalHtml));
+        }
+
+        // Strategy 2: whitespace-normalized match
+        // The DOM's outerHTML collapses whitespace that the source file
+        // preserves (indentation, blank lines between attributes, etc.).
+        // Normalize both to single-space runs and find the match.
+        $normalizedOriginal = preg_replace('/\s+/', ' ', $originalHtml);
+        $normalizedFile = preg_replace('/\s+/', ' ', $fileContent);
+
+        $normPos = strpos($normalizedFile, $normalizedOriginal);
+        if ($normPos === false) {
+            return null; // Anchor not found even after normalization
+        }
+
+        // Map the normalized positions back to real file positions.
+        // Walk through the original file, counting non-whitespace-normalized
+        // characters to find where the match starts and ends in the real file.
+        $realStart = $this->mapNormalizedOffset($fileContent, $normPos);
+        $realEnd = $this->mapNormalizedOffset($fileContent, $normPos + strlen($normalizedOriginal));
+
+        if ($realStart === null || $realEnd === null) {
+            return null;
+        }
+
+        return substr($fileContent, 0, $realStart)
+            . $newHtml
+            . substr($fileContent, $realEnd);
+    }
+
+    /**
+     * Map a character offset in whitespace-normalized text back to the
+     * corresponding offset in the original text.
+     *
+     * Whitespace normalization collapses runs of whitespace to single
+     * spaces. This method walks the original text, counting how many
+     * normalized characters have been consumed, to find the real offset
+     * that corresponds to a given normalized offset.
+     */
+    private function mapNormalizedOffset(string $original, int $normalizedOffset): ?int
+    {
+        $len = strlen($original);
+        $normCount = 0;
+        $inWhitespace = false;
+
+        for ($i = 0; $i < $len; $i++) {
+            if ($normCount >= $normalizedOffset) {
+                return $i;
+            }
+
+            $c = $original[$i];
+            $isWs = ($c === ' ' || $c === "\t" || $c === "\n" || $c === "\r");
+
+            if ($isWs) {
+                if (!$inWhitespace) {
+                    // First whitespace char in a run → counts as one space
+                    $normCount++;
+                    $inWhitespace = true;
+                }
+                // Subsequent whitespace chars in the run → don't count
+            } else {
+                $normCount++;
+                $inWhitespace = false;
+            }
+        }
+
+        // If we consumed exactly the right amount, the offset is at the end
+        if ($normCount >= $normalizedOffset) {
+            return $len;
+        }
+
+        return null;
+    }
+
+    /**
+     * Strip visual editor tracking attributes from HTML.
+     *
+     * The visual editor injects data-vx-* attributes (source mapping,
+     * editability flags) and empty style="" into the DOM for overlay
+     * positioning. These don't exist in the source file and must be
+     * removed before we can match the HTML against the source.
+     */
+    private function stripVisualEditorAttributes(string $html): string
+    {
+        // Remove data-vx-* attributes (source file, source kind, node key, editable, etc.)
+        $html = preg_replace('/\s+data-vx-[a-z-]+="[^"]*"/', '', $html);
+
+        // Remove empty style="" that the visual editor adds
+        $html = preg_replace('/\s+style=""/', '', $html);
+
+        return $html;
+    }
+
+    /**
+     * Transform a __inline_snippet__ operation into a real file write.
+     *
+     * When inline_edit returns only the replacement for the selected code
+     * (not the full file), this method reads the target file, finds the
+     * selected text, and replaces it with the AI's snippet.
+     *
+     * Falls through gracefully if the AI returned a full file write instead.
+     */
+    private function transformInlineEditSnippet(array $operations, array $actionData): array
+    {
+        // Find the snippet operation
+        $snippetIndex = null;
+        $snippetContent = null;
+        foreach ($operations as $i => $op) {
+            if ($op['path'] === '__inline_snippet__' && $op['action'] === 'write') {
+                $snippetIndex = $i;
+                $snippetContent = $op['content'];
+                break;
+            }
+        }
+
+        // No snippet found — the AI returned a full file write (backward compatible)
+        if ($snippetIndex === null) {
+            return $operations;
+        }
+
+        $targetPath = $actionData['path'] ?? '';
+        $selection = $actionData['selection'] ?? '';
+
+        if (empty($targetPath) || empty($selection)) {
+            Logger::warning('ai', 'Inline edit snippet missing path or selection — fallback', [
+                'has_path'      => !empty($targetPath),
+                'has_selection' => !empty($selection),
+            ]);
+            return $operations;
+        }
+
+        // Read the current file content
+        $currentContent = $this->fileManager->readFile($targetPath);
+        if ($currentContent === null) {
+            Logger::warning('ai', 'Cannot read target file for inline edit snippet', [
+                'path' => $targetPath,
+            ]);
+            return $operations;
+        }
+
+        // Find the selection in the file
+        $pos = strpos($currentContent, $selection);
+        if ($pos === false) {
+            Logger::warning('ai', 'Inline edit: selection text not found in file — fallback', [
+                'target_path'      => $targetPath,
+                'selection_length' => strlen($selection),
+                'file_length'      => strlen($currentContent),
+            ]);
+            // Remove the virtual path operation to avoid confusing errors
+            unset($operations[$snippetIndex]);
+            return array_values($operations);
+        }
+
+        // Replace the selection with the snippet
+        $newContent = substr($currentContent, 0, $pos)
+            . $snippetContent
+            . substr($currentContent, $pos + strlen($selection));
+
+        $operations[$snippetIndex] = [
+            'path'    => $targetPath,
+            'action'  => 'write',
+            'content' => $newContent,
+        ];
+
+        Logger::info('ai', 'Inline edit snippet replaced', [
+            'target_path'      => $targetPath,
+            'selection_length' => strlen($selection),
+            'snippet_length'   => strlen($snippetContent),
+            'original_length'  => strlen($currentContent),
+            'new_length'       => strlen($newContent),
+        ]);
+
+        return $operations;
+    }
+
+    /**
      * Check if the current generation has been cancelled.
      *
      * The /ai/cancel-generation endpoint sets the prompt_log status
@@ -1865,11 +2173,20 @@ class PromptEngine
      * Instead, periodic heartbeats are written to prompt_log.last_progress_at
      * so the polling endpoint can detect stale workers.
      *
+     * Status events are enriched with a normalized `step` key so the
+     * frontend can show a machine-readable phase (resolving_context,
+     * streaming, writing_files, etc.) without parsing the human message.
+     *
      * @param string $type Event type (token, status, file_complete, warning, done, error)
      * @param array  $data Event payload
      */
     private function emitSSE(string $type, array $data): void
     {
+        // ── Enrich status events with a normalized step key ──
+        if ($type === 'status' && isset($data['message']) && !isset($data['step'])) {
+            $data['step'] = $this->normalizeStepFromMessage($data['message']);
+        }
+
         // In headless mode, skip SSE output but write heartbeat.
         // Heartbeat fires on ALL events (including tokens) so the polling
         // endpoint's stale detection never misclassifies a healthy long-running
@@ -1884,6 +2201,24 @@ class PromptEngine
             }
             $this->writeHeadlessHeartbeat($statusMessage);
             return;
+        }
+
+        // ── Interactive mode: persist status_message + liveness ──
+
+        // Status events: persist both the human-readable step text and
+        // last_progress_at. This enables the resumed-generation UX.
+        if ($type === 'status' && $this->activePromptLogId !== null) {
+            $this->persistStatusMessage($data['message'] ?? null, $data['step'] ?? null);
+        }
+
+        // Non-status events (tokens, file_complete, etc.): refresh
+        // last_progress_at so the stale sweeps in ai.php don't falsely
+        // expire a healthy run. Skipped for status events because
+        // persistStatusMessage() above already writes last_progress_at.
+        // Throttled to every 5 seconds — the 180-second stale threshold
+        // is well clear of this interval.
+        if ($type !== 'status') {
+            $this->refreshInteractiveLiveness();
         }
 
         static $outputFailed = false;
@@ -1918,6 +2253,128 @@ class PromptEngine
     }
 
     /**
+     * Map a human-readable status message to a normalized step key.
+     *
+     * The step key is a machine-readable identifier that the frontend
+     * uses to render the current phase. The message is the display string.
+     */
+    private function normalizeStepFromMessage(string $message): string
+    {
+        // Exact matches first, then prefix matches for dynamic messages
+        return match (true) {
+            $message === 'Reading your site...'       => 'resolving_context',
+            $message === 'Fetching reference site...' => 'resolving_context',
+            $message === 'Generating...'              => 'streaming',
+            $message === 'Saving revision...'         => 'writing_files',
+            $message === 'Writing files...'           => 'writing_files',
+            $message === 'Compiling styles...'        => 'compiling_css',
+            $message === 'Finalizing...'              => 'finalizing',
+            $message === 'Reviewing quality...'       => 'evaluating',
+            $message === 'Syncing AI discovery files...' => 'finalizing',
+            str_starts_with($message, 'Repaired ')    => 'writing_files',
+            str_starts_with($message, 'Fixed ')       => 'writing_files',
+            default                                   => 'processing',
+        };
+    }
+
+    /**
+     * Persist the current step/status to prompt_log for interactive runs.
+     *
+     * Writes both the human-readable status_message AND the last_progress_at
+     * liveness timestamp. Without last_progress_at, the stale-run recovery
+     * logic (ai.php) falls back to created_at and may falsely expire a
+     * healthy long-running generation on slow hosting.
+     *
+     * Throttled to at most once every 2 seconds to avoid DB write amplification.
+     */
+    private function persistStatusMessage(?string $message, ?string $step): void
+    {
+        static $lastPersist = 0;
+        static $lastStep = null;
+        static $failureLogged = false;
+        $now = microtime(true);
+
+        // Bypass throttle on phase transitions — e.g. streaming → writing_files
+        // → compiling_css can happen within seconds. Only identical repeated
+        // statuses within the same phase get throttled.
+        $phaseChanged = ($step !== null && $step !== $lastStep);
+        if (!$phaseChanged && ($now - $lastPersist < 2.0)) {
+            return;
+        }
+        $lastPersist = $now;
+        $lastStep = $step;
+
+        try {
+            $data = ['last_progress_at' => now()];
+            if ($message !== null) {
+                $data['status_message'] = mb_substr($message, 0, 200);
+            }
+            $this->db->update('prompt_log', $data, 'id = ? AND status = ?', [
+                $this->activePromptLogId, 'streaming',
+            ]);
+        } catch (\Throwable $e) {
+            // Don't crash the generation over a status write, but DO log
+            // the failure once — this is critical for diagnosing SQLite lock
+            // issues, schema drift, or permission problems on customer servers.
+            if (!$failureLogged) {
+                $failureLogged = true;
+                Logger::warning('ai', 'Failed to persist status_message (interactive mode)', [
+                    'prompt_log_id' => $this->activePromptLogId,
+                    'step'          => $step,
+                    'error'         => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Refresh last_progress_at for interactive runs — liveness only.
+     *
+     * This is the token-stream liveness signal. Unlike persistStatusMessage()
+     * which writes both status_message and last_progress_at on status events,
+     * this method writes ONLY the timestamp. It fires on ALL SSE events
+     * (including tokens) so the stale sweeps in ai.php never falsely expire
+     * a healthy run during long token-streaming phases.
+     *
+     * Throttled to every 5 seconds (vs 2s for persistStatusMessage) because
+     * the only goal is keeping last_progress_at fresh enough that the
+     * 180-second stale threshold is never reached.
+     */
+    private function refreshInteractiveLiveness(): void
+    {
+        if ($this->activePromptLogId === null) {
+            return;
+        }
+
+        static $lastLiveness = 0;
+        $now = microtime(true);
+        if ($now - $lastLiveness < 5.0) {
+            return;
+        }
+        $lastLiveness = $now;
+
+        try {
+            $this->db->update('prompt_log', [
+                'last_progress_at' => now(),
+            ], 'id = ? AND status = ?', [
+                $this->activePromptLogId, 'streaming',
+            ]);
+        } catch (\Throwable $e) {
+            // Log the first failure — during token-only phases,
+            // persistStatusMessage() never fires, so this is the only
+            // diagnostic breadcrumb if liveness stops refreshing.
+            static $livenessFailureLogged = false;
+            if (!$livenessFailureLogged) {
+                $livenessFailureLogged = true;
+                Logger::warning('ai', 'Failed to refresh interactive liveness', [
+                    'prompt_log_id' => $this->activePromptLogId,
+                    'error'         => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
      * Write a heartbeat timestamp and optional status message to prompt_log.
      *
      * Used in headless mode to signal liveness. The GET /prompt/:id polling
@@ -1945,8 +2402,18 @@ class PromptEngine
             $this->db->update('prompt_log', $data, 'id = ? AND status = ?', [
                 $this->headlessJobId ?? 0, 'streaming',
             ]);
-        } catch (\Throwable) {
-            // Best-effort — don't crash the generation over a heartbeat write
+        } catch (\Throwable $e) {
+            // Don't crash the generation over a heartbeat write, but DO log
+            // the failure once — critical for diagnosing SQLite lock issues,
+            // schema drift, or permission problems on customer servers.
+            static $heartbeatFailureLogged = false;
+            if (!$heartbeatFailureLogged) {
+                $heartbeatFailureLogged = true;
+                Logger::warning('ai', 'Failed to write headless heartbeat', [
+                    'prompt_log_id' => $this->headlessJobId ?? 0,
+                    'error'         => $e->getMessage(),
+                ]);
+            }
         }
     }
 
@@ -1966,12 +2433,6 @@ Always match the user's language. If they write in French, all content is in Fre
 
 ## Bias to Action
 Build immediately using your best judgment. Never ask more than one question. Make design choices yourself — the user can refine afterward. When pages already exist, treat requests as incremental changes to the existing site.
-
-## Output Format
-
-Return a single strict JSON object with:
-- assistant_message (string)
-- operations (array of write/delete operations)
 
 ## Architecture
 

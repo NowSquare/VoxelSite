@@ -138,10 +138,8 @@ class SiteContext
             }
         }
 
-        $history = $this->buildConversationHistory($conversationId, $userId);
-        if ($history !== null) {
-            $important[] = $history;
-        }
+        // Note: Conversation history is handled by PromptEngine::buildMessages()
+        // as proper user/assistant message pairs — not duplicated here as a text block.
 
         $important[] = $this->buildAssetList();
 
@@ -1020,68 +1018,11 @@ class SiteContext
     }
 
     /**
-     * Last N exchanges from the current conversation.
-     *
-     * Limited to 5 exchanges to keep context manageable.
-     * Includes both user prompts and AI summaries.
+     * buildConversationHistory() removed — conversation history is now
+     * exclusively provided via PromptEngine::buildMessages() as proper
+     * user/assistant message pairs. The previous text-summary approach
+     * duplicated the same prompt_log data in an inferior format.
      */
-    private function buildConversationHistory(?string $conversationId, ?int $userId = null): ?string
-    {
-        if (empty($conversationId)) {
-            return null;
-        }
-
-        if ($userId !== null) {
-            $entries = $this->db->query(
-                "SELECT user_prompt, ai_response, action_type, created_at
-                 FROM prompt_log
-                 WHERE conversation_id = ? AND user_id = ? AND status = 'success'
-                 ORDER BY created_at DESC
-                 LIMIT 5",
-                [$conversationId, $userId]
-            );
-        } else {
-            $entries = $this->db->query(
-                "SELECT user_prompt, ai_response, action_type, created_at
-                 FROM prompt_log
-                 WHERE conversation_id = ? AND status = 'success'
-                 ORDER BY created_at DESC
-                 LIMIT 5",
-                [$conversationId]
-            );
-        }
-
-        if (empty($entries)) {
-            return null;
-        }
-
-        // Reverse to chronological order
-        $entries = array_reverse($entries);
-
-        $history = "=== CONVERSATION HISTORY ===\n";
-        $parser = new \VoxelSite\ResponseParser();
-
-        foreach ($entries as $entry) {
-            $cleanPrompt = \VoxelSite\PromptEngine::stripVxMarkers($entry['user_prompt']);
-            $history .= "User: {$cleanPrompt}\n";
-
-            // Include a brief summary of what the AI did, not the full response
-            if (!empty($entry['ai_response'])) {
-                $summary = trim($parser->extractAssistantMessage((string) $entry['ai_response']));
-                if ($summary !== '') {
-                    // Truncate long messages
-                    if (mb_strlen($summary) > 300) {
-                        $summary = mb_substr($summary, 0, 300) . '...';
-                    }
-                    $history .= "Assistant: {$summary}\n";
-                }
-            }
-
-            $history .= "\n";
-        }
-
-        return $history;
-    }
 
     /**
      * Scan a directory for files, adding them to the assets array.

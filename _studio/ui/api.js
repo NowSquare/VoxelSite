@@ -316,7 +316,7 @@ export async function apiStream(endpoint, body, callbacks = {}) {
           onToken(parsed.content || '');
           break;
         case 'status':
-          onStatus(parsed.message || '');
+          onStatus(parsed);
           break;
         case 'conversation':
           trackedConversationId = parsed.conversation_id || trackedConversationId;

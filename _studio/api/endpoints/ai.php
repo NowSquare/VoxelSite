@@ -90,10 +90,15 @@ if ($method === 'POST' && $path === '/ai/prompt') {
     // If the PHP process was killed mid-stream (SIGKILL), the shutdown
     // handler never fires and prompt_log stays in 'streaming' forever.
     // Mark any entry stuck in 'streaming' for >3 minutes as 'partial'.
+    //
+    // Uses COALESCE(last_progress_at, created_at) so that active heartbeats
+    // from both interactive and headless modes prevent false expiry.
+    // Old rows without last_progress_at (pre-migration 004) fall back
+    // to created_at gracefully.
     $db = Database::getInstance();
     $staleThreshold = gmdate('Y-m-d H:i:s', time() - 180);
     $stale = $db->query(
-        "SELECT id FROM prompt_log WHERE status = 'streaming' AND created_at < ?",
+        "SELECT id FROM prompt_log WHERE status = 'streaming' AND COALESCE(last_progress_at, created_at) < ?",
         [$staleThreshold]
     );
     if (!empty($stale)) {
@@ -211,7 +216,7 @@ if ($method === 'GET' && str_starts_with($path, '/ai/conversations/')) {
     $prompts = $db->query(
         "SELECT id, action_type, user_prompt, ai_response, files_modified,
                 tokens_input, tokens_output, cost_estimate, status, evaluation_issues,
-                created_at
+                status_message, last_progress_at, created_at
          FROM prompt_log
          WHERE conversation_id = ? AND user_id = ?
          ORDER BY created_at ASC
@@ -220,21 +225,28 @@ if ($method === 'GET' && str_starts_with($path, '/ai/conversations/')) {
     );
 
     // Auto-expire stale 'streaming' prompts.
-    // If a prompt has been stuck in 'streaming' for more than 3 minutes,
-    // the PHP process was killed (SIGKILL, OOM, server restart). Mark it
-    // as 'partial' so the UI stops polling and the user can continue.
+    // If a prompt has been stuck in 'streaming' for more than 3 minutes
+    // with no liveness heartbeat, the PHP process was killed (SIGKILL,
+    // OOM, server restart). Mark it as 'partial' so the UI stops polling
+    // and the user can continue.
+    //
+    // Uses COALESCE(last_progress_at, created_at) so that active heartbeats
+    // from both interactive and headless modes prevent false expiry.
     $staleThreshold = 180; // 3 minutes
     $hasStale = false;
+    $staleIds = [];
     foreach ($prompts as &$prompt) {
         if ($prompt['status'] === 'streaming') {
-            $createdTs = strtotime($prompt['created_at'] ?? '');
-            if ($createdTs && (time() - $createdTs) > $staleThreshold) {
+            $progressCol = $prompt['last_progress_at'] ?? $prompt['created_at'] ?? '';
+            $progressTs = strtotime($progressCol);
+            if ($progressTs && (time() - $progressTs) > $staleThreshold) {
                 $db->update('prompt_log', [
                     'status'        => 'partial',
                     'error_message' => 'Generation was interrupted (process terminated by server).',
                 ], 'id = ?', [$prompt['id']]);
                 $prompt['status'] = 'partial';
                 $hasStale = true;
+                $staleIds[] = $prompt['id'];
             }
         }
 
@@ -244,6 +256,15 @@ if ($method === 'GET' && str_starts_with($path, '/ai/conversations/')) {
         }
     }
     unset($prompt);
+
+    // Log stale-recovery mutations for audit trail (support diagnostics)
+    if ($hasStale) {
+        \VoxelSite\Logger::warning('ai', 'Recovered stale streaming prompts (conversation refresh)', [
+            'conversation_id' => $conversationId,
+            'count'           => count($staleIds),
+            'ids'             => $staleIds,
+        ]);
+    }
 
     // If we recovered stale prompts, compile Tailwind for the partial files
     if ($hasStale) {

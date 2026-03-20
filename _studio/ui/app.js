@@ -1446,6 +1446,7 @@ async function loadConversation(conversationId) {
     } else if (prompt.status === 'streaming') {
       hasStreamingPrompt = true;
       const promptId = prompt.id;
+      const stepLabel = prompt.status_message || 'Generation in progress...';
       messagesHtml += `
         <div class="mb-5">
           <div class="text-xs text-vs-text-ghost mb-1 font-medium">VoxelSite</div>
@@ -1453,7 +1454,7 @@ async function loadConversation(conversationId) {
             <svg class="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
             </svg>
-            Generation in progress...
+            ${stepLabel}
             <button onclick="window.__vsCancelStreamingPrompt && window.__vsCancelStreamingPrompt(${promptId})"
               class="vs-btn vs-btn-ghost vs-btn-xs" style="margin-left: 4px; color: var(--vs-text-tertiary);">Stop</button>
           </div>
@@ -4807,6 +4808,8 @@ async function handleSend() {
       <div data-role="status" class="text-xs text-vs-text-tertiary mt-2 flex items-center gap-2">
         <svg class="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
         <span data-role="status-timer" class="tabular-nums opacity-60"></span>
+        <span data-role="status-step" class="opacity-75" style="margin-left: 2px;"></span>
+        <span data-role="status-tokens" class="tabular-nums opacity-50" style="margin-left: 2px;"></span>
         <button data-role="stop-btn" class="vs-btn vs-btn-ghost vs-btn-xs" style="margin-left: 4px; color: var(--vs-text-tertiary);">Stop</button>
       </div>
       <div data-role="error" hidden class="mt-3 px-4 py-3 bg-vs-error-dim text-vs-error text-sm rounded-xl border border-vs-error/10"></div>
@@ -4854,6 +4857,8 @@ async function handleSend() {
   const filesProgressEl = aiBlock.querySelector('[data-role="files-progress"]');
   const errorEl = aiBlock.querySelector('[data-role="error"]');
   const timerEl = aiBlock.querySelector('[data-role="status-timer"]');
+  const stepEl = aiBlock.querySelector('[data-role="status-step"]');
+  const tokensEl = aiBlock.querySelector('[data-role="status-tokens"]');
   const showEl = (el) => {
     if (!el) return;
     el.removeAttribute('hidden');
@@ -4877,9 +4882,12 @@ async function handleSend() {
     const secs = elapsed % 60;
     let timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
 
-    // Show token count if we have tokens
-    if (streamTokenCount > 0) {
-      timeStr += ` · ${streamTokenCount.toLocaleString()} tokens`;
+    // Show token count in the dedicated token slot
+    if (tokensEl && streamTokenCount > 0) {
+      const formatted = streamTokenCount >= 1000
+        ? `~${(streamTokenCount / 1000).toFixed(1)}K tokens`
+        : `${streamTokenCount} tokens`;
+      tokensEl.textContent = `· ${formatted}`;
     }
 
     if (timerEl) timerEl.textContent = timeStr;
@@ -5018,9 +5026,15 @@ async function handleSend() {
       try { localStorage.setItem('vs-active-conversation', conversationId); } catch (_) {}
     },
 
-    onStatus(message) {
-      // If the files section is visible, show post-streaming status
-      // (e.g. 'Compiling styles...', 'Finalizing...') in the files label
+    onStatus(data) {
+      const message = typeof data === 'string' ? data : (data.message || '');
+
+      // Always update the step text in the status row — this is the
+      // primary generation progress indicator. Shows during all phases,
+      // not only after files appear.
+      if (stepEl) stepEl.textContent = `· ${message}`;
+
+      // Also update files label if files section is visible
       if (!streamDone && filesSectionEl && !filesSectionEl.hasAttribute('hidden') && filesLabelEl) {
         filesLabelEl.textContent = message;
       }

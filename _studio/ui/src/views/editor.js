@@ -771,8 +771,7 @@ async function initEditorPage() {
     updateSaveState();
     renderTabs();
     renderTree();
-    setStatus('Saved', 'success');
-    showToast(`Saved ${tab.path}`, 'success');
+    setStatus(`${tab.path}`, 'muted');
 
     // Refresh preview if applicable
     if (tab.path.toLowerCase().endsWith('.css')) {
@@ -1111,34 +1110,48 @@ async function initEditorPage() {
         editorState.monacoInstance.setSelection(new monaco.Range(pos.lineNumber, 1, pos.lineNumber, model.getLineMaxColumn(pos.lineNumber)));
       }
 
-      // 3. Prompt user for changes
-      const instruction = await showPromptModal({
-        title: 'Inline AI Edit',
-        label: 'Instruction',
-        placeholder: 'e.g. Turn this list into a responsive 3-column grid...',
-        confirmLabel: 'Generate',
-        inputType: 'textarea',
-      });
+      // 3. Show dedicated inline AI prompt modal
+      const instruction = await showInlineAIPrompt(activePath);
+      if (!instruction) return; // User cancelled
 
-      if (!instruction) return; // User cancelled modal
-
-      // 4. Run the AI code modification inline with a modal loader
+      // 4. Run the AI code modification with full-page overlay
       const originalContent = editorState.monacoInstance.getValue();
       editorState.monacoInstance.updateOptions({ readOnly: true });
-      
+
+      const abortController = new AbortController();
+      let tokenCount = 0;
+      const startTime = Date.now();
+
+      // Create full-page generating overlay
       const overlay = document.createElement('div');
-      overlay.className = 'absolute inset-0 z-[100] flex items-center justify-center bg-[var(--vs-bg)]/50 backdrop-blur-sm';
+      overlay.className = 'vs-inline-ai-overlay';
       overlay.innerHTML = `
-        <div class="flex items-center gap-4 px-6 py-4 rounded-xl" style="background: var(--vs-bg-surface); border: 1px solid var(--vs-border-medium); box-shadow: var(--vs-shadow-lg), var(--vs-cream-inset);">
-          <div style="color: var(--vs-accent);">${icons.box}</div>
-          <div class="vs-loading gap-1.5 opacity-70"><i></i><i></i><i></i></div>
-          <span class="text-sm font-medium" style="color: var(--vs-text-primary);" id="ai-inline-status">AI is writing code...</span>
+        <div class="vs-inline-ai-card">
+          <div class="vs-inline-ai-spinner"></div>
+          <div class="vs-inline-ai-status">
+            <span class="vs-inline-ai-timer" id="ai-gen-timer">0s</span>
+            <span class="vs-inline-ai-dot">·</span>
+            <span class="vs-inline-ai-step" id="ai-gen-step">Reading your site…</span>
+            <span class="vs-inline-ai-dot" id="ai-gen-token-dot" style="display:none;">·</span>
+            <span class="vs-inline-ai-tokens" id="ai-gen-tokens"></span>
+          </div>
+          <button class="vs-inline-ai-stop" id="ai-gen-stop">Stop</button>
         </div>
       `;
-      if (monacoContainerEl) {
-        monacoContainerEl.style.position = 'relative';
-        monacoContainerEl.appendChild(overlay);
-      }
+      document.body.appendChild(overlay);
+      requestAnimationFrame(() => overlay.classList.add('is-visible'));
+
+      // Timer interval
+      const timerEl = overlay.querySelector('#ai-gen-timer');
+      const timerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        if (timerEl) timerEl.textContent = `${elapsed}s`;
+      }, 1000);
+
+      // Stop button
+      overlay.querySelector('#ai-gen-stop')?.addEventListener('click', () => {
+        abortController.abort();
+      });
 
       setStatus('AI is editing...', 'muted');
 
@@ -1148,18 +1161,31 @@ async function initEditorPage() {
           action_type: 'inline_edit',
           action_data: { path: activePath, selection: selectedText },
         }, {
-          onStatus: (msg) => { 
-            const el = document.getElementById('ai-inline-status'); 
-            if (el) el.textContent = 'Generating...'; 
+          signal: abortController.signal,
+          onStatus: (data) => {
+            const stepEl = overlay.querySelector('#ai-gen-step');
+            const message = typeof data === 'string' ? data : (data.message || 'Generating…');
+            if (stepEl) stepEl.textContent = message;
           },
-          onFile: () => { 
-            const el = document.getElementById('ai-inline-status'); 
-            if (el) el.textContent = 'Applying changes...'; 
+          onToken: () => {
+            tokenCount++;
+            const tokensEl = overlay.querySelector('#ai-gen-tokens');
+            const dotEl = overlay.querySelector('#ai-gen-token-dot');
+            if (tokensEl) tokensEl.textContent = `${tokenCount} tokens`;
+            if (dotEl) dotEl.style.display = '';
+          },
+          onFile: () => {
+            const stepEl = overlay.querySelector('#ai-gen-step');
+            if (stepEl) stepEl.textContent = 'Applying changes…';
           },
           onError: (err) => {
             showToast(err.message || 'Generation failed', 'error');
           },
           onDone: async (res) => {
+            if (res.cancelled) {
+              showToast('Generation cancelled', 'info');
+              return;
+            }
             const hasModified = res.files_modified?.some(f => {
               const fPath = typeof f === 'string' ? f : (f?.path || '');
               return fPath.replace(/^\//, '') === activePath.replace(/^\//, '');
@@ -1191,11 +1217,100 @@ async function initEditorPage() {
           }
         });
       } finally {
+        clearInterval(timerInterval);
         editorState.monacoInstance.updateOptions({ readOnly: false });
-        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        overlay.classList.remove('is-visible');
+        setTimeout(() => overlay.remove(), 300);
         setStatus('Ready', 'muted');
       }
     });
+
+    /**
+     * Show the inline AI prompt modal.
+     *
+     * A dedicated AI-branded modal with auto-growing textarea,
+     * file path context, and ⌘↵ keyboard hint.
+     * Returns the instruction string, or null if cancelled.
+     */
+    function showInlineAIPrompt(filePath) {
+      return new Promise((resolve) => {
+        const existing = document.getElementById('vs-inline-ai-prompt-overlay');
+        if (existing) existing.remove();
+
+        const fileName = filePath.split('/').pop();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'vs-inline-ai-prompt-overlay';
+        overlay.className = 'vs-modal-overlay';
+        overlay.innerHTML = `
+          <div class="vs-inline-ai-prompt">
+            <div class="vs-inline-ai-prompt-header">
+              <svg class="vs-inline-ai-prompt-icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <span class="vs-inline-ai-prompt-title">Edit with AI</span>
+              <span class="vs-inline-ai-prompt-subtitle" title="${filePath}">${fileName}</span>
+            </div>
+            <div class="vs-inline-ai-prompt-body">
+              <div class="vs-inline-ai-input-wrap">
+                <textarea id="vs-inline-ai-input" class="vs-inline-ai-prompt-input" rows="1" placeholder="Describe your changes…" spellcheck="false"></textarea>
+                <button id="vs-inline-ai-go" class="vs-inline-ai-send" type="button" title="Generate (⌘↵)">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                </button>
+              </div>
+              <div class="vs-inline-ai-prompt-footer">
+                <span class="vs-inline-ai-prompt-hint"><kbd>⌘</kbd><kbd>↵</kbd> to generate · <kbd>Esc</kbd> to cancel</span>
+              </div>
+            </div>
+          </div>
+        `;
+
+        const close = (value) => {
+          document.removeEventListener('keydown', onEscape);
+          closeModal(overlay);
+          resolve(value);
+        };
+
+        const onEscape = (e) => {
+          if (e.key === 'Escape') { e.preventDefault(); close(null); }
+        };
+
+        document.body.appendChild(overlay);
+        requestAnimationFrame(() => overlay.classList.add('is-visible'));
+
+        const input = overlay.querySelector('#vs-inline-ai-input');
+
+        // Auto-grow textarea
+        const autoGrow = () => {
+          input.style.height = 'auto';
+          input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+        };
+        input.addEventListener('input', autoGrow);
+
+        setTimeout(() => input?.focus(), 200);
+
+        // Backdrop click to cancel
+        let mouseDownTarget = null;
+        overlay.addEventListener('mousedown', (e) => { mouseDownTarget = e.target; });
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay && mouseDownTarget === overlay) close(null);
+        });
+
+        overlay.querySelector('#vs-inline-ai-go')?.addEventListener('click', () => {
+          const val = (input?.value || '').trim();
+          if (val) close(val);
+        });
+
+        input?.addEventListener('keydown', (e) => {
+          // ⌘↵ or Ctrl+Enter to submit
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            const val = (input?.value || '').trim();
+            if (val) close(val);
+          }
+        });
+
+        document.addEventListener('keydown', onEscape);
+      });
+    }
   };
 
   // ── Boot sequence ──
@@ -1396,7 +1511,7 @@ async function openCodeEditorModal(initialPath = '') {
     if (dirty) {
       setStatus('Unsaved changes', 'warning');
     } else if (state.path) {
-      setStatus('Saved', 'success');
+      setStatus(state.path || 'Ready', 'muted');
     }
   };
 
@@ -1516,8 +1631,7 @@ async function openCodeEditorModal(initialPath = '') {
 
     state.baseline = nextContent;
     updateSaveButton();
-    setStatus('Saved', 'success');
-    showToast(`Saved ${state.path}`, 'success');
+    setStatus(state.path || 'Ready', 'muted');
 
     if (state.path.toLowerCase().endsWith('.css')) {
       window.sendPreviewMessage?.('voxelsite:reload-css');

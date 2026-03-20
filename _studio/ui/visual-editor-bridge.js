@@ -1486,9 +1486,8 @@
       case 'vx-editor:update-link': updateLink(e.data); break;
       case 'vx-editor:delete-element': deleteElement(); break;
       case 'vx-editor:richtext-command': execRichTextCommand(e.data.command, e.data.value); break;
-      case 'vx-editor:show-ai-overlay': showAIOverlay(e.data.status); break;
+      case 'vx-editor:show-ai-overlay': showAIOverlay(); break;
       case 'vx-editor:hide-ai-overlay': hideAIOverlay(); break;
-      case 'vx-editor:update-ai-status': updateAIOverlayStatus(e.data); break;
       case 'vx-editor:deselect-from-parent': deselectElement(); break;
       case 'vx-editor:rebuild-section-dividers': rebuildSectionDividers(); break;
       case 'vx-editor:scroll-to-section': scrollToSection(e.data.sectionIndex); break;
@@ -1941,17 +1940,24 @@
   }
 
   // ═══════════════════════════════════════════
-  //  AI Overlay (covers selected element during generation)
+  //  AI Generation State (element dim + flag only)
   // ═══════════════════════════════════════════
+  // The visual overlay (blocker, card, timer, stop button) lives in the
+  // parent frame using the same vs-inline-ai-overlay / vs-inline-ai-card
+  // as the Monaco editor. The bridge only manages:
+  //   1. isAIGenerating flag — blocks clicks, hover, deselection
+  //   2. Element dim + pulse — visual feedback on the targeted element
+  //   3. Amber hatch overlay — highlights what's being edited
 
-  function showAIOverlay(status) {
+  function showAIOverlay() {
     hideAIOverlay();
     isAIGenerating = true;
     removeSectionDividers();
 
     const el = selectedEl;
+    if (!el) return;
 
-    // Inject shared keyframes
+    // Inject shared keyframes (once)
     if (!document.getElementById('vx-saving-pulse')) {
       const style = document.createElement('style');
       style.id = 'vx-saving-pulse';
@@ -1970,128 +1976,36 @@
       document.head.appendChild(style);
     }
 
-    if (el) {
-      // Save original styles for restoration
-      aiOverlaySavedStyles = {
-        opacity: el.style.opacity,
-        filter: el.style.filter,
-        pointerEvents: el.style.pointerEvents,
-        transition: el.style.transition,
-      };
+    // Save original styles for restoration
+    aiOverlaySavedStyles = {
+      opacity: el.style.opacity,
+      filter: el.style.filter,
+      pointerEvents: el.style.pointerEvents,
+      transition: el.style.transition,
+    };
 
-      // Apply saving visual treatment — dim + pulse
-      el.style.transition = 'opacity 0.2s ease, filter 0.2s ease';
-      el.style.opacity = '0.55';
-      el.style.filter = 'grayscale(0)';
-      el.style.pointerEvents = 'none';
-      el.classList.add('vx-saving-pulse-active');
+    // Dim + pulse the target element
+    el.style.transition = 'opacity 0.2s ease, filter 0.2s ease';
+    el.style.opacity = '0.55';
+    el.style.filter = 'grayscale(0)';
+    el.style.pointerEvents = 'none';
+    el.classList.add('vx-saving-pulse-active');
 
-      // Hatch overlay with animated stripe slide (amber for AI)
-      const rect = el.getBoundingClientRect();
-      const hatch = document.createElement('div');
-      hatch.className = 'vx-ai-gen-hatch';
-      hatch.style.cssText = `
-        position: absolute;
-        left: ${rect.left + window.scrollX}px; top: ${rect.top + window.scrollY}px;
-        width: ${rect.width}px; height: ${rect.height}px;
-        pointer-events: none; z-index: 99997;
-        border: 1.5px solid rgba(244,160,36,0.6); border-radius: 4px;
-        background: repeating-linear-gradient(-45deg, transparent, transparent 6px, rgba(244,160,36,0.12) 6px, rgba(244,160,36,0.12) 7px);
-        animation: vx-hatch-slide 0.8s linear infinite; background-size: 28px 28px;
-      `;
-      document.body.appendChild(hatch);
-      hideSelectionHighlight();
-
-      // Status badge centered over the element — timer, tokens, stop
-      const badge = document.createElement('div');
-      badge.id = 'vx-ai-overlay-badge';
-      badge.style.cssText = `
-        position: fixed; z-index: 99998;
-        left: ${rect.left + rect.width / 2}px; top: ${rect.top + rect.height / 2}px;
-        transform: translate(-50%, -50%);
-        display: flex; align-items: center; gap: 8px;
-        padding: 8px 12px; border-radius: 10px;
-        background: rgba(26,24,22,0.92);
-        border: 1px solid rgba(255,255,255,0.08);
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        pointer-events: auto; animation: vxAiFadeIn 200ms ease-out;
-        font: 500 12px/1 -apple-system,BlinkMacSystemFont,sans-serif;
-      `;
-      badge.innerHTML = buildAIBadgeHTML(status);
-      document.body.appendChild(badge);
-      wireAIBadge(badge);
-
-    } else {
-      // Full-page overlay (adding a new section)
-      const ov = document.createElement('div');
-      ov.id = 'vx-ai-overlay';
-      ov.style.cssText = `
-        position: fixed; z-index: 99999;
-        left: 0; top: 0; width: 100vw; height: 100vh;
-        background: rgba(0,0,0,0.45);
-        backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
-        display: flex; align-items: center; justify-content: center;
-        animation: vxAiFadeIn 200ms ease-out; pointer-events: auto;
-      `;
-      const inner = document.createElement('div');
-      inner.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:rgba(26,24,22,0.92);border:1px solid rgba(255,255,255,0.08);box-shadow:0 4px 20px rgba(0,0,0,0.3);font:500 12px/1 -apple-system,BlinkMacSystemFont,sans-serif;';
-      inner.innerHTML = buildAIBadgeHTML(status);
-      ov.appendChild(inner);
-      document.body.appendChild(ov);
-      wireAIBadge(ov);
-    }
-
-    // Inject animation keyframes
-    if (!document.getElementById('vx-ai-keyframes')) {
-      const s = document.createElement('style');
-      s.id = 'vx-ai-keyframes';
-      s.textContent = `
-        @keyframes vxAiFadeIn { from { opacity:0; } to { opacity:1; } }
-        @keyframes vxAiDot { 0%,80%,100% { transform:scale(0.5);opacity:0.3; } 40% { transform:scale(1);opacity:1; } }
-      `;
-      document.head.appendChild(s);
-    }
-  }
-
-  function buildAIBadgeHTML(status) {
-    return '<div style="display:flex;gap:4px;">'
-      + '<i style="width:5px;height:5px;border-radius:50%;background:#F4A024;display:block;animation:vxAiDot 1.2s infinite ease-in-out;"></i>'
-      + '<i style="width:5px;height:5px;border-radius:50%;background:#F4A024;display:block;animation:vxAiDot 1.2s infinite ease-in-out 0.15s;"></i>'
-      + '<i style="width:5px;height:5px;border-radius:50%;background:#F4A024;display:block;animation:vxAiDot 1.2s infinite ease-in-out 0.3s;"></i>'
-      + '</div>'
-      + '<span style="color:#ede9e2;white-space:nowrap;" id="vx-ai-overlay-status">' + (status || 'Generating\u2026') + '</span>'
-      + '<span style="color:rgba(237,233,226,0.4);white-space:nowrap;" id="vx-ai-overlay-timer">0s</span>'
-      + '<span style="color:rgba(237,233,226,0.4);white-space:nowrap;display:none;" id="vx-ai-overlay-tokens"></span>'
-      + '<button id="vx-ai-overlay-stop" style="display:flex;align-items:center;justify-content:center;gap:4px;height:24px;padding:0 8px;border-radius:6px;border:none;background:rgba(255,255,255,0.08);color:#ede9e2;cursor:pointer;flex-shrink:0;margin-left:2px;transition:background 120ms ease;font:500 11px/1 -apple-system,BlinkMacSystemFont,sans-serif;" title="Stop">'
-      + '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>'
-      + 'Stop</button>';
-  }
-
-  function wireAIBadge(container) {
-    var stopBtn = container.querySelector('#vx-ai-overlay-stop');
-    if (stopBtn) {
-      stopBtn.addEventListener('click', function() { notifyParent({ type: 'vx-editor:escape-pressed' }); });
-      stopBtn.addEventListener('mouseenter', function() { stopBtn.style.background = 'rgba(255,255,255,0.15)'; });
-      stopBtn.addEventListener('mouseleave', function() { stopBtn.style.background = 'rgba(255,255,255,0.08)'; });
-    }
-    var timerEl = container.querySelector('#vx-ai-overlay-timer');
-    var startTime = Date.now();
-    container.__vxTimerInterval = setInterval(function() {
-      var secs = Math.round((Date.now() - startTime) / 1000);
-      var display = secs < 60 ? secs + 's' : Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
-      if (timerEl) timerEl.textContent = display;
-    }, 1000);
-  }
-
-  function updateAIOverlayStatus(data) {
-    var status = typeof data === 'string' ? data : (data && data.status || '');
-    var tokens = typeof data === 'object' ? (data && data.tokens) : undefined;
-    var el = document.getElementById('vx-ai-overlay-status');
-    if (el && status) el.textContent = status;
-    if (tokens !== undefined) {
-      var tokenEl = document.getElementById('vx-ai-overlay-tokens');
-      if (tokenEl) { tokenEl.style.display = ''; tokenEl.textContent = tokens.toLocaleString() + ' tokens'; }
-    }
+    // Amber hatch overlay on the element
+    const rect = el.getBoundingClientRect();
+    const hatch = document.createElement('div');
+    hatch.className = 'vx-ai-gen-hatch';
+    hatch.style.cssText = `
+      position: absolute;
+      left: ${rect.left + window.scrollX}px; top: ${rect.top + window.scrollY}px;
+      width: ${rect.width}px; height: ${rect.height}px;
+      pointer-events: none; z-index: 99997;
+      border: 1.5px solid rgba(244,160,36,0.6); border-radius: 4px;
+      background: repeating-linear-gradient(-45deg, transparent, transparent 6px, rgba(244,160,36,0.12) 6px, rgba(244,160,36,0.12) 7px);
+      animation: vx-hatch-slide 0.8s linear infinite; background-size: 28px 28px;
+    `;
+    document.body.appendChild(hatch);
+    hideSelectionHighlight();
   }
 
   function hideAIOverlay() {
@@ -2108,20 +2022,6 @@
     // Remove hatch overlay
     var hatch = document.querySelector('.vx-ai-gen-hatch');
     if (hatch) hatch.remove();
-    // Remove status badge (clear timer)
-    var badge = document.getElementById('vx-ai-overlay-badge');
-    if (badge) {
-      clearInterval(badge.__vxTimerInterval);
-      badge.style.opacity = '0'; badge.style.transition = 'opacity 200ms';
-      setTimeout(function() { badge.remove(); }, 200);
-    }
-    // Remove full-page overlay
-    var ov = document.getElementById('vx-ai-overlay');
-    if (ov) {
-      clearInterval(ov.__vxTimerInterval);
-      ov.style.opacity = '0'; ov.style.transition = 'opacity 200ms';
-      setTimeout(function() { ov.remove(); }, 200);
-    }
   }
 
   document.addEventListener('mousemove', onMouseMove, { passive: true });
@@ -2143,7 +2043,7 @@
     if (selectedEl && !isEditing) updateSelectionHighlight(selectedEl);
   }, { passive: true });
   document.addEventListener('click', function(e) {
-    if (!active || isEditing || isEditorElement(e.target)) return;
+    if (!active || isEditing || isAIGenerating || isEditorElement(e.target)) return;
     const target = findEditableAncestor(e.target);
     if (!target && selectedEl) { deselectElement(); notifyParent({ type: 'vx-editor:deselect' }); }
   });

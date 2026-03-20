@@ -150,7 +150,7 @@ export function cancelVisualEditorAI() {
   if (aiEditAbortController) {
     aiEditAbortController.abort();
     aiEditAbortController = null;
-    sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+    hideVEAIOverlay();
     // Tell the server to stop — the PHP process checks this flag
     // between token callbacks and before post-stream file writes.
     if (aiEditPromptLogId) {
@@ -161,6 +161,82 @@ export function cancelVisualEditorAI() {
     return true;
   }
   return false;
+}
+
+// ═══════════════════════════════════════════
+//  App-Wide AI Generating Overlay
+// ═══════════════════════════════════════════
+// Reuses the exact same vs-inline-ai-overlay / vs-inline-ai-card
+// CSS classes and DOM structure as the Monaco editor. This creates
+// a full-page blocker on document.body (parent frame), giving both
+// editors identical generating UX.
+
+let veAIOverlayInterval = null;
+
+function showVEAIOverlay(initialStatus) {
+  // Remove any existing overlay
+  hideVEAIOverlay();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'vs-inline-ai-overlay';
+  overlay.id = 'vx-ai-gen-overlay';
+  overlay.innerHTML = `
+    <div class="vs-inline-ai-card">
+      <div class="vs-inline-ai-spinner"></div>
+      <div class="vs-inline-ai-status">
+        <span class="vs-inline-ai-timer" id="vx-ai-gen-timer">0s</span>
+        <span class="vs-inline-ai-dot">·</span>
+        <span class="vs-inline-ai-step" id="vx-ai-gen-step">${initialStatus || 'Reading your site…'}</span>
+        <span class="vs-inline-ai-dot" id="vx-ai-gen-token-dot" style="display:none;">·</span>
+        <span class="vs-inline-ai-tokens" id="vx-ai-gen-tokens"></span>
+      </div>
+      <button class="vs-inline-ai-stop" id="vx-ai-gen-stop">Stop</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('is-visible'));
+
+  // Timer
+  const startTime = Date.now();
+  const timerEl = overlay.querySelector('#vx-ai-gen-timer');
+  veAIOverlayInterval = setInterval(() => {
+    const secs = Math.floor((Date.now() - startTime) / 1000);
+    if (timerEl) timerEl.textContent = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+  }, 1000);
+
+  // Stop button
+  overlay.querySelector('#vx-ai-gen-stop')?.addEventListener('click', () => {
+    cancelVisualEditorAI();
+  });
+
+  // Tell the bridge to set isAIGenerating flag + dim element
+  sendToPreview({ type: 'vx-editor:show-ai-overlay' });
+}
+
+function updateVEAIOverlay(status, tokens) {
+  const stepEl = document.getElementById('vx-ai-gen-step');
+  if (stepEl && status) stepEl.textContent = status;
+
+  if (tokens !== undefined && tokens > 0) {
+    const dotEl = document.getElementById('vx-ai-gen-token-dot');
+    const tokensEl = document.getElementById('vx-ai-gen-tokens');
+    if (dotEl) dotEl.style.display = '';
+    if (tokensEl) tokensEl.textContent = `${tokens.toLocaleString()} tokens`;
+  }
+}
+
+function hideVEAIOverlay() {
+  if (veAIOverlayInterval) {
+    clearInterval(veAIOverlayInterval);
+    veAIOverlayInterval = null;
+  }
+  const overlay = document.getElementById('vx-ai-gen-overlay');
+  if (overlay) {
+    overlay.classList.remove('is-visible');
+    setTimeout(() => overlay.remove(), 250);
+  }
+  // Tell the bridge to reset isAIGenerating + restore element
+  sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
 }
 
 export function deactivateVisualEditor() {
@@ -2804,11 +2880,11 @@ function openAIEditPanel(elementData) {
     const instruction = input.value.trim();
     if (!instruction) return;
 
-    // Close the panel immediately — the overlay on the element shows progress
+    // Close the panel immediately — the parent overlay shows progress
     closeAIEditPanel();
 
-    // Show the AI overlay on the selected element in the preview iframe
-    sendToPreview({ type: 'vx-editor:show-ai-overlay', status: 'AI is editing…' });
+    // Show the same app-wide generating overlay as the Monaco editor
+    showVEAIOverlay('AI is editing…');
 
     aiEditAbortController = new AbortController();
     aiEditPromptLogId = null;
@@ -2830,25 +2906,26 @@ function openAIEditPanel(elementData) {
         onPromptId(id) {
           aiEditPromptLogId = id;
         },
-        onStatus(message) {
-          sendToPreview({ type: 'vx-editor:update-ai-status', status: message || 'Working…', tokens: tokenCount });
+        onStatus(data) {
+          const message = typeof data === 'string' ? data : (data.message || 'Working…');
+          updateVEAIOverlay(message, tokenCount);
         },
         onFile() {
-          sendToPreview({ type: 'vx-editor:update-ai-status', status: 'Applying changes…', tokens: tokenCount });
+          updateVEAIOverlay('Applying changes…', tokenCount);
         },
         onToken() {
           tokenCount++;
-          sendToPreview({ type: 'vx-editor:update-ai-status', status: 'Generating…', tokens: tokenCount });
+          updateVEAIOverlay('Generating…', tokenCount);
         },
         onError(err) {
           aiEditPromptLogId = null;
-          sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+          hideVEAIOverlay();
           showSaveIndicator(err.message || 'AI edit failed', true);
         },
         onDone(res) {
           aiEditAbortController = null;
           aiEditPromptLogId = null;
-          sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+          hideVEAIOverlay();
 
           if (res.cancelled) {
             showSaveIndicator('Generation cancelled', false);
@@ -2875,7 +2952,7 @@ function openAIEditPanel(elementData) {
       if (err.name !== 'AbortError') {
         showSaveIndicator('AI edit failed', true);
       }
-      sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+      hideVEAIOverlay();
     }
   }
 }
@@ -3069,8 +3146,8 @@ function openSectionPicker(requestData) {
 
 /** AI-generate a section and insert it at the specified position. */
 async function generateSection(requestData, sectionType, sectionDescription, userInstruction = '') {
-  // Show AI overlay in the iframe — use a full-page overlay since we're inserting, not editing
-  sendToPreview({ type: 'vx-editor:show-ai-overlay', status: `Adding ${sectionType}…` });
+  // Show the same app-wide generating overlay as the Monaco editor
+  showVEAIOverlay(`Adding ${sectionType}…`);
 
   const filePath = requestData.filePath || getCurrentPreviewPath();
   aiEditAbortController = new AbortController();
@@ -3083,29 +3160,8 @@ async function generateSection(requestData, sectionType, sectionDescription, use
     userPrompt += ` ${userInstruction}`;
   }
 
-  // Token counter — shows "Generating Content… (2,450 tokens)" to prove the AI is writing
-  const startTime = Date.now();
   let tokenCount = 0;
-  const updateOverlayStatus = () => {
-    if (tokenCount > 0) {
-      sendToPreview({
-        type: 'vx-editor:update-ai-status',
-        status: `Generating ${sectionType}…`,
-        tokens: tokenCount,
-      });
-    } else {
-      const elapsed = Math.round((Date.now() - startTime) / 1000);
-      if (elapsed >= 6) {
-        sendToPreview({
-          type: 'vx-editor:update-ai-status',
-          status: `Preparing ${sectionType}…`,
-        });
-      }
-    }
-  };
-  // Update every second during the "preparing" phase
-  const statusInterval = setInterval(updateOverlayStatus, 1000);
-  // Throttle token updates to avoid flooding the iframe with messages
+  // Throttle token updates to avoid DOM thrashing
   let lastTokenUpdate = 0;
 
   // The section index where the new content will appear
@@ -3132,33 +3188,31 @@ async function generateSection(requestData, sectionType, sectionDescription, use
       onPromptId(id) {
         aiEditPromptLogId = id;
       },
-      onStatus(message) {
-        sendToPreview({ type: 'vx-editor:update-ai-status', status: message || `Adding ${sectionType}…`, tokens: tokenCount });
+      onStatus(data) {
+        const message = typeof data === 'string' ? data : (data.message || `Adding ${sectionType}…`);
+        updateVEAIOverlay(message, tokenCount);
       },
       onFile() {
-        sendToPreview({ type: 'vx-editor:update-ai-status', status: 'Writing files…', tokens: tokenCount });
+        updateVEAIOverlay('Writing files…', tokenCount);
       },
       onToken() {
         tokenCount++;
-        // Throttle status updates to every 500ms to avoid flooding
         const now = Date.now();
         if (now - lastTokenUpdate > 500) {
           lastTokenUpdate = now;
-          updateOverlayStatus();
+          updateVEAIOverlay(`Generating ${sectionType}…`, tokenCount);
         }
       },
       onError(err) {
-        clearInterval(statusInterval);
         aiEditAbortController = null;
         aiEditPromptLogId = null;
-        sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+        hideVEAIOverlay();
         showSaveIndicator(err.message || 'Failed to add section', true);
       },
       onDone(res) {
-        clearInterval(statusInterval);
         aiEditAbortController = null;
         aiEditPromptLogId = null;
-        sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+        hideVEAIOverlay();
 
         if (res.cancelled) {
           showSaveIndicator('Generation cancelled', false);
@@ -3174,10 +3228,7 @@ async function generateSection(requestData, sectionType, sectionDescription, use
             }
             // After reload: re-activate the bridge, scroll to the new section, and rebuild dividers
             setTimeout(() => {
-              // The iframe reloaded — the bridge resets to active=false.
-              // Re-send the toggle to re-activate overlay + cursor + dividers.
               sendToPreview({ type: 'vx-editor:toggle', active: true });
-              // Give the bridge a moment to activate before scrolling/rebuilding
               setTimeout(() => {
                 sendToPreview({
                   type: 'vx-editor:scroll-to-section',
@@ -3196,13 +3247,12 @@ async function generateSection(requestData, sectionType, sectionDescription, use
       },
     });
   } catch (err) {
-    clearInterval(statusInterval);
     aiEditAbortController = null;
     aiEditPromptLogId = null;
     if (err.name !== 'AbortError') {
       showSaveIndicator('Failed to add section', true);
     }
-    sendToPreview({ type: 'vx-editor:hide-ai-overlay' });
+    hideVEAIOverlay();
   }
 }
 

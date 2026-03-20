@@ -556,6 +556,27 @@ class ActionRegistry
             // from the HTML — they waste tokens and could confuse the model.
             $cleanHtml = preg_replace('/\s+data-vx-[a-z-]+="[^"]*"/', '', $data['sectionHtml']);
             $cleanHtml = preg_replace('/\s+style=""/', '', $cleanHtml);
+
+            // Strip runtime-only state that doesn't exist in source files:
+            // - "is-visible" class added by data-reveal animation (main.js)
+            $cleanHtml = preg_replace('/\s+is-visible\b/', '', $cleanHtml);
+            $cleanHtml = str_replace('is-visible ', '', $cleanHtml);
+            // - Boolean attrs serialized as attr="" by DOM (source has bare attrs)
+            $cleanHtml = str_replace('data-reveal=""', 'data-reveal', $cleanHtml);
+            $cleanHtml = str_replace('data-reveal-stagger=""', 'data-reveal-stagger', $cleanHtml);
+
+            // Reverse icon hydration: <svg data-lucide> → <i data-lucide>
+            $cleanHtml = preg_replace_callback(
+                '/<svg\b([^>]*\bdata-lucide="[^"]*"[^>]*)>.*?<\/svg>/s',
+                function (array $m): string {
+                    $attrs = $m[1];
+                    $attrs = preg_replace('/\s+(?:viewBox|fill|stroke|stroke-width|stroke-linecap|stroke-linejoin|xmlns|width|height)="[^"]*"/', '', $attrs);
+                    $attrs = preg_replace('/\s+data-lucide-missing="[^"]*"/', '', $attrs);
+                    return '<i' . $attrs . '></i>';
+                },
+                $cleanHtml
+            );
+
             $parts[] = "\n## Section HTML (the exact section the user clicked)\n```html\n{$cleanHtml}\n```";
         }
 

@@ -693,6 +693,20 @@ class PromptEngine
                     $this->emitSSE('warning', ['message' => "File apply issue: {$operationError}"]);
                 }
 
+                // Validate data-lucide icon names against assets/icons/.
+                // Logs unresolved names for supportability. Does not block the pipeline.
+                $writtenPaths = $result['written'] ?? [];
+                if (!empty($writtenPaths)) {
+                    $iconValidation = $this->fileManager->validateIconNames($writtenPaths);
+                    if (!empty($iconValidation['missing'])) {
+                        $missingNames = array_keys($iconValidation['missing']);
+                        Logger::warning('ai', 'AI used unresolved icon names', [
+                            'missing' => $missingNames,
+                            'valid'   => $iconValidation['valid'],
+                        ]);
+                    }
+                }
+
                 // Auto-repair PHP syntax errors via a focused AI call.
                 // The same model that generated the bug fixes it — a small,
                 // non-streaming call with just the broken file + error message.
@@ -733,6 +747,12 @@ class PromptEngine
                 // links to /assets/css/style.css which 404s on Nginx servers.
                 // Create a minimal fallback so the site has basic styling.
                 $this->fileManager->ensureStyleCssExists();
+
+                // Ensure icon-resolver.js is shipped and injected.
+                // Unconditional — every site gets the resolver so data-lucide
+                // placeholders always hydrate, regardless of write order.
+                $this->fileManager->ensureShippedIconResolver();
+                $this->fileManager->injectIconResolverIntoFooter();
 
                 // Capture after state
                 $this->emitSSE('status', ['message' => 'Finalizing...']);
@@ -1589,17 +1609,22 @@ class PromptEngine
             return $operations;
         }
 
-        // Find and replace the original section in the file
+        // Find and replace the original section in the file.
+        // Also sanitize the AI's snippet: it may echo runtime state
+        // like is-visible or data-reveal="" that shouldn't be persisted.
+        $cleanSnippet = $this->stripVisualEditorAttributes(trim($snippetContent));
         $newContent = $this->replaceSectionHtml(
             $currentContent,
             trim($originalHtml),
-            trim($snippetContent)
+            $cleanSnippet
         );
 
         if ($newContent === null) {
             Logger::warning('ai', 'Could not find section anchor for replacement — AI output used as-is', [
-                'target_path'   => $targetPath,
-                'anchor_length' => strlen($originalHtml),
+                'target_path'    => $targetPath,
+                'anchor_length'  => strlen($originalHtml),
+                'anchor_preview' => substr($originalHtml, 0, 300),
+                'file_preview'   => substr($currentContent, 0, 300),
             ]);
             // Cannot locate the original section — fall through.
             // The snippet operation will fail validation (virtual path),
@@ -1648,30 +1673,76 @@ class PromptEngine
         }
 
         // Strategy 2: whitespace-normalized match
-        // The DOM's outerHTML collapses whitespace that the source file
-        // preserves (indentation, blank lines between attributes, etc.).
-        // Normalize both to single-space runs and find the match.
         $normalizedOriginal = preg_replace('/\s+/', ' ', $originalHtml);
         $normalizedFile = preg_replace('/\s+/', ' ', $fileContent);
 
         $normPos = strpos($normalizedFile, $normalizedOriginal);
-        if ($normPos === false) {
-            return null; // Anchor not found even after normalization
+        if ($normPos !== false) {
+            $realStart = $this->mapNormalizedOffset($fileContent, $normPos);
+            $realEnd = $this->mapNormalizedOffset($fileContent, $normPos + strlen($normalizedOriginal));
+
+            if ($realStart !== null && $realEnd !== null) {
+                return substr($fileContent, 0, $realStart)
+                    . $newHtml
+                    . substr($fileContent, $realEnd);
+            }
         }
 
-        // Map the normalized positions back to real file positions.
-        // Walk through the original file, counting non-whitespace-normalized
-        // characters to find where the match starts and ends in the real file.
-        $realStart = $this->mapNormalizedOffset($fileContent, $normPos);
-        $realEnd = $this->mapNormalizedOffset($fileContent, $normPos + strlen($normalizedOriginal));
+        // Strategy 3: runtime-artifact-tolerant match
+        // If a previous write leaked runtime state (is-visible, data-reveal="")
+        // into the file, the anchor (which is now clean) won't match the file.
+        // Strip runtime artifacts from BOTH sides before matching, then map
+        // positions back via the cleaned file.
+        $cleanedFile = $this->stripRuntimeArtifacts($fileContent);
+        $cleanedAnchor = $this->stripRuntimeArtifacts($originalHtml);
 
-        if ($realStart === null || $realEnd === null) {
-            return null;
+        // Try exact match on cleaned versions
+        $cleanPos = strpos($cleanedFile, $cleanedAnchor);
+        if ($cleanPos === false) {
+            // Try whitespace-normalized match on cleaned versions
+            $normCleanedAnchor = preg_replace('/\s+/', ' ', $cleanedAnchor);
+            $normCleanedFile = preg_replace('/\s+/', ' ', $cleanedFile);
+
+            $normCleanPos = strpos($normCleanedFile, $normCleanedAnchor);
+            if ($normCleanPos === false) {
+                return null; // Anchor not found even after all normalization
+            }
+
+            $cleanPos = $this->mapNormalizedOffset($cleanedFile, $normCleanPos);
+            $cleanEnd = $this->mapNormalizedOffset($cleanedFile, $normCleanPos + strlen($normCleanedAnchor));
+            if ($cleanPos === null || $cleanEnd === null) {
+                return null;
+            }
+        } else {
+            $cleanEnd = $cleanPos + strlen($cleanedAnchor);
         }
 
-        return substr($fileContent, 0, $realStart)
+        // Build the result from the cleaned file (strip leaked runtime state)
+        // rather than the contaminated original. This heals the file.
+        return substr($cleanedFile, 0, $cleanPos)
             . $newHtml
-            . substr($fileContent, $realEnd);
+            . substr($cleanedFile, $cleanEnd);
+    }
+
+    /**
+     * Strip runtime-only artifacts that may have leaked into source files.
+     *
+     * This is a lighter version of stripVisualEditorAttributes focused on
+     * the specific artifacts that JS runtime code injects into the DOM and
+     * that may have been accidentally persisted. Used for both anchor
+     * matching and file healing.
+     */
+    private function stripRuntimeArtifacts(string $html): string
+    {
+        // Remove "is-visible" class added by data-reveal animation (main.js)
+        $html = preg_replace('/ is-visible\b/', '', $html);
+        $html = preg_replace('/\bis-visible /', '', $html);
+
+        // Normalize data-reveal="" → data-reveal (DOM serialization of boolean attrs)
+        $html = str_replace('data-reveal=""', 'data-reveal', $html);
+        $html = str_replace('data-reveal-stagger=""', 'data-reveal-stagger', $html);
+
+        return $html;
     }
 
     /**
@@ -1725,6 +1796,11 @@ class PromptEngine
      * editability flags) and empty style="" into the DOM for overlay
      * positioning. These don't exist in the source file and must be
      * removed before we can match the HTML against the source.
+     *
+     * Also reverses icon hydration: icon-resolver.js replaces
+     * <i data-lucide="name"> with <svg data-lucide="name" ...>...</svg>
+     * in the rendered DOM. The source file still has the <i> placeholders,
+     * so we must collapse hydrated SVGs back to <i> for matching.
      */
     private function stripVisualEditorAttributes(string $html): string
     {
@@ -1733,6 +1809,42 @@ class PromptEngine
 
         // Remove empty style="" that the visual editor adds
         $html = preg_replace('/\s+style=""/', '', $html);
+
+        // Remove the "is-visible" class added by data-reveal animation at runtime.
+        // The source file doesn't have this class — it's added by main.js
+        // when the element enters the viewport.
+        $html = preg_replace('/\s+is-visible\b/', '', $html);
+        // Also handle when is-visible is at the start or middle of a class list
+        $html = str_replace('is-visible ', '', $html);
+
+        // Normalize DOM-serialized boolean attributes: data-reveal="" → data-reveal
+        // data-reveal-stagger="" → data-reveal-stagger
+        // The DOM serializes valueless HTML attributes as attr="" in outerHTML,
+        // but the source file has bare attributes without ="".
+        $html = str_replace('data-reveal=""', 'data-reveal', $html);
+        $html = str_replace('data-reveal-stagger=""', 'data-reveal-stagger', $html);
+
+        // Reverse icon hydration: collapse <svg ... data-lucide="name" ...>...</svg>
+        // back to <i ... data-lucide="name" ...></i>.
+        // The icon-resolver.js replaces <i> with <svg> at runtime, copying class,
+        // id, style, aria-*, and data-* attributes, and adding viewBox, fill,
+        // stroke, stroke-width, etc. We strip the SVG-specific attributes and
+        // inner content so the anchor matches the source <i> placeholder.
+        $html = preg_replace_callback(
+            '/<svg\b([^>]*\bdata-lucide="[^"]*"[^>]*)>.*?<\/svg>/s',
+            function (array $m): string {
+                $attrs = $m[1];
+
+                // Remove SVG-specific attributes that weren't on the original <i>
+                $attrs = preg_replace('/\s+(?:viewBox|fill|stroke|stroke-width|stroke-linecap|stroke-linejoin|xmlns|width|height)="[^"]*"/', '', $attrs);
+
+                // Remove data-lucide-missing attribute (fallback marker)
+                $attrs = preg_replace('/\s+data-lucide-missing="[^"]*"/', '', $attrs);
+
+                return '<i' . $attrs . '></i>';
+            },
+            $html
+        );
 
         return $html;
     }
@@ -2502,7 +2614,7 @@ The AI creates `_partials/nav.php` and `_partials/footer.php` from scratch using
 **Footer must always:**
 - Include copyright with year
 - Close `</main>`, `</body>`, `</html>`
-- Load scripts: `main.js`, `navigation.js`
+- Load scripts: `main.js`, `navigation.js`, `icon-resolver.js`
 - Use a distinctive background (e.g. dark footer: `bg-gray-900 text-gray-400`)
 - Style with proper grid/flex layouts for multi-column content
 - Remove list bullets with `list-none` on link lists
@@ -2535,7 +2647,7 @@ Preflight resets (box-sizing, link underlines, list bullets, img block display, 
 3. Semantic HTML5 with proper heading hierarchy.
 4. Never output `assets/css/tailwind.css` — it is compiled automatically from your HTML.
 5. Custom CSS in `assets/css/style.css` only for design tokens and effects Tailwind can't express (complex animations, scroll-driven effects).
-6. JavaScript in `assets/js/main.js` + `assets/js/navigation.js`. Vanilla ES6 only.
+6. JavaScript in `assets/js/main.js` + `assets/js/navigation.js` (shipped) + `assets/js/icon-resolver.js` (shipped). Vanilla ES6 only.
 7. Responsive design from 320px to 2560px. Mobile-first approach.
 8. No external scripts or CDN assets. Google Fonts `<link>` tags are allowed in header.php.
 9. Use Tailwind-styled `<div>` placeholders with descriptive text instead of missing images.
@@ -2546,6 +2658,7 @@ Preflight resets (box-sizing, link underlines, list bullets, img block display, 
 14. All color custom properties in `style.css` MUST use the `--color-` prefix (e.g. `--color-primary`, `--color-bg`, `--color-dark-800`). This enables the Tailwind compiler to resolve classes like `bg-primary`, `text-accent`, `bg-dark-800` automatically.
 15. **NEVER create custom component classes** like `.hero-section`, `.btn-primary`, `.card`, `.section-header`, `.fragrance-card`, `.collection-grid`. These bypass the TailwindCompiler. Use Tailwind utilities in HTML instead. For one-off effects, use inline `style="..."` attributes.
 16. When REMOVING a page, you MUST emit a `<file path="page.php" action="delete" />` tag for each file AND update `_partials/nav.php`. Both are required — without the delete tag, the file stays on disk.
+17. **Icons:** Use `<i class="icon" data-lucide="phone" aria-hidden="true"></i>` placeholders. Never output raw SVG `<path>` data for Lucide icons. Never use `<img src="/assets/icons/...">` for theme-colored icons. The shipped `icon-resolver.js` hydrates placeholders into inline SVGs at runtime from `/assets/icons/`. Do NOT generate `icon-resolver.js`.
 PROMPT;
     }
 

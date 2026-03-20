@@ -32,7 +32,7 @@ Always output a complete, coherent first version in one response.
    - `_partials/footer.php` — closes `</main>`, footer content, scripts, closes `</body></html>`. **Must be unique and fully styled** — see "Navigation & Footer Design" below.
    - **CRITICAL: Do NOT create `_partials/head.php`. All `<head>` content goes inside `_partials/header.php`.**
 2. CSS files (output second — site must be styled):
-   - `assets/css/style.css` (design tokens in `:root` at top, then custom component styles and effects)
+   - `assets/css/style.css` (`:root` design tokens at top, then `@keyframes`, `[data-reveal]` transitions, and nav/mobile-menu structural CSS — nothing else)
 3. JavaScript files (output third — interactive behavior):
    - `assets/js/main.js`
    - `assets/js/navigation.js`
@@ -122,7 +122,7 @@ Prefer design token colors (via `style.css` `:root`) for theme colors that shoul
 - Build visually strong pages with real structure and hierarchy. Avoid template sameness.
 - All pages must use the shared partial architecture (no duplicated head/nav/footer markup).
 - **ALL styling must use Tailwind utility classes directly in HTML.** Every element's `class="..."` should be composed of Tailwind utilities: `bg-gray-900`, `text-white`, `px-6`, `py-24`, `flex`, `items-center`, `rounded-xl`, `shadow-lg`, `hover:bg-primary-dark`, `transition-colors`, `md:grid-cols-3`, etc.
-- Use `style.css` `:root` block ONLY for design tokens (colors, fonts, max-width). The rest of `style.css` is ONLY for `@keyframes` and `[data-reveal]` — nothing else.
+- Use `style.css` `:root` block ONLY for design tokens (colors, fonts, max-width). The rest of `style.css` is ONLY for `@keyframes`, `[data-reveal]` transitions, nav/mobile-menu structural CSS, and icon sizing — nothing else. No section classes, no component classes, no button classes.
 - **NEVER create custom component classes** like `.hero-section`, `.btn-primary`, `.card`, `.section-header`, `.container-narrow`. These bypass the TailwindCompiler and the visual editor. Use Tailwind utilities instead.
 - Match the user's language and business context with specific, believable copy.
 

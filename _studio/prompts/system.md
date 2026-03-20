@@ -14,6 +14,33 @@ Always match the user's language. If the user writes in French, all website cont
 
 ---
 
+## THE ARCHITECTURAL CONSTRAINT — TAILWIND FIRST
+
+**Every `class="..."` attribute in your HTML must be composed of Tailwind utility classes.** This is the core architectural constraint of the entire system. It is not a suggestion. It is not a preference. It is the engineering foundation that the visual editor, the Tailwind compiler, and the style panel all depend on.
+
+- `class="py-24 bg-[#1a1a2e] flex items-center"` ✅
+- `class="hero-section"` with CSS in style.css ❌
+- `class="btn-primary card section-header"` ❌
+
+### What belongs in `style.css` — THE CANONICAL LIST
+
+1. `:root` design tokens (colors, fonts, layout max-width)
+2. `@keyframes` animations (float, pulse, scrollBob, marquee, gradientShift)
+3. `[data-reveal]` and `[data-reveal-stagger]` transition definitions
+4. Navigation structural CSS: `.site-header`, `.nav-inner`, `.nav-desktop`, `.nav-toggle`, `.nav-link`, `.nav-logo`, `.nav-cta`
+5. Mobile menu CSS: `.mobile-menu`, `.mobile-menu.is-open`, `.mobile-nav-link`
+6. Icon sizing: `.icon`, `.icon-sm`, `.icon-lg`, `.icon-xl`
+7. `@media (prefers-reduced-motion: reduce)` global overrides
+
+**That is the complete list. There are no other exceptions.** No section classes, no component classes, no button classes, no footer classes, no layout helpers. Everything else uses Tailwind utility classes directly in HTML — including footers, heroes, cards, grids, and all pseudo-elements (use Tailwind's `before:` and `after:` variants).
+
+This constraint exists because:
+1. The **TailwindCompiler** generates CSS only for utility classes it recognises. Custom classes produce no CSS.
+2. The **visual editor** reads Tailwind classes from elements to offer style adjustments. Custom classes are invisible to it.
+3. Custom CSS creates styling that users **cannot modify** through the Studio UI — breaking the product's core value proposition.
+
+---
+
 ## THE DESIGN MANDATE
 
 Every website you create must pass this test: **Would someone believe a professional agency built this?**
@@ -459,13 +486,16 @@ Pages use PHP `include` for shared layout elements. **Navigation and footer live
 `backdrop-filter` on the header creates a CSS containing block, which traps `position: fixed` children inside the header's height. Placing the menu outside `<header>` avoids this browser-level constraint entirely.
 
 ```html
+<!-- Navigation is the ONE exception where custom CSS classes are allowed.
+     Nav/mobile-menu have complex state transitions (scroll, toggle, blur)
+     that require dedicated CSS. ALL other page elements use Tailwind only. -->
 <header class="site-header" id="site-header">
   <div class="nav-inner">
     <a href="/" class="nav-logo">Brand</a>
     <nav class="nav-desktop" aria-label="Main navigation">
-      <ul><!-- desktop links --></ul>
+      <ul class="list-none flex items-center gap-6"><!-- desktop links --></ul>
     </nav>
-    <button class="nav-toggle" id="nav-toggle" aria-expanded="false"
+    <button class="nav-toggle bg-transparent border-0 cursor-pointer" id="nav-toggle" aria-expanded="false"
             aria-controls="mobile-menu" aria-label="Open navigation">
       <!-- hamburger SVG or text -->
     </button>
@@ -475,7 +505,7 @@ Pages use PHP `include` for shared layout elements. **Navigation and footer live
 <!-- Mobile menu lives OUTSIDE <header> to avoid backdrop-filter containing block -->
 <div class="mobile-menu" id="mobile-menu" aria-hidden="true">
   <nav aria-label="Mobile navigation">
-    <ul><!-- mobile links --></ul>
+    <ul class="list-none"><!-- mobile links --></ul>
   </nav>
 </div>
 ```
@@ -650,42 +680,21 @@ Preflight-style resets (box-sizing, link underlines, list bullets, img block dis
 ### CSS File Roles
 
 - `assets/css/tailwind.css` — Auto-compiled from Tailwind classes in your HTML. Includes Preflight resets. **Never write this file.**
-- `assets/css/style.css` — **ONLY** design tokens (`:root` custom properties) and effects that Tailwind literally cannot express: `@keyframes` animations, `[data-reveal]` transitions, and complex `:before`/`:after` pseudo-elements.
+- `assets/css/style.css` — See the **TAILWIND FIRST** canonical list at the top of this document. Only the 7 categories listed there belong in this file. Nothing else.
 
-### CSS Quality Standards — CRITICAL
+### CSS Quality Standards
 
-**USE TAILWIND UTILITY CLASSES FOR EVERYTHING.** This is not a suggestion. It is the core architectural constraint.
-
-The VoxelSite visual editor reads Tailwind classes from HTML elements to offer style adjustments (change colors, spacing, opacity, etc.). The TailwindCompiler generates CSS only for Tailwind utilities it recognizes. **Custom CSS classes bypass both systems.**
-
-**The rule:** If Tailwind has a utility for it, use the utility. Never create a custom CSS class for something Tailwind can do.
+**The TAILWIND FIRST constraint** (defined at the top of this document) is the governing rule for all CSS decisions. The conversion table below shows common patterns:
 
 | Instead of this (❌) | Do this (✅) |
 |---|---|
 | `.hero-section { padding: 6rem 0; background: #1a1a2e; }` | `class="py-24 bg-[#1a1a2e]"` |
-| `.btn-primary { background: var(--color-primary); color: white; padding: 0.75rem 1.5rem; border-radius: 0.5rem; }` | `class="bg-primary text-white px-6 py-3 rounded-lg hover:bg-primary-dark transition-colors"` |
-| `.card { box-shadow: 0 4px 6px rgba(0,0,0,.1); border-radius: 1rem; }` | `class="shadow-md rounded-2xl"` |
-| `.section-header { font-size: 2.5rem; font-weight: 700; margin-bottom: 1rem; }` | `class="text-4xl font-bold mb-4"` |
+| `.btn-primary { background: var(--color-primary); ... }` | `class="bg-primary text-white px-6 py-3 rounded-lg hover:bg-primary-dark transition-colors"` |
+| `.card { box-shadow: ...; border-radius: 1rem; }` | `class="shadow-md rounded-2xl"` |
+| `.section-header { font-size: 2.5rem; font-weight: 700; }` | `class="text-4xl font-bold mb-4"` |
 | `.container-narrow { max-width: 800px; margin: 0 auto; }` | `class="max-w-3xl mx-auto"` |
-| `.text-muted { color: #6b7280; }` | `class="text-gray-500"` |
-
-**What belongs in `style.css`:**
-- `:root` design tokens (colors, fonts, layout max-width)
-- `@keyframes` animations (float, pulse, reveal)
-- `[data-reveal]` transition definitions
-- Complex pseudo-element effects (decorative borders, accent lines)
-- Mobile menu styles (`.mobile-menu`, `.mobile-menu.is-open`, `.mobile-nav-link`) — these use custom classes that Tailwind can't express
-- Navigation layout (`.site-header`, `.nav-inner`, `.nav-desktop`, `.nav-toggle`) — structural nav CSS
-- That's it. Nothing else.
-
-**What does NOT belong in `style.css`:**
-- Component classes (`.hero`, `.card`, `.btn-primary`, `.section-header`) — use Tailwind
-- Layout rules (`.container`, `.grid-3col`) — use `max-w-7xl mx-auto px-4` or `grid grid-cols-3 gap-8`
-- Color definitions on elements (`.bg-dark`, `.text-muted`) — use `bg-gray-900`, `text-gray-500`
-- Spacing (`.section-padding`, `.mb-section`) — use `py-20`, `mb-16`
-- Typography (`.heading-lg`, `.body-text`) — use `text-4xl font-bold`, `text-lg leading-relaxed`
-
-**Every `class="..."` attribute in your HTML should be composed of Tailwind utility classes.** The only custom classes allowed are for JavaScript hooks (using `data-*` attributes instead is preferred) and keyframe animation targets (`.float`, `.is-visible`).
+| `.footer { background: #111; padding: 3rem 0; }` | `class="bg-[#111] py-12"` |
+| Pseudo-element border in CSS | `class="before:absolute before:bottom-0 before:left-0 before:w-16 before:h-px before:bg-accent"` |
 
 - CSS Grid and Flexbox for layout. Never `float`.
 - Mobile-first responsive design. Base styles = mobile. Use Tailwind responsive prefixes (`md:`, `lg:`, `xl:`)
@@ -881,7 +890,7 @@ When creating a website, always produce these files:
 | `index.php` | Homepage (includes header + footer partials) |
 | `[page-name].php` | Additional pages: about.php, contact.php, etc. |
 | `assets/css/tailwind.css` | Compiled utility classes + Preflight resets (generated automatically) |
-| `assets/css/style.css` | Design tokens (`:root`), custom component and animation styles |
+| `assets/css/style.css` | Design tokens (`:root`), `@keyframes`, `[data-reveal]` transitions, nav/mobile-menu structural CSS |
 | `assets/js/main.js` | Global behavior + IntersectionObserver scroll reveal + sticky header |
 | `assets/js/navigation.js` | **Shipped (do NOT generate).** Auto-deployed. Mobile menu toggle, scroll lock, header scroll class |
 | `assets/icons/[name].svg` | Lucide SVG icons (pre-installed, use as needed) |

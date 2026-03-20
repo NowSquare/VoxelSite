@@ -23,6 +23,7 @@
   let selectedEl = null;
   let isEditing = false;
   let isAIGenerating = false;
+  let isPanelLocked = false; // parent-side panel open (style, AI, link, image picker)
   let aiOverlaySavedStyles = null;
   let originalContent = null;     // normalized innerHTML (for save needle comparison)
   let originalContentRaw = null;  // raw innerHTML (for cancel restore, retains data-vx-* attrs)
@@ -1488,6 +1489,11 @@
       case 'vx-editor:richtext-command': execRichTextCommand(e.data.command, e.data.value); break;
       case 'vx-editor:show-ai-overlay': showAIOverlay(); break;
       case 'vx-editor:hide-ai-overlay': hideAIOverlay(); break;
+      case 'vx-editor:set-panel-lock':
+        isPanelLocked = !!e.data.locked;
+        if (isPanelLocked) removeSectionDividers();
+        else if (!isEditing && !isAIGenerating) rebuildSectionDividers();
+        break;
       case 'vx-editor:deselect-from-parent': deselectElement(); break;
       case 'vx-editor:rebuild-section-dividers': rebuildSectionDividers(); break;
       case 'vx-editor:scroll-to-section': scrollToSection(e.data.sectionIndex); break;
@@ -1541,7 +1547,7 @@
 
   function rebuildSectionDividers() {
     removeSectionDividers();
-    if (!active || isEditing || isAIGenerating) return;
+    if (!active || isEditing || isAIGenerating || isPanelLocked) return;
 
     // Find all direct <section> children of <main>, or top-level <section> elements
     const mainEl = document.querySelector('main') || document.body;

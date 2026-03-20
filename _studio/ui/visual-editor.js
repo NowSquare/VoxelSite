@@ -129,6 +129,20 @@ export function hasVisualEditorFloatingPanel() {
 }
 
 /**
+ * Check whether any parent-side panel or modal is open and tell the bridge
+ * to hide/show section dividers accordingly.  Called after every panel
+ * open/close so dividers are never interactable while a modal is active.
+ */
+function syncPanelLock() {
+  const locked = !!document.getElementById('vx-style-panel')
+    || !!document.getElementById('vx-ai-panel')
+    || !!document.querySelector('.vx-modal-overlay')
+    || !!document.querySelector('.vx-source-editor')
+    || richTextActive;
+  sendToPreview({ type: 'vx-editor:set-panel-lock', locked });
+}
+
+/**
  * Close floating panels (style editor, AI panel) without deselecting.
  * The element remains selected and the context toolbar returns.
  */
@@ -467,6 +481,7 @@ function onEditingStarted(data) {
   lastBlockTag = data.tagName || 'P';
   dismissToolbar(); // hide the context toolbar while editing
   showEditingBar();
+  syncPanelLock();
 }
 
 function onEditingEnded() {
@@ -475,6 +490,7 @@ function onEditingEnded() {
   richTextElementRect = null;
   lastFormatting = {};
   dismissEditingBar();
+  syncPanelLock();
 }
 
 function onSelectionState(data) {
@@ -681,6 +697,7 @@ function promptForLink() {
   document.body.appendChild(modal);
   modal.offsetHeight; // trigger reflow for animation
   modal.classList.add('vx-modal-visible');
+  syncPanelLock();
 
   // Make draggable by header — same behavior as the class/style panel
   makeModalDraggable(modal);
@@ -691,7 +708,7 @@ function promptForLink() {
   const close = () => {
     modal.classList.remove('vx-modal-visible');
     if (modal.__vxDestroyDrag) modal.__vxDestroyDrag();
-    setTimeout(() => modal.remove(), 200);
+    setTimeout(() => { modal.remove(); syncPanelLock(); }, 200);
   };
 
   modal.addEventListener('click', (e) => {
@@ -1213,6 +1230,7 @@ async function openInlineSourceEditor(data) {
   `;
 
   document.body.appendChild(container);
+  syncPanelLock();
 
   // Make draggable by header
   const header = container.querySelector('.vx-source-header');
@@ -1679,7 +1697,7 @@ function closeInlineSourceEditor(apply, newHTML) {
 
   // Animate out
   container.classList.remove('vx-source-visible');
-  setTimeout(() => container.remove(), 200);
+  setTimeout(() => { container.remove(); syncPanelLock(); }, 200);
 
   inlineSourceEditor = null;
 }
@@ -1716,11 +1734,12 @@ function confirmDelete(elementData) {
 
   document.body.appendChild(modal);
   requestAnimationFrame(() => modal.classList.add('vx-modal-visible'));
+  syncPanelLock();
 
   const close = () => {
     modal.classList.remove('vx-modal-visible');
     modal.removeEventListener('keydown', onKeydown);
-    setTimeout(() => modal.remove(), 200);
+    setTimeout(() => { modal.remove(); syncPanelLock(); }, 200);
   };
   const onKeydown = (e) => {
     if (e.key === 'Escape') {
@@ -1775,7 +1794,7 @@ function closeStylePanel({ revertUnsaved = true } = {}) {
       p.__vxDestroyDrag();
     }
     p.classList.remove('vx-sp-visible');
-    setTimeout(() => p.remove(), 200);
+    setTimeout(() => { p.remove(); syncPanelLock(); }, 200);
   }
 
   stylePanelDirty = false;
@@ -1887,6 +1906,7 @@ function openStyleEditor(elementData) {
   });
 
   renderTabContent('typography');
+  syncPanelLock();
 }
 
 function renderBreakpointBar() {
@@ -2761,7 +2781,7 @@ function closeAIEditPanel() {
   if (typeof panel.__vxDestroyDrag === 'function') panel.__vxDestroyDrag();
   if (typeof panel.__vxOnResize === 'function') window.removeEventListener('resize', panel.__vxOnResize);
   panel.classList.remove('vx-ai-visible');
-  setTimeout(() => panel.remove(), 180);
+  setTimeout(() => { panel.remove(); syncPanelLock(); }, 180);
 }
 
 function openAIEditPanel(elementData) {
@@ -2823,6 +2843,7 @@ function openAIEditPanel(elementData) {
 
   // Focus the input after panel animates in
   setTimeout(() => input?.focus(), 200);
+  syncPanelLock();
 
   // Close
   closeBtn.addEventListener('click', () => closeAIEditPanel());
@@ -3054,12 +3075,13 @@ function openSectionPicker(requestData) {
 
   document.body.appendChild(modal);
   requestAnimationFrame(() => modal.classList.add('vx-modal-visible'));
+  syncPanelLock();
 
   // Keyboard and click bindings
   const close = () => {
     modal.classList.remove('vx-modal-visible');
     modal.removeEventListener('keydown', onKeydown);
-    setTimeout(() => modal.remove(), 200);
+    setTimeout(() => { modal.remove(); syncPanelLock(); }, 200);
   };
   const onKeydown = (e) => { if (e.key === 'Escape') close(); };
   modal.addEventListener('keydown', onKeydown);
@@ -3268,11 +3290,13 @@ function openImagePicker(elementData) {
     <div class="vx-modal-body"><div class="vx-img-grid" id="vx-img-grid"><div class="vx-img-loading">Loading assets…</div></div></div></div>`;
   document.body.appendChild(modal);
   requestAnimationFrame(() => modal.classList.add('vx-modal-visible'));
+  syncPanelLock();
   const close = () => {
     modal.classList.remove('vx-modal-visible');
     modal.removeEventListener('keydown', onKeydown);
     setTimeout(() => {
       modal.remove();
+      syncPanelLock();
       // Restore toolbar if no image was selected and an element is still selected
       if (!imageSelected && selectedElement) {
         showContextToolbar(selectedElement);
@@ -3405,6 +3429,7 @@ function openLinkEditor(elementData) {
 
   document.body.appendChild(modal);
   requestAnimationFrame(() => modal.classList.add('vx-modal-visible'));
+  syncPanelLock();
 
   // Make draggable by header — same behavior as the class/style panel
   makeModalDraggable(modal);
@@ -3413,7 +3438,7 @@ function openLinkEditor(elementData) {
     modal.classList.remove('vx-modal-visible');
     modal.removeEventListener('keydown', onKeydown);
     if (modal.__vxDestroyDrag) modal.__vxDestroyDrag();
-    setTimeout(() => modal.remove(), 200);
+    setTimeout(() => { modal.remove(); syncPanelLock(); }, 200);
   };
   const onKeydown = (e) => { if (e.key === 'Escape') close(); };
   modal.addEventListener('keydown', onKeydown);

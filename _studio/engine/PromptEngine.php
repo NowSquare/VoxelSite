@@ -2630,6 +2630,8 @@ The AI creates `_partials/nav.php` and `_partials/footer.php` from scratch using
 :root {
   --color-primary: hsl(220, 60%, 50%);
   --color-primary-light: hsl(220, 40%, 95%);
+  --font-heading: 'Playfair Display', Georgia, serif;
+  --font-body: 'Inter', system-ui, sans-serif;
   /* Design tokens: palette, fonts, spacing */
 }
 html { scroll-behavior: smooth; }
@@ -2637,6 +2639,8 @@ body { font-family: var(--font-body); background: var(--color-bg); color: var(--
 
 /* ONLY @keyframes and [data-reveal] below — NEVER component classes like .hero, .card, .btn */
 ```
+
+**Font-family classes:** Use `font-heading` for headings/display text and `font-body` for body text. These resolve to `var(--font-heading)` and `var(--font-body)` from your `:root` tokens. **Do NOT use `font-['Font_Name']`** — the semantic classes keep font names in one place and enable user-facing font changes via the Style panel.
 
 Preflight resets (box-sizing, link underlines, list bullets, img block display, heading/form normalization) are automatically prepended to `tailwind.css` by the TailwindCompiler.
 

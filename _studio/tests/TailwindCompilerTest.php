@@ -605,6 +605,14 @@ foreach ([
     ['!mt-4', 'margin-top:1rem!important'],
     ['grid-cols-3', 'grid-template-columns:repeat(3,minmax(0,1fr))'],
     ['animate-spin', 'animation:spin 1s linear infinite'],
+    // Font: semantic aliases (foundation tokens)
+    ['font-heading', 'font-family:var(--font-heading)'],
+    ['font-body', 'font-family:var(--font-body)'],
+    ['font-accent', 'font-family:var(--font-accent)'],
+    // Font: arbitrary font-family (AI-generated Google Font names)
+    ["font-['Cormorant_Garamond']", "font-family:'Cormorant Garamond'"],
+    ["font-['Playfair_Display']", "font-family:'Playfair Display'"],
+    ["font-['Inter']", "font-family:'Inter'"],
 ] as [$class, $expected]) {
     $css = compileCss([$class], $compiler);
     assertContainsCss($class, $expected, $css, $errors, $passed, $failed);

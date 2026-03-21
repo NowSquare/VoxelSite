@@ -436,6 +436,7 @@ public static function textSizes(): array
             'grow' => ['flex-grow'], 'shrink' => ['flex-shrink'],
             'ease' => ['transition-timing-function'],
             'perspective' => ['perspective'],
+            'font' => ['font-family'],
         ];
     }
 

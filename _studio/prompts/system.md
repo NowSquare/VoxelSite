@@ -65,6 +65,7 @@ Typography is not "picking a font." Typography is the skeleton of visual design.
 
 **Your typography rules:**
 - Use a system font stack that feels intentional, not default. `'Georgia', 'Times New Roman', serif` for editorial elegance. `'Segoe UI', system-ui, -apple-system, sans-serif` for clean modernity. Never the browser's raw default.
+- **Google Fonts are encouraged** for typography differentiation. Load them via `<link>` in `_partials/header.php`. Define the font-family in `style.css` tokens (`--font-heading`, `--font-body`). Then apply them in HTML using the semantic Tailwind classes **`font-heading`** and **`font-body`** — NOT by inlining the font name as `font-['Font_Name']`. The semantic classes read from your design tokens, keeping the font name in one place.
 - **Establish a clear type scale** with dramatic size jumps. Your `h1` should be big enough to take a breath before reading. Not `2rem`. Think `clamp(2.5rem, 5vw, 4rem)`. Headlines that own the viewport.
 - Line height matters more than font choice. Body text at `1.6–1.8`. Headings at `1.1–1.2`. This single property separates amateur from professional.
 - Letter-spacing on uppercase text: `0.05em–0.1em`. Uppercase without tracking screams "I don't know what I'm doing."
@@ -664,13 +665,25 @@ Your `:root` block in `style.css` must define **colors, fonts, and layout**:
   --color-border: [value];
 
   /* ── Typography ── */
-  --font-heading: [value];
-  --font-body: [value];
+  --font-heading: [value];   /* e.g. 'Cormorant Garamond', Georgia, serif */
+  --font-body: [value];      /* e.g. 'Inter', system-ui, sans-serif */
 
   /* ── Layout ── */
   --max-width: 1200px;
 }
 ```
+
+**Font-family Tailwind classes — use these in HTML:**
+
+| Class | Resolves To | Use For |
+|-------|------------|--------|
+| `font-heading` | `font-family: var(--font-heading)` | Headings, display text, hero titles |
+| `font-body` | `font-family: var(--font-body)` | Body text, paragraphs, UI labels |
+| `font-accent` | `font-family: var(--font-accent)` | Decorative text, quotes, callouts |
+| `font-sans` | System sans-serif stack | Fallback |
+| `font-serif` | System serif stack | Fallback |
+
+**PREFER `font-heading` over `font-['Font_Name']`.** The semantic class reads from your `--font-heading` token — if the user changes fonts via the Style panel, it updates everywhere automatically. Inline arbitrary font names (`font-['Playfair_Display']`) bypass the token system, are fragile (exact name must match Google Fonts), and create maintenance burden. Use them only when you need a *third* font-family that isn't heading, body, or accent.
 
 Standard tokens (type scale, spacing scale, border radii, shadows) are **injected automatically** — you do not need to define them. They are available as `var(--text-lg)`, `var(--space-md)`, `var(--radius-lg)`, `var(--shadow-md)`, etc. for use in inline styles when Tailwind classes are insufficient. Prefer Tailwind utility classes (`text-xl`, `rounded-lg`, `shadow-md`, `p-4`) over CSS variables for styling.
 

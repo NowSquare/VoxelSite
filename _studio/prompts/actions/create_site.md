@@ -176,7 +176,9 @@ Every site must feel alive. Include these animation patterns from the start:
 ## Fonts
 
 - You may use Google Fonts links in `_partials/header.php` when they materially improve the design.
-- If Google Fonts are used, wire token variables in `style.css` `:root` to those font families.
+- If Google Fonts are used, wire them into `style.css` `:root` tokens: `--font-heading: 'Cormorant Garamond', Georgia, serif;` and `--font-body: 'Inter', system-ui, sans-serif;`. Always include a system-font fallback stack.
+- In HTML, apply fonts using the **semantic Tailwind classes `font-heading` and `font-body`** — these resolve to `var(--font-heading)` and `var(--font-body)`. Example: `<h1 class="font-heading text-5xl font-light">`.
+- **Do NOT use `font-['Font_Name']` arbitrary values** to set font-family in HTML. Use `font-heading` or `font-body` instead. The semantic classes keep font names in one place (style.css tokens), so users can change fonts via the Style panel without editing every page.
 
 ## Data Layer
 

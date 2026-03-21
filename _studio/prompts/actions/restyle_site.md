@@ -73,7 +73,7 @@ From the reference HTML, extract **only design characteristics** — never conte
 
 <!-- ✅ NEW: Tailwind utilities (visually controlled inline) -->
 <section class="relative min-h-screen flex items-center justify-center bg-[var(--color-bg)] pt-28 pb-24 px-6">
-  <h1 class="text-5xl md:text-7xl font-bold tracking-tight text-white" style="font-family: var(--font-heading);">Title</h1>
+  <h1 class="font-heading text-5xl md:text-7xl font-bold tracking-tight text-white">Title</h1>
   <a href="/contact" class="inline-block px-8 py-4 bg-[var(--color-accent)] text-white font-semibold rounded-lg hover:opacity-90 transition-opacity">Get Started</a>
 </section>
 ```
@@ -123,7 +123,7 @@ The reference HTML is for design extraction only. Never copy its text, headings,
 
 1. **Build FRESH design tokens.** Create a complete new `:root` block from the reference site's color palette, typography stack, spacing scale, and border radius. These tokens should be visually distinct from the old ones.
 
-2. **Rebuild every element with Tailwind utilities.** Do not preserve the old class architecture. Every section, card, button, heading, and layout gets rewritten from scratch with utility classes. Use `bg-[var(--color-primary)]`, `text-[var(--color-text)]`, `font-[var(--font-heading)]` to reference your design tokens.
+2. **Rebuild every element with Tailwind utilities.** Do not preserve the old class architecture. Every section, card, button, heading, and layout gets rewritten from scratch with utility classes. Use `bg-[var(--color-primary)]`, `text-[var(--color-text)]`, `font-heading` to reference your design tokens. For font-family, prefer the semantic `font-heading` and `font-body` classes over `font-[var(--font-heading)]` — the semantic classes are simpler and resolve to the same CSS custom properties.
 
 3. **Match the personality, not the pixels.** Warm and rounded? Cool and sharp? Spacious or dense? Capture the feel in token values and utility class patterns.
 

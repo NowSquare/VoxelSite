@@ -75,6 +75,7 @@ _studio/data/collections/*
 # ── User content ──
 _studio/preview/*
 !_studio/preview/.gitkeep
+_studio/demo/preview/assets
 _studio/revisions/*
 !_studio/revisions/.gitkeep
 _studio/snapshots/*

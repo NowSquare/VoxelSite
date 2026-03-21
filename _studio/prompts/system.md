@@ -1253,7 +1253,7 @@ $menu = file_exists($dataPath) ? json_decode(file_get_contents($dataPath), true)
 <?php endif; ?>
 ```
 
-**Important:** Always use `__DIR__` to resolve data file paths, NOT `$_SERVER['DOCUMENT_ROOT']`. `$_SERVER['DOCUMENT_ROOT']` can be empty or unreliable in Herd/Valet and some hosting setups, while `__DIR__` always resolves correctly. Since page PHP files live at the document root, `__DIR__ . '/assets/data/...'` is the correct pattern. Always check `file_exists()` before reading — the data file may not exist yet.
+**Important:** Use `__DIR__ . '/assets/data/...'` for data file paths. **Always guard with `file_exists()` before reading** — the data file may not exist during preview or initial setup. Not using a guard generates PHP warnings. The example above shows the correct pattern: assign the path, check existence, then decode.
 
 This ensures the data is available to HTML pages (for humans), Schema.org structured data (for search engines), llms.txt (for AI models), and future MCP endpoints (for AI agents). **The data files are the single source of truth.**
 

@@ -372,6 +372,15 @@ CSS;
             );
         }
 
+        // PHP pages: Ensure file_get_contents(__DIR__ . '/assets/data/...')
+        // has a file_exists() guard. AI models omit this check ~30% of the
+        // time, causing PHP warnings in preview mode (where __DIR__ is not the
+        // docroot and the assets/ symlink may not exist yet).
+        // Only targets page files (not partials which use __DIR__ for includes).
+        if (str_ends_with($path, '.php') && !str_starts_with($path, '_partials/')) {
+            $content = $this->ensureDataFileGuard($content);
+        }
+
         // _partials/header.php: Ensure it includes head.php if it exists
         // AI models sometimes split the document head into a separate head.php
         // but forget to include it from header.php, leaving pages without CSS.
@@ -463,6 +472,46 @@ CSS;
         }
 
         return $content;
+    }
+
+    /**
+     * Ensure JSON data file reads have file_exists() guards.
+     *
+     * Wraps bare patterns like:
+     *   $data = json_decode(file_get_contents(__DIR__ . '/assets/data/xxx.json'), true);
+     * with a safe file_exists() check:
+     *   $data = (($f = __DIR__ . '/assets/data/xxx.json') && file_exists($f)) ? json_decode(file_get_contents($f), true) : [];
+     *
+     * This prevents PHP warnings when the data file doesn't exist
+     * (e.g., in preview mode where __DIR__ may not have an assets/ child,
+     * or the data file hasn't been created yet).
+     */
+    private function ensureDataFileGuard(string $content): string
+    {
+        // Only target the specific pattern: json_decode(file_get_contents(__DIR__ . '/assets/data/...'))
+        // Skip if the line already has a file_exists check nearby
+        return preg_replace_callback(
+            '/^(\h*)\$(\w+)\s*=\s*json_decode\(\s*file_get_contents\(\s*(__DIR__\s*\.\s*[\'"]\/assets\/data\/[^\'"]+[\'"])\s*\)\s*,\s*true\s*\)\s*;/m',
+            function (array $m) use ($content) {
+                $indent = $m[1];
+                $var = $m[2];
+                $pathExpr = $m[3];
+                $fullMatch = $m[0];
+
+                // Check if there's already a file_exists guard within 3 lines above
+                $pos = strpos($content, $fullMatch);
+                if ($pos !== false) {
+                    $before = substr($content, max(0, $pos - 300), min($pos, 300));
+                    if (str_contains($before, 'file_exists')) {
+                        return $fullMatch; // Already guarded
+                    }
+                }
+
+                // Wrap with safe pattern
+                return "{$indent}\${$var} = ((\$_f = {$pathExpr}) && file_exists(\$_f)) ? json_decode(file_get_contents(\$_f), true) : [];";
+            },
+            $content
+        ) ?? $content;
     }
 
     /**

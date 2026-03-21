@@ -149,6 +149,15 @@ if ($method === 'GET' && $path === '/preview') {
         // PHP files: render via ob_start/include so partials are resolved
         $originalDir = getcwd();
 
+        // Ensure an `assets/` symlink exists in the preview directory so
+        // that `__DIR__ . '/assets/data/...'` resolves correctly from page
+        // files. Without this, __DIR__ points to _studio/preview/ (or
+        // _studio/demo/preview/ in demo mode) which has no assets/ child.
+        $targetAssetsDir = $isDemoPreview
+            ? ($studioDir . '/demo/assets')  // Demo: data files in demo/assets/
+            : $assetsDir;                     // Live: project-level assets/
+        ensurePreviewAssetsLink($previewDir, $targetAssetsDir);
+
         // Bust opcache for this file AND all partials so undo/redo
         // changes are reflected immediately without stale bytecode.
         if (function_exists('opcache_invalidate')) {
@@ -1033,7 +1042,61 @@ function createInstrumentedPreviewCopy(string $previewDir, string $requestedPath
         }
     }
 
+    // Ensure `assets/` is reachable from the temp directory.
+    // AI-generated pages use `__DIR__ . '/assets/data/...'` to read JSON
+    // files (menus, services, portfolios). On a published site __DIR__ is
+    // the docroot, so assets/ is a direct child. But in the temp dir
+    // __DIR__ points to /tmp/vx-preview-xxx/ which has no assets/ folder.
+    // Symlink it here so `__DIR__`-based paths resolve correctly.
+    //
+    // For demo mode, $previewDir = _studio/demo/preview/ so we need the
+    // demo assets (_studio/demo/assets/), not the project-level assets/.
+    // For live mode, $previewDir = _studio/preview/ and we need the
+    // project-level assets/ directory.
+    $assetsInTemp = $tempDir . '/assets';
+    if (!file_exists($assetsInTemp) && !is_link($assetsInTemp)) {
+        // Detect demo vs live by checking if $previewDir contains /demo/
+        $isDemoDir = str_contains($previewDir, '/demo/');
+        $targetAssets = $isDemoDir
+            ? dirname($previewDir) . '/assets'  // _studio/demo/assets/
+            : dirname($previewDir, 2) . '/assets'; // project-root/assets/
+        if (is_dir($targetAssets)) {
+            @symlink($targetAssets, $assetsInTemp);
+        }
+    }
+
     return $tempDir;
+}
+
+/**
+ * Ensure the preview directory has an `assets/` symlink pointing to the
+ * correct assets directory for the current context.
+ *
+ * AI-generated pages use `__DIR__ . '/assets/data/...'` to read JSON
+ * data files. This works on published sites (where pages are at the
+ * docroot) but fails in preview mode where pages live in a subdirectory.
+ *
+ * This function creates a persistent symlink that makes __DIR__-based
+ * paths resolve correctly. The symlink is created once and persists
+ * across requests — the is_link() check makes subsequent calls cheap.
+ *
+ * For live preview: _studio/preview/assets → project-root/assets/
+ * For demo preview: _studio/demo/preview/assets → _studio/demo/assets/
+ */
+function ensurePreviewAssetsLink(string $previewDir, string $targetAssetsDir): void
+{
+    $link = $previewDir . '/assets';
+
+    // Already exists (symlink from a previous request, or real dir)
+    if (is_link($link) || is_dir($link)) {
+        return;
+    }
+
+    if (!is_dir($targetAssetsDir)) {
+        return;
+    }
+
+    @symlink($targetAssetsDir, $link);
 }
 
 /**

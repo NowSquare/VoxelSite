@@ -2,387 +2,358 @@
 $siteName = 'Studioform';
 $page = [
   'title'       => 'Brand & Digital Design Practice',
-  'description' => 'Studioform is a small brand and digital design practice. We build identity systems, websites, and creative strategy for startups, cultural organisations, and product companies.',
+  'description' => "Studioform is a small brand and digital design practice. We do three things well: brand identity systems, website design, and creative strategy. Work that is minimal, considered, and built to last.",
   'slug'        => 'home',
 ];
 include '_partials/header.php';
 ?>
 
-<!-- ═══════════════════════════════════════════════════
+<!-- ============================================================
      HERO
-════════════════════════════════════════════════════ -->
-<section class="hero-section">
-  <div class="hero-inner">
-    <div class="hero-content">
-      <span class="eyebrow" data-reveal>Brand &amp; Digital Design Practice</span>
-      <h1 class="hero-headline" data-reveal>We design things<br><em>worth&nbsp;seeing.</em></h1>
-      <p class="hero-body" data-reveal>
-        Identity systems, websites, and creative strategy for startups,
-        cultural organisations, and product companies who care about how
-        they show up in the world.
-      </p>
-      <div class="hero-cta" data-reveal>
-        <a href="/work" class="btn-primary">View our work</a>
-        <a href="/contact" class="btn-ghost">Start a project</a>
-      </div>
-    </div>
-    <div class="hero-aside" data-reveal>
-      <div class="hero-image-wrap">
-        <img src="/assets/library/gallery/vs-gal_concrete-frame_architecture-minimal_light_dark-text.jpeg"
-             alt="Minimal concrete frame — a study in proportion and light"
-             class="hero-image"
-             width="800" height="800">
-      </div>
-      <div class="hero-stat-block">
-        <div class="hero-stat">
-          <span class="stat-number">12+</span>
-          <span class="stat-label">Years of practice</span>
-        </div>
-        <div class="hero-stat">
-          <span class="stat-number">80+</span>
-          <span class="stat-label">Projects completed</span>
-        </div>
-        <div class="hero-stat">
-          <span class="stat-number">3</span>
-          <span class="stat-label">Disciplines mastered</span>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
+     ============================================================ -->
+<section class="min-h-[92vh] flex flex-col justify-end pt-36 pb-20 px-6 lg:px-10 max-w-[var(--max-width)] mx-auto">
 
-<!-- ═══════════════════════════════════════════════════
-     SELECTED WORK — FEATURED PROJECTS
-════════════════════════════════════════════════════ -->
-<section class="section-featured">
-  <div class="section-header-row" data-reveal>
-    <h2 class="section-heading">Selected work</h2>
-    <a href="/work" class="section-link">
-      View all projects
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-    </a>
-  </div>
-
-  <!-- Project 01 — Large hero project -->
-  <article class="project-hero" data-reveal>
-    <a href="/work" class="project-hero-image-wrap" aria-label="View Søren &amp; Co. — Brand Identity case study">
-      <img src="/assets/library/gallery/vs-gal_shell-spiral_architecture-abstract_light_dark-text.jpeg"
-           alt="Shell spiral — abstract architectural geometry, Søren and Co brand study"
-           class="project-hero-image"
-           width="800" height="800"
-           loading="lazy">
-      <div class="project-hero-overlay"></div>
-    </a>
-    <div class="project-hero-meta">
-      <span class="project-tag">Brand Identity</span>
-      <h3 class="project-hero-title">
-        <a href="/work">Søren &amp; Co.</a>
-      </h3>
-      <p class="project-hero-desc">
-        Complete rebrand for a Scandinavian furniture maker. A visual language
-        rooted in craft, material honesty, and Nordic restraint — applied across
-        packaging, digital, and showroom environments.
-      </p>
-      <a href="/work" class="project-cta-link">
-        View case study
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-      </a>
-    </div>
-  </article>
-
-  <!-- Projects 02 & 03 — Side by side -->
-  <div class="project-pair" data-reveal-stagger>
-
-    <article class="project-card">
-      <a href="/work" class="project-card-image-wrap" aria-label="View Meridian Architects case study">
-        <img src="/assets/library/gallery/vs-gal_sunlit-stairwell_architecture-interior_light_dark-text.jpeg"
-             alt="Sunlit stairwell interior — Meridian Architects identity project"
-             class="project-card-image"
-             width="800" height="800"
-             loading="lazy">
-      </a>
-      <div class="project-card-meta">
-        <span class="project-tag">Website &amp; Identity</span>
-        <h3 class="project-card-title"><a href="/work">Meridian Architects</a></h3>
-        <p class="project-card-desc">Website and visual identity for a London architecture practice. Systematic, architectural typography meets generous white space.</p>
-        <a href="/work" class="project-cta-link">
-          View case study
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        </a>
-      </div>
-    </article>
-
-    <article class="project-card">
-      <a href="/work" class="project-card-image-wrap" aria-label="View Forma Skincare case study">
-        <img src="/assets/library/gallery/vs-gal_serum-bottle_beauty-retail_light_dark-text.jpeg"
-             alt="Serum bottle — Forma Skincare brand identity"
-             class="project-card-image"
-             width="800" height="800"
-             loading="lazy">
-      </a>
-      <div class="project-card-meta">
-        <span class="project-tag">Brand Strategy</span>
-        <h3 class="project-card-title"><a href="/work">Forma Skincare</a></h3>
-        <p class="project-card-desc">Brand strategy and identity for a direct-to-consumer skincare line. Positioning, naming system, and visual language for launch.</p>
-        <a href="/work" class="project-cta-link">
-          View case study
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        </a>
-      </div>
-    </article>
-
-  </div>
-
-  <!-- Project 04 — Wide banner -->
-  <article class="project-banner" data-reveal>
-    <a href="/work" class="project-banner-image-wrap" aria-label="View Atelier Roux case study">
-      <img src="/assets/library/gallery/vs-gal_arched-doorway_architecture-interior_warm_dark-text.jpeg"
-           alt="Arched doorway interior — Atelier Roux cultural identity"
-           class="project-banner-image"
-           width="800" height="800"
-           loading="lazy">
-      <div class="project-banner-overlay">
-        <div class="project-banner-content">
-          <span class="project-tag project-tag--light">Creative Strategy</span>
-          <h3 class="project-banner-title">Atelier Roux</h3>
-          <p class="project-banner-desc">Strategic repositioning for a Paris-based contemporary gallery. Brand narrative, communications framework, and digital presence.</p>
-          <span class="project-cta-link project-cta-link--light">
-            View case study
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-          </span>
-        </div>
-      </div>
-    </a>
-  </article>
-
-</section>
-
-<!-- ═══════════════════════════════════════════════════
-     SERVICES OVERVIEW
-════════════════════════════════════════════════════ -->
-<section class="section-services">
-  <div class="services-inner">
-    <div class="services-intro" data-reveal>
-      <span class="eyebrow">What we do</span>
-      <h2 class="section-heading">Three disciplines.<br>One standard.</h2>
-    </div>
-
-    <div class="services-grid" data-reveal-stagger>
-
-      <div class="service-item">
-        <div class="service-number">01</div>
-        <h3 class="service-title">Brand Identity</h3>
-        <p class="service-desc">
-          Visual systems built to last. Logo, typography, colour, photography
-          direction, and the rules that hold it all together across every touchpoint.
-        </p>
-        <a href="/services" class="service-link">
-          Identity work
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        </a>
-      </div>
-
-      <div class="service-item">
-        <div class="service-number">02</div>
-        <h3 class="service-title">Website Design</h3>
-        <p class="service-desc">
-          Considered digital experiences from concept through to code.
-          We design and build websites that feel as deliberate as the
-          brands they represent.
-        </p>
-        <a href="/services" class="service-link">
-          Web work
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        </a>
-      </div>
-
-      <div class="service-item">
-        <div class="service-number">03</div>
-        <h3 class="service-title">Creative Strategy</h3>
-        <p class="service-desc">
-          Positioning, narrative, and the connective tissue between business
-          decisions and design output. Strategy that makes every creative
-          choice intentional.
-        </p>
-        <a href="/services" class="service-link">
-          Strategy work
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        </a>
-      </div>
-
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════════════════
-     PROCESS
-════════════════════════════════════════════════════ -->
-<section class="section-process">
-  <div class="process-inner">
-    <div class="process-intro" data-reveal>
-      <span class="eyebrow">How we work</span>
-      <h2 class="section-heading">Discovery to delivery.</h2>
-      <p class="process-lead">
-        Every project follows the same deliberate arc. Not because we're rigid —
-        because good design takes the same shape every time it's done properly.
-      </p>
-    </div>
-
-    <div class="process-steps" data-reveal-stagger>
-
-      <div class="process-step">
-        <span class="step-number">01</span>
-        <h3 class="step-title">Discovery</h3>
-        <p class="step-desc">
-          We begin by listening. Understanding the business, the audience,
-          the competitive landscape, and — most importantly — what success
-          actually looks like for this project.
-        </p>
-      </div>
-
-      <div class="process-step">
-        <span class="step-number">02</span>
-        <h3 class="step-title">Strategy</h3>
-        <p class="step-desc">
-          We synthesise research into a clear creative brief and positioning
-          framework. This document is the anchor for every design decision
-          that follows. Nothing arbitrary.
-        </p>
-      </div>
-
-      <div class="process-step">
-        <span class="step-number">03</span>
-        <h3 class="step-title">Design</h3>
-        <p class="step-desc">
-          We explore widely, then commit decisively. You see one refined direction
-          — not three competing options. We present the solution we'd stake
-          our reputation on.
-        </p>
-      </div>
-
-      <div class="process-step">
-        <span class="step-number">04</span>
-        <h3 class="step-title">Delivery</h3>
-        <p class="step-desc">
-          Handover is as important as the work itself. You leave with a system
-          you can use independently: guidelines, assets, templates, and
-          documentation that answers every future question.
-        </p>
-      </div>
-
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════════════════
-     ABOUT / PHILOSOPHY
-════════════════════════════════════════════════════ -->
-<section class="section-about">
-  <div class="about-inner">
-    <div class="about-image-col" data-reveal>
-      <div class="about-image-wrap">
-        <img src="/assets/library/gallery/vs-gal_open-notebook_professional-coaching_warm_dark-text.jpeg"
-             alt="Open notebook — the considered, craft-led approach of the Studioform practice"
-             class="about-image"
-             width="800" height="800"
-             loading="lazy">
-      </div>
-    </div>
-    <div class="about-text-col" data-reveal>
-      <span class="eyebrow">About the studio</span>
-      <h2 class="about-heading">Minimal, considered,<br>built to last.</h2>
-      <p class="about-body">
-        Studioform is a small design practice. We work with a tight roster of
-        clients at a time, which means every project gets the attention it deserves.
-        No juniors, no account managers — the people who pitch the work are
-        the people who do the work.
-      </p>
-      <p class="about-body">
-        We have a strong point of view: design should solve problems and be
-        beautiful doing it. We don't chase trends. We don't decorate for
-        decoration's sake. We build visual systems that make organisations
-        look and feel exactly as good as they are.
-      </p>
-      <a href="/studio" class="btn-secondary">More about us</a>
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════════════════
-     TESTIMONIALS
-════════════════════════════════════════════════════ -->
-<section class="section-testimonials">
-  <div class="testimonials-inner">
-    <div class="testimonials-header" data-reveal>
-      <span class="eyebrow">What clients say</span>
-      <h2 class="section-heading">In their words.</h2>
-    </div>
-
-    <div class="testimonials-grid" data-reveal-stagger>
-
-      <blockquote class="testimonial-card">
-        <div class="testimonial-quote-mark">&ldquo;</div>
-        <p class="testimonial-text">
-          Studioform didn't just give us a logo — they gave us a complete way
-          of seeing ourselves. The identity system has held up perfectly through
-          two years of growth and a full product expansion.
-        </p>
-        <footer class="testimonial-footer">
-          <div>
-            <cite class="testimonial-author">Erik Lindqvist</cite>
-            <span class="testimonial-role">Founder, Søren &amp; Co.</span>
-          </div>
-        </footer>
-      </blockquote>
-
-      <blockquote class="testimonial-card">
-        <div class="testimonial-quote-mark">&ldquo;</div>
-        <p class="testimonial-text">
-          They pushed back on our brief in the best possible way. What we
-          thought we wanted and what we actually needed turned out to be
-          very different things. The result is far better for it.
-        </p>
-        <footer class="testimonial-footer">
-          <div>
-            <cite class="testimonial-author">Priya Sharma</cite>
-            <span class="testimonial-role">CEO, Forma Skincare</span>
-          </div>
-        </footer>
-      </blockquote>
-
-      <blockquote class="testimonial-card">
-        <div class="testimonial-quote-mark">&ldquo;</div>
-        <p class="testimonial-text">
-          The process was as impressive as the output. One clear direction,
-          well-argued and beautifully executed. No endless revision cycles.
-          No design by committee. Just good work, delivered with confidence.
-        </p>
-        <footer class="testimonial-footer">
-          <div>
-            <cite class="testimonial-author">James Collier</cite>
-            <span class="testimonial-role">Director, Meridian Architects</span>
-          </div>
-        </footer>
-      </blockquote>
-
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════════════════
-     CTA
-════════════════════════════════════════════════════ -->
-<section class="section-cta" data-reveal>
-  <div class="cta-inner">
-    <span class="eyebrow eyebrow--light">Ready when you are</span>
-    <h2 class="cta-heading">Let's make something<br><em>worth&nbsp;making.</em></h2>
-    <p class="cta-body">
-      We take on a small number of projects each year. If you're working on
-      something that deserves serious design thinking, we'd like to hear about it.
+  <div class="max-w-4xl" data-reveal>
+    <p class="text-xs tracking-[0.14em] uppercase text-[var(--color-muted)] font-medium mb-8">
+      Brand &amp; Digital Design Practice
     </p>
-    <div class="cta-actions">
-      <a href="/contact" class="btn-cta">Start a conversation</a>
+    <h1 class="font-['Cormorant_Garamond'] text-[clamp(3rem,7vw,6.5rem)] font-light leading-[1.05] tracking-tight text-[var(--color-ink)] mb-10">
+      We design brands<br>
+      <em class="italic">worth noticing.</em>
+    </h1>
+    <div class="flex flex-col sm:flex-row items-start gap-6">
+      <a href="/portfolio"
+         class="inline-flex items-center gap-2 text-sm font-medium tracking-[0.08em] uppercase text-[var(--color-ink)] border-b border-[var(--color-ink)] pb-1 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors duration-300">
+        View our work
+        <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+      </a>
+      <a href="/contact"
+         class="inline-flex items-center gap-2 text-sm font-medium tracking-[0.08em] uppercase text-[var(--color-muted)] hover:text-[var(--color-ink)] transition-colors duration-300">
+        Start a project
+      </a>
     </div>
+  </div>
+
+  <!-- Scroll indicator -->
+  <div class="mt-20 flex items-center gap-4" data-reveal>
+    <div class="w-px h-12 bg-[var(--color-border)]"></div>
+    <p class="text-xs tracking-[0.1em] uppercase text-[var(--color-muted)] font-light">Selected work below</p>
+  </div>
+</section>
+
+<!-- ============================================================
+     FEATURED PROJECTS
+     ============================================================ -->
+<section class="py-4 px-6 lg:px-10 max-w-[var(--max-width)] mx-auto" id="work">
+
+  <!-- Project 01 — Scandinavian furniture maker -->
+  <article class="featured-project grid grid-cols-1 lg:grid-cols-2 gap-0 mb-2 group" data-reveal>
+    <div class="relative overflow-hidden aspect-[4/3] lg:aspect-auto lg:min-h-[560px]">
+      <img
+        src="/assets/library/gallery/vs-gal_concrete-frame_architecture-minimal_light_dark-text.jpeg"
+        alt="Minimal concrete architecture — Halden furniture rebrand identity system"
+        class="w-full h-full object-cover transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.03]"
+        loading="lazy"
+        width="800" height="800">
+      <div class="absolute inset-0 bg-[var(--color-ink)] opacity-0 group-hover:opacity-10 transition-opacity duration-500"></div>
+    </div>
+    <div class="bg-[var(--color-bg-alt)] flex flex-col justify-between p-10 lg:p-14">
+      <div>
+        <span class="text-xs tracking-[0.12em] uppercase text-[var(--color-muted)] font-medium">01 — Brand Identity</span>
+        <h2 class="font-['Cormorant_Garamond'] text-[clamp(2rem,3.5vw,3rem)] font-light leading-[1.1] mt-4 mb-6 text-[var(--color-ink)]">
+          Halden — Complete rebrand for a Scandinavian furniture maker
+        </h2>
+        <p class="text-sm leading-relaxed text-[var(--color-muted)] max-w-sm font-light">
+          A ground-up identity system capturing the quiet precision of Nordic craft. Wordmark, type hierarchy, colour system, and brand guidelines across print and digital.
+        </p>
+      </div>
+      <div class="mt-10 flex items-center gap-3">
+        <a href="/portfolio" class="text-xs tracking-[0.1em] uppercase font-medium text-[var(--color-ink)] inline-flex items-center gap-2 border-b border-[var(--color-ink)] pb-1 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors duration-300">
+          View project
+          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+        </a>
+        <span class="text-xs text-[var(--color-muted)] font-light ml-auto">Furniture / Scandinavian</span>
+      </div>
+    </div>
+  </article>
+
+  <!-- Project 02 — London architecture practice -->
+  <article class="featured-project grid grid-cols-1 lg:grid-cols-2 gap-0 mb-2 group" data-reveal>
+    <div class="bg-[var(--color-ink)] flex flex-col justify-between p-10 lg:p-14 lg:order-first order-last">
+      <div>
+        <span class="text-xs tracking-[0.12em] uppercase text-white/40 font-medium">02 — Web &amp; Identity</span>
+        <h2 class="font-['Cormorant_Garamond'] text-[clamp(2rem,3.5vw,3rem)] font-light leading-[1.1] mt-4 mb-6 text-white">
+          Carver &amp; Bell — Website and visual identity for a London architecture practice
+        </h2>
+        <p class="text-sm leading-relaxed text-white/60 max-w-sm font-light">
+          From naming through to launch. A portfolio site built around the project photography with a type-led identity that reflects the firm's structural sensibility.
+        </p>
+      </div>
+      <div class="mt-10 flex items-center gap-3">
+        <a href="/portfolio" class="text-xs tracking-[0.1em] uppercase font-medium text-white inline-flex items-center gap-2 border-b border-white/40 pb-1 hover:border-white transition-colors duration-300">
+          View project
+          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+        </a>
+        <span class="text-xs text-white/30 font-light ml-auto">Architecture / London</span>
+      </div>
+    </div>
+    <div class="relative overflow-hidden aspect-[4/3] lg:aspect-auto lg:min-h-[560px]">
+      <img
+        src="/assets/library/gallery/vs-gal_arched-doorway_architecture-interior_warm_dark-text.jpeg"
+        alt="Arched doorway interior — Carver and Bell architecture practice identity"
+        class="w-full h-full object-cover transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.03]"
+        loading="lazy"
+        width="800" height="800">
+    </div>
+  </article>
+
+  <!-- Project 03 — DTC skincare brand strategy -->
+  <article class="featured-project grid grid-cols-1 lg:grid-cols-2 gap-0 group" data-reveal>
+    <div class="relative overflow-hidden aspect-[4/3] lg:aspect-auto lg:min-h-[560px]">
+      <img
+        src="/assets/library/gallery/vs-gal_serum-bottle_beauty-retail_light_dark-text.jpeg"
+        alt="Minimal serum bottle — Forme skincare brand strategy"
+        class="w-full h-full object-cover transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.03]"
+        loading="lazy"
+        width="800" height="800">
+    </div>
+    <div class="bg-[var(--color-bg-alt)] flex flex-col justify-between p-10 lg:p-14">
+      <div>
+        <span class="text-xs tracking-[0.12em] uppercase text-[var(--color-muted)] font-medium">03 — Brand Strategy</span>
+        <h2 class="font-['Cormorant_Garamond'] text-[clamp(2rem,3.5vw,3rem)] font-light leading-[1.1] mt-4 mb-6 text-[var(--color-ink)]">
+          Forme — Brand strategy for a direct-to-consumer skincare line
+        </h2>
+        <p class="text-sm leading-relaxed text-[var(--color-muted)] max-w-sm font-light">
+          Positioning, brand narrative, tone of voice, and visual direction for a new skincare label targeting the considered consumer. From research through to creative brief.
+        </p>
+      </div>
+      <div class="mt-10 flex items-center gap-3">
+        <a href="/portfolio" class="text-xs tracking-[0.1em] uppercase font-medium text-[var(--color-ink)] inline-flex items-center gap-2 border-b border-[var(--color-ink)] pb-1 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors duration-300">
+          View project
+          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+        </a>
+        <span class="text-xs text-[var(--color-muted)] font-light ml-auto">Skincare / DTC</span>
+      </div>
+    </div>
+  </article>
+
+</section>
+
+<!-- View all work link -->
+<div class="py-16 px-6 lg:px-10 max-w-[var(--max-width)] mx-auto" data-reveal>
+  <a href="/portfolio" class="inline-flex items-center gap-3 text-sm tracking-[0.08em] uppercase font-medium text-[var(--color-muted)] hover:text-[var(--color-ink)] transition-colors duration-300">
+    <span class="w-8 h-px bg-current"></span>
+    All projects
+    <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+  </a>
+</div>
+
+<!-- ============================================================
+     SERVICES OVERVIEW
+     ============================================================ -->
+<section class="py-24 lg:py-32 bg-[var(--color-ink)]">
+  <div class="max-w-[var(--max-width)] mx-auto px-6 lg:px-10">
+
+    <div class="mb-16" data-reveal>
+      <p class="text-xs tracking-[0.14em] uppercase text-white/30 font-medium mb-5">What we do</p>
+      <h2 class="font-['Cormorant_Garamond'] text-[clamp(2.5rem,5vw,4.5rem)] font-light text-white leading-[1.05]">
+        Three disciplines.<br>One practice.
+      </h2>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-px bg-white/10" data-reveal-stagger>
+
+      <!-- Identity -->
+      <div class="bg-[var(--color-ink)] p-10 lg:p-12">
+        <p class="font-['Cormorant_Garamond'] text-5xl font-light text-white/20 mb-8">01</p>
+        <h3 class="text-white text-lg font-medium mb-4 tracking-[-0.01em]">Brand Identity</h3>
+        <p class="text-sm text-white/50 leading-relaxed font-light mb-8">
+          Visual identity systems built to endure. Logo and wordmark, typography, colour, iconography, photography direction, and the guidelines that hold it all together.
+        </p>
+        <a href="/services" class="text-xs tracking-[0.1em] uppercase text-white/40 hover:text-white transition-colors duration-200 inline-flex items-center gap-2">
+          Learn more
+          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+        </a>
+      </div>
+
+      <!-- Web -->
+      <div class="bg-[var(--color-ink)] p-10 lg:p-12">
+        <p class="font-['Cormorant_Garamond'] text-5xl font-light text-white/20 mb-8">02</p>
+        <h3 class="text-white text-lg font-medium mb-4 tracking-[-0.01em]">Website Design</h3>
+        <p class="text-sm text-white/50 leading-relaxed font-light mb-8">
+          Websites that are designed as much as they are built. Considered structure, refined interaction, and performance that supports the brand rather than undermining it.
+        </p>
+        <a href="/services" class="text-xs tracking-[0.1em] uppercase text-white/40 hover:text-white transition-colors duration-200 inline-flex items-center gap-2">
+          Learn more
+          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+        </a>
+      </div>
+
+      <!-- Strategy -->
+      <div class="bg-[var(--color-ink)] p-10 lg:p-12">
+        <p class="font-['Cormorant_Garamond'] text-5xl font-light text-white/20 mb-8">03</p>
+        <h3 class="text-white text-lg font-medium mb-4 tracking-[-0.01em]">Creative Strategy</h3>
+        <p class="text-sm text-white/50 leading-relaxed font-light mb-8">
+          The thinking before the making. Positioning, audience definition, brand narrative, tone of voice — the strategic foundation that makes the design mean something.
+        </p>
+        <a href="/services" class="text-xs tracking-[0.1em] uppercase text-white/40 hover:text-white transition-colors duration-200 inline-flex items-center gap-2">
+          Learn more
+          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+        </a>
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================================================
+     PHILOSOPHY / ABOUT STRIP
+     ============================================================ -->
+<section class="py-24 lg:py-36 px-6 lg:px-10">
+  <div class="max-w-[var(--max-width)] mx-auto">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
+
+      <div data-reveal>
+        <p class="text-xs tracking-[0.14em] uppercase text-[var(--color-muted)] font-medium mb-6">Our approach</p>
+        <h2 class="font-['Cormorant_Garamond'] text-[clamp(2.2rem,4vw,3.8rem)] font-light text-[var(--color-ink)] leading-[1.1] mb-8">
+          No trends.<br>No decoration<br><em class="italic">for its own sake.</em>
+        </h2>
+        <p class="text-sm text-[var(--color-muted)] leading-relaxed max-w-md font-light mb-6">
+          We are a small practice. We work closely with a select number of clients each year and are involved at every stage — from the earliest strategic conversations through to launch and beyond.
+        </p>
+        <p class="text-sm text-[var(--color-muted)] leading-relaxed max-w-md font-light mb-10">
+          The work we make is minimal not because minimalism is fashionable, but because we believe that clarity is kindness. When a brand speaks clearly, its audience listens.
+        </p>
+        <a href="/about" class="inline-flex items-center gap-2 text-sm font-medium tracking-[0.08em] uppercase text-[var(--color-ink)] border-b border-[var(--color-ink)] pb-1 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors duration-300">
+          About the studio
+          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+        </a>
+      </div>
+
+      <div class="relative" data-reveal>
+        <img
+          src="/assets/library/gallery/vs-gal_open-notebook_professional-coaching_warm_dark-text.jpeg"
+          alt="Open notebook on a desk — creative process at Studioform"
+          class="w-full aspect-[4/5] object-cover"
+          loading="lazy"
+          width="800" height="800">
+        <div class="absolute -bottom-6 -left-6 w-24 h-24 border border-[var(--color-border)] hidden lg:block"></div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PROCESS
+     ============================================================ -->
+<section class="py-24 lg:py-32 bg-[var(--color-bg-alt)]">
+  <div class="max-w-[var(--max-width)] mx-auto px-6 lg:px-10">
+
+    <div class="mb-16" data-reveal>
+      <p class="text-xs tracking-[0.14em] uppercase text-[var(--color-muted)] font-medium mb-5">How we work</p>
+      <h2 class="font-['Cormorant_Garamond'] text-[clamp(2.2rem,4vw,3.8rem)] font-light text-[var(--color-ink)] leading-[1.1]">
+        From discovery<br>to delivery.
+      </h2>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8" data-reveal-stagger>
+
+      <div class="pt-8 border-t border-[var(--color-border)]">
+        <p class="font-['Cormorant_Garamond'] text-4xl text-[var(--color-muted)]/40 font-light mb-6">01</p>
+        <h3 class="text-base font-medium text-[var(--color-ink)] mb-3 tracking-[-0.01em]">Discovery</h3>
+        <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light">
+          We start by listening. Deeply understanding your business, your audience, and the problem you're asking design to solve.
+        </p>
+      </div>
+
+      <div class="pt-8 border-t border-[var(--color-border)]">
+        <p class="font-['Cormorant_Garamond'] text-4xl text-[var(--color-muted)]/40 font-light mb-6">02</p>
+        <h3 class="text-base font-medium text-[var(--color-ink)] mb-3 tracking-[-0.01em]">Strategy</h3>
+        <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light">
+          Positioning, direction, and creative brief. We define where you should stand and what your brand should stand for before a single mark is made.
+        </p>
+      </div>
+
+      <div class="pt-8 border-t border-[var(--color-border)]">
+        <p class="font-['Cormorant_Garamond'] text-4xl text-[var(--color-muted)]/40 font-light mb-6">03</p>
+        <h3 class="text-base font-medium text-[var(--color-ink)] mb-3 tracking-[-0.01em]">Design</h3>
+        <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light">
+          The making. Iterative, focused, and always in dialogue with you. We share work in progress and refine through conversation, not revision rounds.
+        </p>
+      </div>
+
+      <div class="pt-8 border-t border-[var(--color-border)]">
+        <p class="font-['Cormorant_Garamond'] text-4xl text-[var(--color-muted)]/40 font-light mb-6">04</p>
+        <h3 class="text-base font-medium text-[var(--color-ink)] mb-3 tracking-[-0.01em]">Delivery</h3>
+        <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light">
+          Production, implementation, and handover. Every project ends with a full set of assets, guidelines, and the knowledge to use them confidently.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     TESTIMONIALS
+     ============================================================ -->
+<section class="py-24 lg:py-36 px-6 lg:px-10">
+  <div class="max-w-[var(--max-width)] mx-auto">
+
+    <p class="text-xs tracking-[0.14em] uppercase text-[var(--color-muted)] font-medium mb-16" data-reveal>Selected client voices</p>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-12 lg:gap-16">
+
+      <blockquote class="flex flex-col gap-6 pt-8 border-t border-[var(--color-border)]" data-reveal>
+        <p class="font-['Cormorant_Garamond'] text-xl font-light leading-[1.5] text-[var(--color-ink)] italic">
+          "Studioform brought a clarity to our brand that we had been searching for for years. The new identity is precise, considered, and unmistakably ours."
+        </p>
+        <footer class="mt-auto">
+          <p class="text-sm font-medium text-[var(--color-ink)]">Erik Lindqvist</p>
+          <p class="text-xs text-[var(--color-muted)] font-light">Creative Director, Halden</p>
+        </footer>
+      </blockquote>
+
+      <blockquote class="flex flex-col gap-6 pt-8 border-t border-[var(--color-border)]" data-reveal>
+        <p class="font-['Cormorant_Garamond'] text-xl font-light leading-[1.5] text-[var(--color-ink)] italic">
+          "Working with a studio that understands architecture at both a practical and conceptual level made all the difference. The site communicates who we are without trying too hard."
+        </p>
+        <footer class="mt-auto">
+          <p class="text-sm font-medium text-[var(--color-ink)]">Amara Bell</p>
+          <p class="text-xs text-[var(--color-muted)] font-light">Partner, Carver &amp; Bell Architects</p>
+        </footer>
+      </blockquote>
+
+      <blockquote class="flex flex-col gap-6 pt-8 border-t border-[var(--color-border)]" data-reveal>
+        <p class="font-['Cormorant_Garamond'] text-xl font-light leading-[1.5] text-[var(--color-ink)] italic">
+          "The brand strategy work set the entire direction for our launch. Studioform went far beyond the brief — they helped us understand who we were for and why that mattered."
+        </p>
+        <footer class="mt-auto">
+          <p class="text-sm font-medium text-[var(--color-ink)]">Priya Nair</p>
+          <p class="text-xs text-[var(--color-muted)] font-light">Founder, Forme Skincare</p>
+        </footer>
+      </blockquote>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     CTA
+     ============================================================ -->
+<section class="py-24 lg:py-36 bg-[var(--color-ink)]" data-reveal>
+  <div class="max-w-[var(--max-width)] mx-auto px-6 lg:px-10 text-center">
+    <p class="text-xs tracking-[0.14em] uppercase text-white/30 font-medium mb-8">Work with us</p>
+    <h2 class="font-['Cormorant_Garamond'] text-[clamp(2.5rem,6vw,5.5rem)] font-light text-white leading-[1.05] mb-10">
+      Have a project<br><em class="italic">in mind?</em>
+    </h2>
+    <a href="/contact"
+       class="inline-flex items-center gap-3 text-sm font-medium tracking-[0.08em] uppercase text-white border-b border-white/40 pb-1 hover:border-white transition-colors duration-300">
+      Get in touch
+      <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+    </a>
   </div>
 </section>
 

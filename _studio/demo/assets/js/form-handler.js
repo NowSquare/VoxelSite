@@ -28,10 +28,9 @@
     });
   }
 
-  // ── Preview & demo detection ──
-  // Block submissions in two scenarios:
-  // 1. Inside the Studio preview iframe (scoped — production embeds work fine)
-  // 2. On the root demo site (index.php injects <meta name="voxelsite-demo">)
+  // ── Preview detection (scoped to Studio only) ──
+  // Only block submissions when inside the Studio preview iframe,
+  // not in any arbitrary iframe (production embeds should work fine).
   function isStudioPreview() {
     try {
       // Studio adds a data attribute to its preview iframe
@@ -49,12 +48,7 @@
     return false;
   }
 
-  function isDemoSite() {
-    // Root demo site: index.php injects this meta tag when serving demo preview
-    return !!document.querySelector('meta[name="voxelsite-demo"]');
-  }
-
-  var inPreview = isStudioPreview() || isDemoSite();
+  var inPreview = isStudioPreview();
 
   // ── Non-AJAX fallback: render banners from query params ──
   var urlParams = new URLSearchParams(window.location.search);
@@ -114,7 +108,7 @@
       if (!btn) return;
       var origText = btn.textContent;
 
-      // Preview/demo check — block submission with a friendly notice
+      // Preview check (scoped to Studio)
       if (inPreview) {
         var existing = form.querySelector('.form-preview-notice');
         if (existing) existing.remove();
@@ -122,10 +116,7 @@
         notice.className = 'form-preview-notice';
         notice.setAttribute('role', 'status');
         notice.style.cssText = 'margin-top:1rem;padding:1rem 1.25rem;background:#fffbeb;border:2px solid #f59e0b;border-radius:10px;color:#92400e;font-size:0.9rem;line-height:1.5;';
-        var isDemo = isDemoSite();
-        notice.innerHTML = isDemo
-          ? '<strong>Demo Mode</strong> — Form submissions are disabled in this demo.'
-          : '<strong>Preview Mode</strong> — Form submissions are disabled in the preview.<br>Publish your site to enable form submissions.';
+        notice.innerHTML = '<strong>Preview Mode</strong> — Form submissions are disabled in the preview.<br>Publish your site to enable form submissions.';
         btn.after(notice);
         return;
       }

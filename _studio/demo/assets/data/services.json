@@ -1,0 +1,43 @@
+{
+  "services": [
+    {
+      "name": "Brand Identity",
+      "slug": "identity",
+      "description": "Visual identity systems built to endure — from logo and wordmark through to comprehensive brand guidelines.",
+      "deliverables": [
+        "Brand strategy and positioning",
+        "Logo and wordmark design",
+        "Typography systems",
+        "Colour palette development",
+        "Brand guidelines and documentation"
+      ],
+      "typical_duration": "8–12 weeks"
+    },
+    {
+      "name": "Website Design",
+      "slug": "web",
+      "description": "Websites designed as much as built — considered structure, refined interaction, performance that supports the brand.",
+      "deliverables": [
+        "UX strategy and site architecture",
+        "Visual design and prototyping",
+        "Responsive, accessible HTML/CSS",
+        "CMS integration",
+        "Performance and SEO foundations"
+      ],
+      "typical_duration": "10–16 weeks"
+    },
+    {
+      "name": "Creative Strategy",
+      "slug": "strategy",
+      "description": "The thinking before the making — positioning, brand narrative, tone of voice, and the strategic foundation that makes design mean something.",
+      "deliverables": [
+        "Brand audit and competitive review",
+        "Positioning and differentiation",
+        "Brand narrative and messaging",
+        "Tone of voice development",
+        "Creative brief"
+      ],
+      "typical_duration": "4–8 weeks"
+    }
+  ]
+}

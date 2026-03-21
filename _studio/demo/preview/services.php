@@ -2,211 +2,172 @@
 $siteName = 'Studioform';
 $page = [
   'title'       => 'Services',
-  'description' => 'Brand identity systems, website design, and creative strategy. Studioform works with startups, cultural organisations, and product companies who demand considered design.',
+  'description' => 'Brand identity systems, website design, and creative strategy from Studioform — a small design practice for startups, cultural organisations, and product companies.',
   'slug'        => 'services',
 ];
 include '_partials/header.php';
 ?>
 
 <!-- Page Header -->
-<section class="page-header">
-  <div class="page-header-inner" data-reveal>
-    <span class="eyebrow">What we do</span>
-    <h1 class="page-title">Three disciplines,<br>one standard.</h1>
-    <p class="page-subtitle">
-      We do three things and we do them with complete commitment. Everything else
-      we refer to people we trust.
-    </p>
+<section class="pt-40 pb-20 px-6 lg:px-10 max-w-[var(--max-width)] mx-auto">
+  <div data-reveal>
+    <p class="text-xs tracking-[0.14em] uppercase text-[var(--color-muted)] font-medium mb-6">What we offer</p>
+    <h1 class="font-['Cormorant_Garamond'] text-[clamp(3rem,6vw,5.5rem)] font-light text-[var(--color-ink)] leading-[1.05] max-w-2xl">
+      Three things.<br>Done well.
+    </h1>
   </div>
 </section>
 
-<!-- Service 01: Brand Identity -->
-<section class="service-detail service-detail--alt">
-  <div class="service-detail-inner">
-    <div class="service-detail-image" data-reveal>
-      <img src="/assets/library/gallery/vs-gal_prism-cube_abstract-creative_light_dark-text.jpeg"
-           alt="Prism cube — geometric abstraction representing brand identity systems"
-           class="service-detail-img"
-           width="800" height="800"
-           loading="lazy">
-    </div>
-    <div class="service-detail-text" data-reveal>
-      <span class="service-detail-number">01</span>
-      <h2 class="service-detail-title">Brand Identity</h2>
-      <p class="service-detail-desc">
-        A brand identity isn't a logo. It's a complete visual language — the
-        sum of every decision about how an organisation presents itself to
-        the world. We build systems that are coherent, considered, and durable.
-      </p>
-      <p class="service-detail-desc">
-        Not trend-led. Not overworked. Built to look right in ten years as
-        much as it does today.
-      </p>
-      <ul class="service-deliverables">
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          Brand strategy &amp; positioning
-        </li>
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          Logo &amp; mark design
-        </li>
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          Typography &amp; colour systems
-        </li>
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          Art direction &amp; photography guidelines
-        </li>
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          Brand guidelines &amp; asset library
-        </li>
-      </ul>
-    </div>
-  </div>
-</section>
-
-<!-- Service 02: Website Design -->
-<section class="service-detail">
-  <div class="service-detail-inner">
-    <div class="service-detail-text" data-reveal>
-      <span class="service-detail-number">02</span>
-      <h2 class="service-detail-title">Website Design</h2>
-      <p class="service-detail-desc">
-        We design and build websites that feel as considered as the brands they
-        represent. Not templates, not themes — bespoke digital experiences
-        designed from first principles.
-      </p>
-      <p class="service-detail-desc">
-        We work closely with clients through the entire process: strategy,
-        wireframes, design, and production-ready handoff or full build.
-      </p>
-      <ul class="service-deliverables">
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          Digital strategy &amp; sitemap
-        </li>
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          UX wireframing
-        </li>
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          Visual design (desktop &amp; mobile)
-        </li>
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          Design system &amp; component library
-        </li>
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          Production build &amp; handover
-        </li>
-      </ul>
-    </div>
-    <div class="service-detail-image" data-reveal>
-      <img src="/assets/library/gallery/vs-gal_concrete-frame_architecture-minimal_light_dark-text.jpeg"
-           alt="Concrete frame — structural clarity mirroring considered web design"
-           class="service-detail-img"
-           width="800" height="800"
-           loading="lazy">
-    </div>
-  </div>
-</section>
-
-<!-- Service 03: Creative Strategy -->
-<section class="service-detail service-detail--alt">
-  <div class="service-detail-inner">
-    <div class="service-detail-image" data-reveal>
-      <img src="/assets/library/gallery/vs-gal_open-notebook_professional-coaching_warm_dark-text.jpeg"
-           alt="Open notebook with pen — the thoughtful, strategic process of Studioform"
-           class="service-detail-img"
-           width="800" height="800"
-           loading="lazy">
-    </div>
-    <div class="service-detail-text" data-reveal>
-      <span class="service-detail-number">03</span>
-      <h2 class="service-detail-title">Creative Strategy</h2>
-      <p class="service-detail-desc">
-        The connective tissue between business ambition and design output.
-        We work with founders, leadership teams, and creative directors to
-        build the frameworks that make every downstream creative decision
-        coherent and intentional.
-      </p>
-      <p class="service-detail-desc">
-        Strategy is where we earn the right to design. We take it as
-        seriously as the visual work.
-      </p>
-      <ul class="service-deliverables">
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          Brand positioning &amp; narrative
-        </li>
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          Audience &amp; market analysis
-        </li>
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          Creative brief writing
-        </li>
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          Messaging framework
-        </li>
-        <li>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          Launch &amp; rollout planning
-        </li>
-      </ul>
-    </div>
-  </div>
-</section>
-
-<!-- Process Strip -->
-<section class="section-process section-process--light">
-  <div class="process-inner">
-    <div class="process-intro" data-reveal>
-      <span class="eyebrow">How we work</span>
-      <h2 class="section-heading">The process.</h2>
-    </div>
-    <div class="process-steps" data-reveal-stagger>
-      <div class="process-step">
-        <span class="step-number">01</span>
-        <h3 class="step-title">Discovery</h3>
-        <p class="step-desc">Listening, researching, understanding. We earn the right to an opinion before we offer one.</p>
+<!-- Service 01 — Brand Identity -->
+<section class="py-20 border-t border-[var(--color-border)]">
+  <div class="max-w-[var(--max-width)] mx-auto px-6 lg:px-10">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24" data-reveal>
+      <div>
+        <span class="text-xs tracking-[0.12em] uppercase text-[var(--color-muted)] font-medium">01</span>
+        <h2 class="font-['Cormorant_Garamond'] text-[clamp(2.2rem,4vw,3.5rem)] font-light text-[var(--color-ink)] leading-[1.1] mt-4 mb-8">
+          Brand Identity
+        </h2>
+        <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light mb-6 max-w-md">
+          We build visual identity systems that hold together across every touchpoint — from a business card to a billboard, from a website to a packaging label.
+        </p>
+        <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light max-w-md">
+          Identity work starts from the inside out. We understand your positioning before we consider the mark, and the system before we finalise the logo. The result is a brand that doesn't just look right — it thinks right.
+        </p>
       </div>
-      <div class="process-step">
-        <span class="step-number">02</span>
-        <h3 class="step-title">Strategy</h3>
-        <p class="step-desc">A clear brief that everything else is measured against. No strategy, no design.</p>
-      </div>
-      <div class="process-step">
-        <span class="step-number">03</span>
-        <h3 class="step-title">Design</h3>
-        <p class="step-desc">One refined direction. We present what we believe in, not three options hedging our bets.</p>
-      </div>
-      <div class="process-step">
-        <span class="step-number">04</span>
-        <h3 class="step-title">Delivery</h3>
-        <p class="step-desc">A complete system with documentation. Not a handoff — a handover.</p>
+      <div>
+        <ul class="list-none flex flex-col gap-0">
+          <?php
+          $identityItems = [
+            "Brand strategy and positioning",
+            "Logo and wordmark design",
+            "Typography systems",
+            "Colour palette development",
+            "Iconography and illustration direction",
+            "Photography and art direction guidelines",
+            "Brand guidelines and usage documentation",
+            "Stationery and print collateral",
+            "Packaging design",
+            "Brand rollout support",
+          ];
+          foreach ($identityItems as $item): ?>
+          <li class="flex items-center gap-4 py-4 border-b border-[var(--color-border)] text-sm text-[var(--color-muted)] font-light">
+            <i class="icon-sm text-[var(--color-ink)] flex-shrink-0" data-lucide="minus" aria-hidden="true"></i>
+            <?= htmlspecialchars($item) ?>
+          </li>
+          <?php endforeach; ?>
+        </ul>
       </div>
     </div>
   </div>
 </section>
 
-<!-- CTA -->
-<section class="section-cta" data-reveal>
-  <div class="cta-inner">
-    <span class="eyebrow eyebrow--light">Start a project</span>
-    <h2 class="cta-heading">Good design is<br><em>never an accident.</em></h2>
-    <p class="cta-body">
-      Tell us about your project. We'll tell you honestly whether
-      we're the right studio for it.
-    </p>
-    <a href="/contact" class="btn-cta">Get in touch</a>
+<!-- Service 02 — Website Design -->
+<section class="py-20 border-t border-[var(--color-border)] bg-[var(--color-bg-alt)]">
+  <div class="max-w-[var(--max-width)] mx-auto px-6 lg:px-10">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24" data-reveal>
+      <div>
+        <span class="text-xs tracking-[0.12em] uppercase text-[var(--color-muted)] font-medium">02</span>
+        <h2 class="font-['Cormorant_Garamond'] text-[clamp(2.2rem,4vw,3.5rem)] font-light text-[var(--color-ink)] leading-[1.1] mt-4 mb-8">
+          Website Design
+        </h2>
+        <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light mb-6 max-w-md">
+          We design and build websites that are considered as objects. Every element earns its place. Every interaction is intentional. The result is a site that performs as well as it looks.
+        </p>
+        <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light max-w-md">
+          We work across CMS and custom-built environments, and we're comfortable leading both the design and the build or working alongside an existing development team.
+        </p>
+      </div>
+      <div>
+        <ul class="list-none flex flex-col gap-0">
+          <?php
+          $webItems = [
+            "UX strategy and site architecture",
+            "Wireframing and content mapping",
+            "Visual design and prototyping",
+            "Responsive, accessible HTML/CSS",
+            "CMS integration and configuration",
+            "Performance optimisation",
+            "SEO foundations",
+            "Animation and interaction design",
+            "Ongoing support and iteration",
+          ];
+          foreach ($webItems as $item): ?>
+          <li class="flex items-center gap-4 py-4 border-b border-[var(--color-border)] text-sm text-[var(--color-muted)] font-light">
+            <i class="icon-sm text-[var(--color-ink)] flex-shrink-0" data-lucide="minus" aria-hidden="true"></i>
+            <?= htmlspecialchars($item) ?>
+          </li>
+          <?php endforeach; ?>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Service 03 — Creative Strategy -->
+<section class="py-20 border-t border-[var(--color-border)]">
+  <div class="max-w-[var(--max-width)] mx-auto px-6 lg:px-10">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24" data-reveal>
+      <div>
+        <span class="text-xs tracking-[0.12em] uppercase text-[var(--color-muted)] font-medium">03</span>
+        <h2 class="font-['Cormorant_Garamond'] text-[clamp(2.2rem,4vw,3.5rem)] font-light text-[var(--color-ink)] leading-[1.1] mt-4 mb-8">
+          Creative Strategy
+        </h2>
+        <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light mb-6 max-w-md">
+          Sometimes the problem isn't a logo — it's the story behind it. We offer standalone strategy engagements for organisations working through a rebrand, a pivot, or a launch.
+        </p>
+        <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light max-w-md">
+          Strategy engagements can stand alone or feed directly into identity and web projects. Either way, the thinking is rigorous, the outcomes are practical, and the direction is one you can act on immediately.
+        </p>
+      </div>
+      <div>
+        <ul class="list-none flex flex-col gap-0">
+          <?php
+          $strategyItems = [
+            "Brand audit and competitive review",
+            "Audience research and persona definition",
+            "Positioning and differentiation",
+            "Brand narrative and messaging framework",
+            "Tone of voice development",
+            "Campaign and content strategy",
+            "Creative brief writing",
+            "Brand naming",
+            "Launch strategy",
+          ];
+          foreach ($strategyItems as $item): ?>
+          <li class="flex items-center gap-4 py-4 border-b border-[var(--color-border)] text-sm text-[var(--color-muted)] font-light">
+            <i class="icon-sm text-[var(--color-ink)] flex-shrink-0" data-lucide="minus" aria-hidden="true"></i>
+            <?= htmlspecialchars($item) ?>
+          </li>
+          <?php endforeach; ?>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Who we work with -->
+<section class="py-24 lg:py-32 bg-[var(--color-ink)]" data-reveal>
+  <div class="max-w-[var(--max-width)] mx-auto px-6 lg:px-10">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-end">
+      <div>
+        <p class="text-xs tracking-[0.14em] uppercase text-white/30 font-medium mb-6">Who we work with</p>
+        <h2 class="font-['Cormorant_Garamond'] text-[clamp(2.2rem,4vw,3.8rem)] font-light text-white leading-[1.1]">
+          Clients who care how<br><em class="italic">they show up.</em>
+        </h2>
+      </div>
+      <div class="flex flex-col gap-6">
+        <p class="text-sm text-white/50 leading-relaxed font-light">
+          We work with startups navigating their first public identity, cultural organisations building presence and authority, and product companies that want design to be a genuine competitive advantage.
+        </p>
+        <p class="text-sm text-white/50 leading-relaxed font-light">
+          What unites them is a genuine belief that how they present themselves in the world matters — and a willingness to invest in getting it right.
+        </p>
+        <a href="/contact" class="mt-2 inline-flex items-center gap-2 text-sm font-medium tracking-[0.08em] uppercase text-white border-b border-white/30 pb-1 hover:border-white transition-colors duration-300 w-max">
+          Start a conversation
+          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+        </a>
+      </div>
+    </div>
   </div>
 </section>
 

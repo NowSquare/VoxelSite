@@ -4,11 +4,11 @@
         "confidence": "stated"
     },
     "business_type": {
-        "value": "brand and digital design studio",
+        "value": "brand and digital design practice",
         "confidence": "stated"
     },
-    "location": {
-        "value": "London, with remote clients",
+    "business_size": {
+        "value": "small practice",
         "confidence": "stated"
     },
     "services": {
@@ -19,15 +19,11 @@
         ],
         "confidence": "stated"
     },
-    "clients": {
-        "value": "startups, cultural organisations, product companies",
-        "confidence": "stated"
-    },
-    "recent_projects": {
+    "client_types": {
         "value": [
-            "Complete rebrand for a Scandinavian furniture maker",
-            "Website and visual identity for a London architecture practice",
-            "Brand strategy for a direct-to-consumer skincare line"
+            "startups",
+            "cultural organisations",
+            "product companies"
         ],
         "confidence": "stated"
     },
@@ -35,12 +31,24 @@
         "value": "Minimal, considered, built to last — no trends, no decoration for its own sake",
         "confidence": "stated"
     },
-    "studio_size": {
-        "value": "Small practice — principals do the work directly, no juniors or account managers",
+    "recent_projects": {
+        "value": [
+            "Complete rebrand for a Scandinavian furniture maker (Halden)",
+            "Website and visual identity for a London architecture practice (Carver & Bell)",
+            "Brand strategy for a direct-to-consumer skincare line (Forme)"
+        ],
         "confidence": "stated"
     },
-    "site_approach": {
-        "value": "Portfolio-first. Clean, confident, generous white space. The work speaks.",
+    "site_priority": {
+        "value": "portfolio-first",
+        "confidence": "stated"
+    },
+    "design_preference": {
+        "value": "clean, confident, generous white space, large project images",
+        "confidence": "stated"
+    },
+    "typography_preference": {
+        "value": "bold and refined — the site itself is a portfolio piece",
         "confidence": "stated"
     }
 }

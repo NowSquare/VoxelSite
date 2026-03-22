@@ -740,6 +740,23 @@ Preflight-style resets (box-sizing, link underlines, list bullets, img block dis
 - Comments explaining "why," not "what."
 - Accessible interactions: keyboard support, ARIA state updates, focus management.
 
+### Interactive UI Patterns
+
+**Every visual UI control must have a working JavaScript counterpart.** Never output filter buttons, tabs, accordions, or toggles without the JavaScript that makes them functional. Put the JS in `assets/js/main.js` (or `assets/js/components.js` for complex features).
+
+**Filter / Category Buttons** (portfolio, gallery, product pages):
+- **HTML:** Buttons get `data-filter="category"` (lowercase). Items get `data-tags="tag1 tag2"` (space-separated, lowercase). Use `aria-pressed` for accessibility.
+- **JS:** Click handler reads `data-filter`, loops `[data-tags]` items, sets `display: none` on non-matches. "All" button shows everything.
+- **Layout:** Filtered items must be individually addressable (flat grid, not grouped rows). Use CSS Grid `col-span` for mixed sizes instead of wrapper `<div>` groups.
+
+**Tabs:**
+- **HTML:** Tab buttons get `data-tab="panel-id"`. Panels get `id="panel-id"`.
+- **JS:** Click shows target panel, hides siblings. Update `aria-selected`.
+
+**Accordions:**
+- **HTML:** Use `<details>/<summary>` (native, no JS needed) or `data-accordion` with `aria-expanded`.
+- **JS:** Only needed for animated open/close or single-open behavior.
+
 ---
 
 ## CONSISTENCY RULES
@@ -847,6 +864,7 @@ The runtime fetches the actual SVG from `/assets/icons/phone.svg`, extracts the 
   vertical-align: -0.15em;
   flex-shrink: 0;
 }
+.icon.hidden { display: none; }
 
 .icon-sm { width: 1em; height: 1em; }
 .icon-lg { width: 1.5em; height: 1.5em; }

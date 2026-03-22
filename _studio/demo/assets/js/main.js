@@ -1,11 +1,14 @@
-/**
- * main.js — Studioform global behaviour
- * Scroll reveal, portfolio filter
- */
+/* ============================================================
+   Studioform — main.js
+   Global behaviour: scroll reveal, sticky header class.
+   navigation.js (shipped) handles mobile menu toggling.
+   ============================================================ */
+
+'use strict';
 
 document.addEventListener('DOMContentLoaded', () => {
 
-  // ── Scroll Reveal ─────────────────────────────────────────
+  /* ── Scroll Reveal ── */
   const revealObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
@@ -14,47 +17,57 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }, {
-    threshold: 0.1,
-    rootMargin: '0px 0px -50px 0px'
+    threshold: 0.12,
+    rootMargin: '0px 0px -60px 0px'
   });
 
   document.querySelectorAll('[data-reveal], [data-reveal-stagger]').forEach(el => {
     revealObserver.observe(el);
   });
 
-  // ── Portfolio Filter ──────────────────────────────────────
-  const filterButtons = document.querySelectorAll('.portfolio-filter');
-  const portfolioItems = document.querySelectorAll('.portfolio-item');
-
-  if (filterButtons.length && portfolioItems.length) {
-    filterButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        // Update active button
-        filterButtons.forEach(b => b.classList.remove('portfolio-filter--active'));
-        btn.classList.add('portfolio-filter--active');
-
-        const filter = btn.dataset.filter;
-
-        portfolioItems.forEach(item => {
-          if (filter === 'all' || item.dataset.category === filter) {
-            item.classList.remove('is-hidden');
-          } else {
-            item.classList.add('is-hidden');
-          }
-        });
-      });
-    });
+  /* ── Project image parallax-lite (subtle vertical drift on scroll) ── */
+  const heroMedia = document.querySelector('[data-hero-media]');
+  if (heroMedia && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    window.addEventListener('scroll', () => {
+      const scrolled = window.scrollY;
+      heroMedia.style.transform = `translateY(${scrolled * 0.12}px)`;
+    }, { passive: true });
   }
 
-  // ── Smooth Scroll for anchor links ───────────────────────
-  document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-    anchor.addEventListener('click', (e) => {
-      const target = document.querySelector(anchor.getAttribute('href'));
-      if (target) {
-        e.preventDefault();
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    });
-  });
+  /* ── Counter animation for stats ── */
+  const counters = document.querySelectorAll('[data-count]');
+  if (counters.length) {
+    const countObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        const el = entry.target;
+        const target = parseInt(el.getAttribute('data-count'), 10);
+        const suffix = el.getAttribute('data-suffix') || '';
+        const duration = 1200;
+        const start = performance.now();
+
+        const tick = (now) => {
+          const elapsed = now - start;
+          const progress = Math.min(elapsed / duration, 1);
+          // Ease out expo
+          const eased = 1 - Math.pow(2, -10 * progress);
+          el.textContent = Math.round(eased * target) + suffix;
+          if (progress < 1) requestAnimationFrame(tick);
+        };
+
+        requestAnimationFrame(tick);
+        countObserver.unobserve(el);
+      });
+    }, { threshold: 0.5 });
+
+    counters.forEach(el => countObserver.observe(el));
+  }
+
+  /* ── Marquee: duplicate content for seamless loop ── */
+  const marqueeTrack = document.querySelector('[data-marquee-track]');
+  if (marqueeTrack) {
+    const clone = marqueeTrack.innerHTML;
+    marqueeTrack.innerHTML = clone + clone;
+  }
 
 });

@@ -1,10 +1,11 @@
 {
   "name": "Studioform",
-  "tagline": "Brand and digital design practice",
-  "description": "Studioform is a small brand and digital design practice. We do three things well: brand identity systems, website design, and creative strategy. Our clients are startups, cultural organisations, and product companies who care about how they show up in the world.",
+  "tagline": "Brand and digital design for organisations that care about how they show up.",
+  "description": "Studioform is a small brand and digital design practice. We build identity systems, websites, and creative strategy for startups, cultural organisations, and product companies. Minimal, considered, built to last.",
   "language": "en",
   "url": "",
   "features": ["portfolio", "services", "contact_form"],
   "site_type": "design_studio",
-  "created_at": "2026-03-21T00:00:00Z"
+  "disciplines": ["Brand Identity", "Website Design", "Creative Strategy"],
+  "created_at": "2026-03-22T00:00:00Z"
 }

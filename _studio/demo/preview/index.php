@@ -1,204 +1,223 @@
 <?php
 $siteName = 'Studioform';
 $page = [
-  'title'       => 'Brand & Digital Design Practice',
-  'description' => "Studioform is a small brand and digital design practice. We do three things well: brand identity systems, website design, and creative strategy. Work that is minimal, considered, and built to last.",
+  'title'       => 'Brand & Digital Design',
+  'description' => "Studioform is a brand and digital design practice. We build identity systems, websites, and creative strategy for startups, cultural organisations, and product companies who care about how they show up.",
   'slug'        => 'home',
 ];
 include '_partials/header.php';
 ?>
 
 <!-- ============================================================
-     HERO
+     HERO — Asymmetric split: manifesto left, project image right
      ============================================================ -->
-<section class="min-h-[92vh] flex flex-col justify-end pt-36 pb-20 px-6 lg:px-10 max-w-[var(--max-width)] mx-auto">
+<section class="min-h-[92vh] flex items-center pt-24 pb-16 px-6">
+  <div class="max-w-[1200px] mx-auto w-full grid grid-cols-1 sm:grid-cols-12 gap-12 sm:gap-6 items-center">
 
-  <div class="max-w-4xl" data-reveal>
-    <p class="text-xs tracking-[0.14em] uppercase text-[var(--color-muted)] font-medium mb-8">
-      Brand &amp; Digital Design Practice
-    </p>
-    <h1 class="font-['Cormorant_Garamond'] text-[clamp(3rem,7vw,6.5rem)] font-light leading-[1.05] tracking-tight text-[var(--color-ink)] mb-10">
-      We design brands<br>
-      <em class="italic">worth noticing.</em>
-    </h1>
-    <div class="flex flex-col sm:flex-row items-start gap-6">
-      <a href="/portfolio"
-         class="inline-flex items-center gap-2 text-sm font-medium tracking-[0.08em] uppercase text-[var(--color-ink)] border-b border-[var(--color-ink)] pb-1 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors duration-300">
-        View our work
-        <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
-      </a>
-      <a href="/contact"
-         class="inline-flex items-center gap-2 text-sm font-medium tracking-[0.08em] uppercase text-[var(--color-muted)] hover:text-[var(--color-ink)] transition-colors duration-300">
-        Start a project
-      </a>
+    <!-- Left: text -->
+    <div class="sm:col-span-5 sm:col-start-1" data-reveal>
+      <p class="text-xs tracking-widest uppercase text-[#6B6B68] mb-8 font-body">
+        Brand &amp; Digital Design
+      </p>
+      <h1 class="font-heading text-[clamp(3.5rem,7vw,5.5rem)] font-light leading-[1.05] tracking-tight text-[#111110] mb-10">
+        Design that<br>
+        <em class="not-italic text-[#3D5A73]">endures.</em>
+      </h1>
+      <p class="font-body text-base leading-relaxed text-[#6B6B68] max-w-[42ch] mb-12">
+        We build brand identity systems, websites, and creative strategy for organisations that care about how they show up in the world. Minimal. Considered. Built to last.
+      </p>
+      <div class="flex flex-wrap gap-4 items-center">
+        <a href="/portfolio" class="inline-flex items-center gap-2 font-body text-sm font-medium tracking-widest uppercase text-white bg-[#111110] px-7 py-4 rounded-[2px] transition-all duration-200 hover:bg-[#3D5A73] hover:-translate-y-0.5">
+          View work
+          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+        </a>
+        <a href="/contact" class="inline-flex items-center gap-2 font-body text-sm font-medium tracking-widest uppercase text-[#111110] border border-[#111110] px-7 py-4 rounded-[2px] transition-all duration-200 hover:bg-[#111110] hover:text-white hover:-translate-y-0.5">
+          Start a project
+        </a>
+      </div>
     </div>
-  </div>
 
-  <!-- Scroll indicator -->
-  <div class="mt-20 flex items-center gap-4" data-reveal>
-    <div class="w-px h-12 bg-[var(--color-border)]"></div>
-    <p class="text-xs tracking-[0.1em] uppercase text-[var(--color-muted)] font-light">Selected work below</p>
+    <!-- Right: featured project image -->
+    <div class="sm:col-span-6 sm:col-start-7 relative overflow-hidden rounded-[3px]" data-hero-media>
+      <div class="relative overflow-hidden aspect-[4/5] sm:aspect-[3/4]">
+        <img
+          src="/assets/library/gallery/vs-gal_concrete-frame_architecture-minimal_light_dark-text.jpeg"
+          alt="Concrete frame — architecture, minimal aesthetic"
+          class="w-full h-full object-cover transition-transform duration-700 hover:scale-[1.03]"
+          width="800" height="800"
+          loading="eager">
+        <!-- Project label -->
+        <div class="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#111110]/60 to-transparent">
+          <p class="font-body text-xs tracking-widest uppercase text-white/60 mb-1">Selected work</p>
+          <p class="font-heading text-xl font-light text-white">Arkiteka Studio</p>
+        </div>
+      </div>
+    </div>
+
   </div>
 </section>
 
 <!-- ============================================================
-     FEATURED PROJECTS
+     MARQUEE — discipline ticker
      ============================================================ -->
-<section class="py-4 px-6 lg:px-10 max-w-[var(--max-width)] mx-auto" id="work">
-
-  <!-- Project 01 — Scandinavian furniture maker -->
-  <article class="featured-project grid grid-cols-1 lg:grid-cols-2 gap-0 mb-2 group" data-reveal>
-    <div class="relative overflow-hidden aspect-[4/3] lg:aspect-auto lg:min-h-[560px]">
-      <img
-        src="/assets/library/gallery/vs-gal_concrete-frame_architecture-minimal_light_dark-text.jpeg"
-        alt="Minimal concrete architecture — Halden furniture rebrand identity system"
-        class="w-full h-full object-cover transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.03]"
-        loading="lazy"
-        width="800" height="800">
-      <div class="absolute inset-0 bg-[var(--color-ink)] opacity-0 group-hover:opacity-10 transition-opacity duration-500"></div>
-    </div>
-    <div class="bg-[var(--color-bg-alt)] flex flex-col justify-between p-10 lg:p-14">
-      <div>
-        <span class="text-xs tracking-[0.12em] uppercase text-[var(--color-muted)] font-medium">01 — Brand Identity</span>
-        <h2 class="font-['Cormorant_Garamond'] text-[clamp(2rem,3.5vw,3rem)] font-light leading-[1.1] mt-4 mb-6 text-[var(--color-ink)]">
-          Halden — Complete rebrand for a Scandinavian furniture maker
-        </h2>
-        <p class="text-sm leading-relaxed text-[var(--color-muted)] max-w-sm font-light">
-          A ground-up identity system capturing the quiet precision of Nordic craft. Wordmark, type hierarchy, colour system, and brand guidelines across print and digital.
-        </p>
-      </div>
-      <div class="mt-10 flex items-center gap-3">
-        <a href="/portfolio" class="text-xs tracking-[0.1em] uppercase font-medium text-[var(--color-ink)] inline-flex items-center gap-2 border-b border-[var(--color-ink)] pb-1 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors duration-300">
-          View project
-          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
-        </a>
-        <span class="text-xs text-[var(--color-muted)] font-light ml-auto">Furniture / Scandinavian</span>
-      </div>
-    </div>
-  </article>
-
-  <!-- Project 02 — London architecture practice -->
-  <article class="featured-project grid grid-cols-1 lg:grid-cols-2 gap-0 mb-2 group" data-reveal>
-    <div class="bg-[var(--color-ink)] flex flex-col justify-between p-10 lg:p-14 lg:order-first order-last">
-      <div>
-        <span class="text-xs tracking-[0.12em] uppercase text-white/40 font-medium">02 — Web &amp; Identity</span>
-        <h2 class="font-['Cormorant_Garamond'] text-[clamp(2rem,3.5vw,3rem)] font-light leading-[1.1] mt-4 mb-6 text-white">
-          Carver &amp; Bell — Website and visual identity for a London architecture practice
-        </h2>
-        <p class="text-sm leading-relaxed text-white/60 max-w-sm font-light">
-          From naming through to launch. A portfolio site built around the project photography with a type-led identity that reflects the firm's structural sensibility.
-        </p>
-      </div>
-      <div class="mt-10 flex items-center gap-3">
-        <a href="/portfolio" class="text-xs tracking-[0.1em] uppercase font-medium text-white inline-flex items-center gap-2 border-b border-white/40 pb-1 hover:border-white transition-colors duration-300">
-          View project
-          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
-        </a>
-        <span class="text-xs text-white/30 font-light ml-auto">Architecture / London</span>
-      </div>
-    </div>
-    <div class="relative overflow-hidden aspect-[4/3] lg:aspect-auto lg:min-h-[560px]">
-      <img
-        src="/assets/library/gallery/vs-gal_arched-doorway_architecture-interior_warm_dark-text.jpeg"
-        alt="Arched doorway interior — Carver and Bell architecture practice identity"
-        class="w-full h-full object-cover transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.03]"
-        loading="lazy"
-        width="800" height="800">
-    </div>
-  </article>
-
-  <!-- Project 03 — DTC skincare brand strategy -->
-  <article class="featured-project grid grid-cols-1 lg:grid-cols-2 gap-0 group" data-reveal>
-    <div class="relative overflow-hidden aspect-[4/3] lg:aspect-auto lg:min-h-[560px]">
-      <img
-        src="/assets/library/gallery/vs-gal_serum-bottle_beauty-retail_light_dark-text.jpeg"
-        alt="Minimal serum bottle — Forme skincare brand strategy"
-        class="w-full h-full object-cover transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.03]"
-        loading="lazy"
-        width="800" height="800">
-    </div>
-    <div class="bg-[var(--color-bg-alt)] flex flex-col justify-between p-10 lg:p-14">
-      <div>
-        <span class="text-xs tracking-[0.12em] uppercase text-[var(--color-muted)] font-medium">03 — Brand Strategy</span>
-        <h2 class="font-['Cormorant_Garamond'] text-[clamp(2rem,3.5vw,3rem)] font-light leading-[1.1] mt-4 mb-6 text-[var(--color-ink)]">
-          Forme — Brand strategy for a direct-to-consumer skincare line
-        </h2>
-        <p class="text-sm leading-relaxed text-[var(--color-muted)] max-w-sm font-light">
-          Positioning, brand narrative, tone of voice, and visual direction for a new skincare label targeting the considered consumer. From research through to creative brief.
-        </p>
-      </div>
-      <div class="mt-10 flex items-center gap-3">
-        <a href="/portfolio" class="text-xs tracking-[0.1em] uppercase font-medium text-[var(--color-ink)] inline-flex items-center gap-2 border-b border-[var(--color-ink)] pb-1 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors duration-300">
-          View project
-          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
-        </a>
-        <span class="text-xs text-[var(--color-muted)] font-light ml-auto">Skincare / DTC</span>
-      </div>
-    </div>
-  </article>
-
-</section>
-
-<!-- View all work link -->
-<div class="py-16 px-6 lg:px-10 max-w-[var(--max-width)] mx-auto" data-reveal>
-  <a href="/portfolio" class="inline-flex items-center gap-3 text-sm tracking-[0.08em] uppercase font-medium text-[var(--color-muted)] hover:text-[var(--color-ink)] transition-colors duration-300">
-    <span class="w-8 h-px bg-current"></span>
-    All projects
-    <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
-  </a>
+<div class="overflow-hidden border-t border-b border-[#E2E1DD] py-4 bg-[#F0EFEB]">
+  <div class="flex whitespace-nowrap animate-[marquee_30s_linear_infinite]" data-marquee-track>
+    <?php
+    $items = ['Brand Identity', 'Website Design', 'Creative Strategy', 'Visual Systems', 'Art Direction', 'Digital Experiences', 'Brand Identity', 'Website Design', 'Creative Strategy', 'Visual Systems', 'Art Direction', 'Digital Experiences'];
+    foreach ($items as $item): ?>
+      <span class="inline-flex items-center gap-4 mx-8 font-heading text-sm font-light tracking-widest uppercase text-[#B4B3B0]">
+        <span class="inline-block w-1 h-1 rounded-full bg-[#3D5A73] flex-shrink-0"></span>
+        <?= htmlspecialchars($item) ?>
+      </span>
+    <?php endforeach; ?>
+  </div>
 </div>
 
 <!-- ============================================================
-     SERVICES OVERVIEW
+     FEATURED PROJECTS — 3 case studies
      ============================================================ -->
-<section class="py-24 lg:py-32 bg-[var(--color-ink)]">
-  <div class="max-w-[var(--max-width)] mx-auto px-6 lg:px-10">
+<section class="py-32 px-6">
+  <div class="max-w-[1200px] mx-auto">
 
-    <div class="mb-16" data-reveal>
-      <p class="text-xs tracking-[0.14em] uppercase text-white/30 font-medium mb-5">What we do</p>
-      <h2 class="font-['Cormorant_Garamond'] text-[clamp(2.5rem,5vw,4.5rem)] font-light text-white leading-[1.05]">
+    <!-- Section header -->
+    <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-20" data-reveal>
+      <div>
+        <p class="font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-4">Selected work</p>
+        <h2 class="font-heading text-[clamp(2.5rem,5vw,3.75rem)] font-light leading-tight tracking-tight text-[#111110]">
+          Recent projects
+        </h2>
+      </div>
+      <a href="/portfolio" class="font-body text-sm tracking-widest uppercase text-[#6B6B68] hover:text-[#111110] transition-colors duration-200 flex items-center gap-2 flex-shrink-0">
+        All work <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+      </a>
+    </div>
+
+    <!-- Project 1 — Large featured -->
+    <article class="group mb-4" data-reveal>
+      <a href="/portfolio" class="block relative overflow-hidden rounded-[3px] aspect-[16/9] mb-6">
+        <img
+          src="/assets/library/gallery/vs-gal_sunlit-stairwell_architecture-interior_light_dark-text.jpeg"
+          alt="Sunlit stairwell — architecture and interior photography"
+          class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+          width="800" height="800"
+          loading="lazy">
+        <div class="absolute inset-0 bg-[#111110] opacity-0 group-hover:opacity-10 transition-opacity duration-500"></div>
+        <div class="absolute top-6 right-6 w-10 h-10 rounded-full bg-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
+          <i class="icon-sm text-[#111110]" data-lucide="arrow-right" aria-hidden="true"></i>
+        </div>
+      </a>
+      <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div>
+          <p class="font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-2">Rebranding — Identity &amp; Web</p>
+          <h3 class="font-heading text-2xl font-light text-[#111110]">Arkiteka Studio, London</h3>
+        </div>
+        <div class="flex flex-wrap gap-2 sm:text-right">
+          <span class="font-body text-xs tracking-wide text-[#6B6B68] border border-[#E2E1DD] px-3 py-1 rounded-full">Identity</span>
+          <span class="font-body text-xs tracking-wide text-[#6B6B68] border border-[#E2E1DD] px-3 py-1 rounded-full">Website</span>
+        </div>
+      </div>
+    </article>
+
+    <!-- Projects 2 & 3 — Side by side -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4" data-reveal-stagger>
+
+      <article class="group">
+        <a href="/portfolio" class="block relative overflow-hidden rounded-[3px] aspect-square mb-6">
+          <img
+            src="/assets/library/gallery/vs-gal_sheer-glow_interior-editorial_light_dark-text.jpeg"
+            alt="Sheer glow — interior editorial photography"
+            class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.05]"
+            width="800" height="800"
+            loading="lazy">
+          <div class="absolute inset-0 bg-[#111110] opacity-0 group-hover:opacity-10 transition-opacity duration-500"></div>
+        </a>
+        <div>
+          <p class="font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-2">Identity System</p>
+          <h3 class="font-heading text-xl font-light text-[#111110]">Nordisk Furniture, Oslo</h3>
+        </div>
+      </article>
+
+      <article class="group">
+        <a href="/portfolio" class="block relative overflow-hidden rounded-[3px] aspect-square mb-6">
+          <img
+            src="/assets/library/gallery/vs-gal_botanical-pump_beauty-retail_light_dark-text.jpeg"
+            alt="Botanical pump — beauty retail product photography"
+            class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.05]"
+            width="800" height="800"
+            loading="lazy">
+          <div class="absolute inset-0 bg-[#111110] opacity-0 group-hover:opacity-10 transition-opacity duration-500"></div>
+        </a>
+        <div>
+          <p class="font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-2">Brand Strategy</p>
+          <h3 class="font-heading text-xl font-light text-[#111110]">Forme Skincare</h3>
+        </div>
+      </article>
+
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================================================
+     SERVICES OVERVIEW — Three disciplines
+     ============================================================ -->
+<section class="py-32 px-6 bg-[#111110]">
+  <div class="max-w-[1200px] mx-auto">
+
+    <div class="mb-20" data-reveal>
+      <p class="font-body text-xs tracking-widest uppercase text-white/30 mb-4">What we do</p>
+      <h2 class="font-heading text-[clamp(2.5rem,5vw,3.75rem)] font-light leading-tight tracking-tight text-white">
         Three disciplines.<br>One practice.
       </h2>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-px bg-white/10" data-reveal-stagger>
 
-      <!-- Identity -->
-      <div class="bg-[var(--color-ink)] p-10 lg:p-12">
-        <p class="font-['Cormorant_Garamond'] text-5xl font-light text-white/20 mb-8">01</p>
-        <h3 class="text-white text-lg font-medium mb-4 tracking-[-0.01em]">Brand Identity</h3>
-        <p class="text-sm text-white/50 leading-relaxed font-light mb-8">
-          Visual identity systems built to endure. Logo and wordmark, typography, colour, iconography, photography direction, and the guidelines that hold it all together.
+      <!-- Brand Identity -->
+      <div class="bg-[#111110] p-10 group hover:bg-[#1a1a18] transition-colors duration-300">
+        <div class="mb-10">
+          <span class="font-body text-xs tracking-widest uppercase text-[#3D5A73]">01</span>
+        </div>
+        <h3 class="font-heading text-2xl font-light text-white mb-4 leading-snug">
+          Brand Identity
+        </h3>
+        <p class="font-body text-sm leading-relaxed text-white/40 mb-8">
+          Visual identity systems that hold together across every touchpoint — logo, typography, colour, motion, and the rules that govern how they work together.
         </p>
-        <a href="/services" class="text-xs tracking-[0.1em] uppercase text-white/40 hover:text-white transition-colors duration-200 inline-flex items-center gap-2">
-          Learn more
-          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+        <a href="/services" class="inline-flex items-center gap-2 font-body text-xs tracking-widest uppercase text-white/40 group-hover:text-white/80 transition-colors duration-300">
+          Learn more <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
         </a>
       </div>
 
-      <!-- Web -->
-      <div class="bg-[var(--color-ink)] p-10 lg:p-12">
-        <p class="font-['Cormorant_Garamond'] text-5xl font-light text-white/20 mb-8">02</p>
-        <h3 class="text-white text-lg font-medium mb-4 tracking-[-0.01em]">Website Design</h3>
-        <p class="text-sm text-white/50 leading-relaxed font-light mb-8">
-          Websites that are designed as much as they are built. Considered structure, refined interaction, and performance that supports the brand rather than undermining it.
+      <!-- Website Design -->
+      <div class="bg-[#111110] p-10 group hover:bg-[#1a1a18] transition-colors duration-300">
+        <div class="mb-10">
+          <span class="font-body text-xs tracking-widest uppercase text-[#3D5A73]">02</span>
+        </div>
+        <h3 class="font-heading text-2xl font-light text-white mb-4 leading-snug">
+          Website Design
+        </h3>
+        <p class="font-body text-sm leading-relaxed text-white/40 mb-8">
+          Designed from first principles. Not templates, not page builders. Websites that work as hard as the brand they carry — fast, accessible, and built to outlast trends.
         </p>
-        <a href="/services" class="text-xs tracking-[0.1em] uppercase text-white/40 hover:text-white transition-colors duration-200 inline-flex items-center gap-2">
-          Learn more
-          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+        <a href="/services" class="inline-flex items-center gap-2 font-body text-xs tracking-widest uppercase text-white/40 group-hover:text-white/80 transition-colors duration-300">
+          Learn more <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
         </a>
       </div>
 
-      <!-- Strategy -->
-      <div class="bg-[var(--color-ink)] p-10 lg:p-12">
-        <p class="font-['Cormorant_Garamond'] text-5xl font-light text-white/20 mb-8">03</p>
-        <h3 class="text-white text-lg font-medium mb-4 tracking-[-0.01em]">Creative Strategy</h3>
-        <p class="text-sm text-white/50 leading-relaxed font-light mb-8">
-          The thinking before the making. Positioning, audience definition, brand narrative, tone of voice — the strategic foundation that makes the design mean something.
+      <!-- Creative Strategy -->
+      <div class="bg-[#111110] p-10 group hover:bg-[#1a1a18] transition-colors duration-300">
+        <div class="mb-10">
+          <span class="font-body text-xs tracking-widest uppercase text-[#3D5A73]">03</span>
+        </div>
+        <h3 class="font-heading text-2xl font-light text-white mb-4 leading-snug">
+          Creative Strategy
+        </h3>
+        <p class="font-body text-sm leading-relaxed text-white/40 mb-8">
+          The thinking before the making. Positioning, narrative, and direction that gives every design decision a reason to exist.
         </p>
-        <a href="/services" class="text-xs tracking-[0.1em] uppercase text-white/40 hover:text-white transition-colors duration-200 inline-flex items-center gap-2">
-          Learn more
-          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+        <a href="/services" class="inline-flex items-center gap-2 font-body text-xs tracking-widest uppercase text-white/40 group-hover:text-white/80 transition-colors duration-300">
+          Learn more <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
         </a>
       </div>
 
@@ -208,150 +227,160 @@ include '_partials/header.php';
 </section>
 
 <!-- ============================================================
-     PHILOSOPHY / ABOUT STRIP
+     PROCESS — From discovery to delivery
      ============================================================ -->
-<section class="py-24 lg:py-36 px-6 lg:px-10">
-  <div class="max-w-[var(--max-width)] mx-auto">
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
+<section class="py-32 px-6">
+  <div class="max-w-[1200px] mx-auto">
 
-      <div data-reveal>
-        <p class="text-xs tracking-[0.14em] uppercase text-[var(--color-muted)] font-medium mb-6">Our approach</p>
-        <h2 class="font-['Cormorant_Garamond'] text-[clamp(2.2rem,4vw,3.8rem)] font-light text-[var(--color-ink)] leading-[1.1] mb-8">
-          No trends.<br>No decoration<br><em class="italic">for its own sake.</em>
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-16 items-start">
+
+      <!-- Sticky label column -->
+      <div class="lg:col-span-4 lg:sticky lg:top-28" data-reveal>
+        <p class="font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-4">How we work</p>
+        <h2 class="font-heading text-[clamp(2.5rem,4vw,3.25rem)] font-light leading-tight tracking-tight text-[#111110] mb-8">
+          From discovery<br>to delivery.
         </h2>
-        <p class="text-sm text-[var(--color-muted)] leading-relaxed max-w-md font-light mb-6">
-          We are a small practice. We work closely with a select number of clients each year and are involved at every stage — from the earliest strategic conversations through to launch and beyond.
+        <p class="font-body text-sm leading-relaxed text-[#6B6B68] max-w-[36ch]">
+          A structured process that keeps creative decisions grounded in purpose. Every stage builds on the last.
         </p>
-        <p class="text-sm text-[var(--color-muted)] leading-relaxed max-w-md font-light mb-10">
-          The work we make is minimal not because minimalism is fashionable, but because we believe that clarity is kindness. When a brand speaks clearly, its audience listens.
-        </p>
-        <a href="/about" class="inline-flex items-center gap-2 text-sm font-medium tracking-[0.08em] uppercase text-[var(--color-ink)] border-b border-[var(--color-ink)] pb-1 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors duration-300">
-          About the studio
-          <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
-        </a>
       </div>
 
-      <div class="relative" data-reveal>
-        <img
-          src="/assets/library/gallery/vs-gal_open-notebook_professional-coaching_warm_dark-text.jpeg"
-          alt="Open notebook on a desk — creative process at Studioform"
-          class="w-full aspect-[4/5] object-cover"
-          loading="lazy"
-          width="800" height="800">
-        <div class="absolute -bottom-6 -left-6 w-24 h-24 border border-[var(--color-border)] hidden lg:block"></div>
-      </div>
+      <!-- Process steps -->
+      <div class="lg:col-span-7 lg:col-start-6 space-y-0" data-reveal-stagger>
 
+        <?php
+        $steps = [
+          ['num' =>  "01', 'title' => 'Discovery", 'desc' => "We start by listening. Understanding the business, the audience, the competitive landscape, and the gap in the market that this brand can occupy uniquely. This isn't a brief — it's a conversation."],
+          ['num' => '02', 'title' => 'Strategy', 'desc' => 'Positioning, voice, and visual direction. We define where you stand, what you stand for, and how that translates into a visual and verbal language. The strategy is the backbone everything else hangs on.'],
+          ['num' => '03', 'title' => 'Design', 'desc' => 'The work itself. Identity systems, web design, art direction. We work iteratively — showing thinking early and often, not presenting a finished solution and hoping it lands.'],
+          ['num' =>  "04', 'title' => 'Delivery", 'desc' => "Complete handover with everything you need to maintain and extend the brand independently. Guidelines, assets, code. We don't disappear after launch."],
+        ];
+        foreach ($steps as $step): ?>
+          <div class="flex gap-8 py-10 border-b border-[#E2E1DD] first:border-t first:border-[#E2E1DD] group">
+            <span class="font-body text-xs tracking-widest uppercase text-[#B4B3B0] mt-1 flex-shrink-0 w-6">
+              <?= $step['num'] ?>
+            </span>
+            <div>
+              <h3 class="font-heading text-2xl font-light text-[#111110] mb-3 group-hover:text-[#3D5A73] transition-colors duration-300">
+                <?= htmlspecialchars($step['title']) ?>
+              </h3>
+              <p class="font-body text-sm leading-relaxed text-[#6B6B68] max-w-[52ch]">
+                <?= htmlspecialchars($step['desc']) ?>
+              </p>
+            </div>
+          </div>
+        <?php endforeach; ?>
+
+      </div>
     </div>
+
   </div>
 </section>
 
 <!-- ============================================================
-     PROCESS
+     ABOUT — Philosophy statement
      ============================================================ -->
-<section class="py-24 lg:py-32 bg-[var(--color-bg-alt)]">
-  <div class="max-w-[var(--max-width)] mx-auto px-6 lg:px-10">
+<section class="py-32 px-6 bg-[#F0EFEB]">
+  <div class="max-w-[1200px] mx-auto">
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+
+      <div class="lg:col-span-5" data-reveal>
+        <div class="relative overflow-hidden rounded-[3px] aspect-[3/4]">
+          <img
+            src="/assets/library/gallery/vs-gal_open-notebook_professional-coaching_warm_dark-text.jpeg"
+            alt="Open notebook on a desk — professional workspace"
+            class="w-full h-full object-cover"
+            width="800" height="800"
+            loading="lazy">
+        </div>
+      </div>
+
+      <div class="lg:col-span-6 lg:col-start-7" data-reveal>
+        <p class="font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-6">About Studioform</p>
+        <blockquote class="font-heading text-[clamp(1.75rem,3.5vw,2.5rem)] font-light leading-[1.3] tracking-tight text-[#111110] mb-10">
+          "We believe good design is mostly restraint. The best work we do isn't adding — it's knowing what to leave out."
+        </blockquote>
+        <p class="font-body text-sm leading-relaxed text-[#6B6B68] max-w-[48ch] mb-8">
+          Studioform is a small practice. That's intentional. We take on a limited number of projects each year so that every client gets the attention the work deserves. Our clients are founders, cultural directors, and product leads who understand that design is a business investment, not a decoration budget.
+        </p>
+        <a href="/about" class="inline-flex items-center gap-2 font-body text-sm tracking-widest uppercase text-[#111110] hover:text-[#3D5A73] transition-colors duration-200">
+          Our story <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+        </a>
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================================================
+     TESTIMONIALS — Selected client voices
+     ============================================================ -->
+<section class="py-32 px-6">
+  <div class="max-w-[1200px] mx-auto">
 
     <div class="mb-16" data-reveal>
-      <p class="text-xs tracking-[0.14em] uppercase text-[var(--color-muted)] font-medium mb-5">How we work</p>
-      <h2 class="font-['Cormorant_Garamond'] text-[clamp(2.2rem,4vw,3.8rem)] font-light text-[var(--color-ink)] leading-[1.1]">
-        From discovery<br>to delivery.
+      <p class="font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-4">What clients say</p>
+      <h2 class="font-heading text-[clamp(2.5rem,5vw,3.75rem)] font-light leading-tight tracking-tight text-[#111110]">
+        The work, reflected.
       </h2>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8" data-reveal-stagger>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8" data-reveal-stagger>
 
-      <div class="pt-8 border-t border-[var(--color-border)]">
-        <p class="font-['Cormorant_Garamond'] text-4xl text-[var(--color-muted)]/40 font-light mb-6">01</p>
-        <h3 class="text-base font-medium text-[var(--color-ink)] mb-3 tracking-[-0.01em]">Discovery</h3>
-        <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light">
-          We start by listening. Deeply understanding your business, your audience, and the problem you're asking design to solve.
-        </p>
-      </div>
-
-      <div class="pt-8 border-t border-[var(--color-border)]">
-        <p class="font-['Cormorant_Garamond'] text-4xl text-[var(--color-muted)]/40 font-light mb-6">02</p>
-        <h3 class="text-base font-medium text-[var(--color-ink)] mb-3 tracking-[-0.01em]">Strategy</h3>
-        <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light">
-          Positioning, direction, and creative brief. We define where you should stand and what your brand should stand for before a single mark is made.
-        </p>
-      </div>
-
-      <div class="pt-8 border-t border-[var(--color-border)]">
-        <p class="font-['Cormorant_Garamond'] text-4xl text-[var(--color-muted)]/40 font-light mb-6">03</p>
-        <h3 class="text-base font-medium text-[var(--color-ink)] mb-3 tracking-[-0.01em]">Design</h3>
-        <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light">
-          The making. Iterative, focused, and always in dialogue with you. We share work in progress and refine through conversation, not revision rounds.
-        </p>
-      </div>
-
-      <div class="pt-8 border-t border-[var(--color-border)]">
-        <p class="font-['Cormorant_Garamond'] text-4xl text-[var(--color-muted)]/40 font-light mb-6">04</p>
-        <h3 class="text-base font-medium text-[var(--color-ink)] mb-3 tracking-[-0.01em]">Delivery</h3>
-        <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light">
-          Production, implementation, and handover. Every project ends with a full set of assets, guidelines, and the knowledge to use them confidently.
-        </p>
-      </div>
+      <?php
+      $testimonials = [
+        [
+          'quote' => "Working with Studioform changed how we think about our brand entirely. They didn't give us a logo — they gave us a language.",
+          'name'  => 'Anders Lindqvist',
+          'role'  => 'Founder, Nordisk Furniture',
+        ],
+        [
+          'quote' => "The website they built for us is the best thing on our portfolio. Clients mention it in the first meeting. That's never happened before.",
+          'name'  => 'Elena Marchetti',
+          'role'  => 'Director, Arkiteka Studio',
+        ],
+        [
+          'quote' => "Rigorous, considered, and honest. They pushed back when we were wrong. That's rare and invaluable in a design partner.",
+          'name'  => 'Priya Nair',
+          'role'  => 'CEO, Forme Skincare',
+        ],
+      ];
+      foreach ($testimonials as $t): ?>
+        <div class="flex flex-col">
+          <div class="flex gap-1 mb-6">
+            <?php for ($i = 0; $i < 5; $i++): ?>
+              <i class="icon-sm text-[#3D5A73]" data-lucide="star" aria-hidden="true"></i>
+            <?php endfor; ?>
+          </div>
+          <blockquote class="font-heading text-xl font-light leading-relaxed text-[#111110] mb-8 flex-grow">
+            "<?= htmlspecialchars($t['quote']) ?>"
+          </blockquote>
+          <div class="border-t border-[#E2E1DD] pt-6">
+            <p class="font-body text-sm font-medium text-[#111110]"><?= htmlspecialchars($t['name']) ?></p>
+            <p class="font-body text-xs text-[#6B6B68] mt-1"><?= htmlspecialchars($t['role']) ?></p>
+          </div>
+        </div>
+      <?php endforeach; ?>
 
     </div>
+
   </div>
 </section>
 
 <!-- ============================================================
-     TESTIMONIALS
+     CTA — Start a project
      ============================================================ -->
-<section class="py-24 lg:py-36 px-6 lg:px-10">
-  <div class="max-w-[var(--max-width)] mx-auto">
-
-    <p class="text-xs tracking-[0.14em] uppercase text-[var(--color-muted)] font-medium mb-16" data-reveal>Selected client voices</p>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-12 lg:gap-16">
-
-      <blockquote class="flex flex-col gap-6 pt-8 border-t border-[var(--color-border)]" data-reveal>
-        <p class="font-['Cormorant_Garamond'] text-xl font-light leading-[1.5] text-[var(--color-ink)] italic">
-          "Studioform brought a clarity to our brand that we had been searching for for years. The new identity is precise, considered, and unmistakably ours."
-        </p>
-        <footer class="mt-auto">
-          <p class="text-sm font-medium text-[var(--color-ink)]">Erik Lindqvist</p>
-          <p class="text-xs text-[var(--color-muted)] font-light">Creative Director, Halden</p>
-        </footer>
-      </blockquote>
-
-      <blockquote class="flex flex-col gap-6 pt-8 border-t border-[var(--color-border)]" data-reveal>
-        <p class="font-['Cormorant_Garamond'] text-xl font-light leading-[1.5] text-[var(--color-ink)] italic">
-          "Working with a studio that understands architecture at both a practical and conceptual level made all the difference. The site communicates who we are without trying too hard."
-        </p>
-        <footer class="mt-auto">
-          <p class="text-sm font-medium text-[var(--color-ink)]">Amara Bell</p>
-          <p class="text-xs text-[var(--color-muted)] font-light">Partner, Carver &amp; Bell Architects</p>
-        </footer>
-      </blockquote>
-
-      <blockquote class="flex flex-col gap-6 pt-8 border-t border-[var(--color-border)]" data-reveal>
-        <p class="font-['Cormorant_Garamond'] text-xl font-light leading-[1.5] text-[var(--color-ink)] italic">
-          "The brand strategy work set the entire direction for our launch. Studioform went far beyond the brief — they helped us understand who we were for and why that mattered."
-        </p>
-        <footer class="mt-auto">
-          <p class="text-sm font-medium text-[var(--color-ink)]">Priya Nair</p>
-          <p class="text-xs text-[var(--color-muted)] font-light">Founder, Forme Skincare</p>
-        </footer>
-      </blockquote>
-
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================
-     CTA
-     ============================================================ -->
-<section class="py-24 lg:py-36 bg-[var(--color-ink)]" data-reveal>
-  <div class="max-w-[var(--max-width)] mx-auto px-6 lg:px-10 text-center">
-    <p class="text-xs tracking-[0.14em] uppercase text-white/30 font-medium mb-8">Work with us</p>
-    <h2 class="font-['Cormorant_Garamond'] text-[clamp(2.5rem,6vw,5.5rem)] font-light text-white leading-[1.05] mb-10">
-      Have a project<br><em class="italic">in mind?</em>
+<section class="relative overflow-hidden py-40 px-6" style="background-image: url(/assets/library/backgrounds/vs-bg_navy-folds_abstract_cool_dark_light-text.jpeg); background-size: cover; background-position: center;">
+  <div class="absolute inset-0 bg-[#111110] opacity-75"></div>
+  <div class="relative z-10 max-w-[1200px] mx-auto text-center" data-reveal>
+    <p class="font-body text-xs tracking-widest uppercase text-white/40 mb-6">Ready to begin?</p>
+    <h2 class="font-heading text-[clamp(3rem,7vw,5rem)] font-light leading-tight tracking-tight text-white mb-10" style="text-shadow: 0 2px 40px rgba(0,0,0,0.4);">
+      Let's make something<br>worth remembering.
     </h2>
-    <a href="/contact"
-       class="inline-flex items-center gap-3 text-sm font-medium tracking-[0.08em] uppercase text-white border-b border-white/40 pb-1 hover:border-white transition-colors duration-300">
-      Get in touch
+    <a href="/contact" class="inline-flex items-center gap-3 font-body text-sm font-medium tracking-widest uppercase text-[#111110] bg-white px-10 py-5 rounded-[2px] transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+      Start a project
       <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
     </a>
   </div>

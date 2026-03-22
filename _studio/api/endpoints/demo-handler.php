@@ -1671,7 +1671,7 @@ $demoBarSettings = [
     'visibility'   => 'all-pages',
     'pages'        => [],
     'color_scheme' => 'light',
-    'brand_color'  => '#EA580C',
+    'brand_color'  => '#3D5A73',
 ];
 
 $demoActions = [

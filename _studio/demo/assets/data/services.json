@@ -2,42 +2,67 @@
   "services": [
     {
       "name": "Brand Identity",
-      "slug": "identity",
-      "description": "Visual identity systems built to endure — from logo and wordmark through to comprehensive brand guidelines.",
+      "slug": "brand-identity",
+      "number": "01",
+      "description": "Visual identity systems that hold together across every touchpoint — logo, typography, colour, motion, and the rules that govern how they work together.",
+      "starting_price": 8000,
+      "currency": "GBP",
       "deliverables": [
-        "Brand strategy and positioning",
-        "Logo and wordmark design",
-        "Typography systems",
-        "Colour palette development",
-        "Brand guidelines and documentation"
-      ],
-      "typical_duration": "8–12 weeks"
+        "Logo system & variations",
+        "Typography system",
+        "Colour palette & usage rules",
+        "Iconography & illustration direction",
+        "Brand guidelines document",
+        "Asset library (print & digital)"
+      ]
     },
     {
       "name": "Website Design",
-      "slug": "web",
-      "description": "Websites designed as much as built — considered structure, refined interaction, performance that supports the brand.",
+      "slug": "website-design",
+      "number": "02",
+      "description": "Designed from first principles. Not templates, not page builders. Websites that work as hard as the brand they carry — fast, accessible, and built to outlast trends.",
+      "starting_price": 6000,
+      "currency": "GBP",
       "deliverables": [
-        "UX strategy and site architecture",
-        "Visual design and prototyping",
-        "Responsive, accessible HTML/CSS",
-        "CMS integration",
-        "Performance and SEO foundations"
-      ],
-      "typical_duration": "10–16 weeks"
+        "UX strategy & sitemap",
+        "Visual design (all pages + states)",
+        "Responsive design (mobile + desktop)",
+        "Design system documentation",
+        "Hand-off to development or build",
+        "Post-launch support"
+      ]
     },
     {
       "name": "Creative Strategy",
-      "slug": "strategy",
-      "description": "The thinking before the making — positioning, brand narrative, tone of voice, and the strategic foundation that makes design mean something.",
+      "slug": "creative-strategy",
+      "number": "03",
+      "description": "The thinking before the making. Positioning, narrative, and direction that gives every design decision a reason to exist.",
+      "starting_price": 4000,
+      "currency": "GBP",
       "deliverables": [
-        "Brand audit and competitive review",
-        "Positioning and differentiation",
-        "Brand narrative and messaging",
-        "Tone of voice development",
-        "Creative brief"
-      ],
-      "typical_duration": "4–8 weeks"
+        "Brand audit & competitive landscape",
+        "Positioning statement & narrative",
+        "Audience definition & personas",
+        "Brand voice & tone guidelines",
+        "Creative direction brief",
+        "Campaign concept development"
+      ]
+    }
+  ],
+  "bundles": [
+    {
+      "name": "Brand Launch",
+      "description": "Strategy + Identity. Everything you need to enter the market with clarity and confidence.",
+      "includes": ["Creative Strategy", "Brand Identity"],
+      "starting_price": 10000,
+      "currency": "GBP"
+    },
+    {
+      "name": "Full Presence",
+      "description": "Strategy + Identity + Website. End to end — from positioning to a live, designed website.",
+      "includes": ["Creative Strategy", "Brand Identity", "Website Design"],
+      "starting_price": 16000,
+      "currency": "GBP"
     }
   ]
 }

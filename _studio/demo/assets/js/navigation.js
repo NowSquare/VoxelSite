@@ -59,9 +59,9 @@
     if (toggle && menu) {
       var isOpen = false;
 
-      // Detect icon-swap elements (Pattern A) — optional
-      var iconMenu = document.getElementById('icon-menu');
-      var iconClose = document.getElementById('icon-close');
+      // Note: icon-swap elements (Pattern A) are queried inside open()/close()
+      // by ID at toggle time, NOT cached here. icon-resolver.js replaces
+      // <i> placeholders with <svg> elements — cached refs become detached.
 
       // Detect separate close button(s) (Pattern B/C) — optional
       var closeButtons = menu.querySelectorAll(
@@ -88,9 +88,11 @@
         toggle.setAttribute('aria-label', 'Close navigation');
         document.body.style.overflow = 'hidden';
 
-        // Pattern A: swap icons
-        if (iconMenu) iconMenu.classList.add('hidden');
-        if (iconClose) iconClose.classList.remove('hidden');
+        // Pattern A: swap icons (query live DOM — refs change after hydration)
+        var im = document.getElementById('icon-menu');
+        var ic = document.getElementById('icon-close');
+        if (im) im.classList.add('hidden');
+        if (ic) ic.classList.remove('hidden');
       }
 
       function close() {
@@ -101,9 +103,11 @@
         toggle.setAttribute('aria-label', 'Open navigation');
         document.body.style.overflow = '';
 
-        // Pattern A: swap icons back
-        if (iconMenu) iconMenu.classList.remove('hidden');
-        if (iconClose) iconClose.classList.add('hidden');
+        // Pattern A: swap icons back (query live DOM)
+        var im = document.getElementById('icon-menu');
+        var ic = document.getElementById('icon-close');
+        if (im) im.classList.remove('hidden');
+        if (ic) ic.classList.add('hidden');
       }
 
       // Toggle button opens/closes

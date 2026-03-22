@@ -2,178 +2,211 @@
 $siteName = 'Studioform';
 $page = [
   'title'       => 'Contact',
-  'description' => 'Start a conversation with Studioform. Tell us about your project and we will respond within two working days.',
+  'description' => "Start a project with Studioform. We work with a limited number of clients each year — if you have a project in mind, get in touch and tell us about it.",
   'slug'        => 'contact',
 ];
 include '_partials/header.php';
 ?>
 
-<!-- Page Header -->
-<section class="pt-40 pb-20 px-6 lg:px-10 max-w-[var(--max-width)] mx-auto border-b border-[var(--color-border)]">
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-24 items-end" data-reveal>
-    <div>
-      <p class="text-xs tracking-[0.14em] uppercase text-[var(--color-muted)] font-medium mb-6">Get in touch</p>
-      <h1 class="font-['Cormorant_Garamond'] text-[clamp(3rem,6vw,5.5rem)] font-light text-[var(--color-ink)] leading-[1.05]">
-        Start a<br><em class="italic">conversation.</em>
-      </h1>
-    </div>
-    <div>
-      <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light max-w-sm">
-        Tell us a little about your project and what you are trying to achieve. We respond to every enquiry within two working days.
-      </p>
+<!-- ============================================================
+     CONTACT HEADER
+     ============================================================ -->
+<section class="pt-32 pb-20 px-6">
+  <div class="max-w-[1200px] mx-auto">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-12" data-reveal>
+      <div class="lg:col-span-8">
+        <p class="font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-6">Contact</p>
+        <h1 class="font-heading text-[clamp(3rem,7vw,5rem)] font-light leading-[1.05] tracking-tight text-[#111110] mb-8">
+          Start a<br>conversation.
+        </h1>
+        <p class="font-body text-base leading-relaxed text-[#6B6B68] max-w-[50ch]">
+          We take on a small number of projects each year. If you have something in mind, tell us about it — even if you're not sure it's the right fit.
+        </p>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- Contact Form + Info -->
-<section class="py-20 px-6 lg:px-10 max-w-[var(--max-width)] mx-auto">
-  <div class="grid grid-cols-1 lg:grid-cols-12 gap-16">
+<!-- ============================================================
+     CONTACT BODY — Form + Info
+     ============================================================ -->
+<section class="px-6 pb-40">
+  <div class="max-w-[1200px] mx-auto">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-20 border-t border-[#E2E1DD] pt-16">
 
-    <!-- Form -->
-    <div class="lg:col-span-7" data-reveal>
-      <form method="POST" action="/submit.php" id="form-contact" class="flex flex-col gap-8" novalidate>
-        <input type="hidden" name="form_id" value="contact">
-        <div style="position:absolute;left:-9999px;top:-9999px" aria-hidden="true">
-          <input type="text" name="_website" tabindex="-1" autocomplete="off">
-        </div>
-        <input type="hidden" name="_timestamp" value="<?= time() ?>">
+      <!-- Form column -->
+      <div class="lg:col-span-7" data-reveal>
 
-        <!-- Name + Company -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <div class="flex flex-col gap-2">
-            <label for="full_name" class="text-xs tracking-[0.1em] uppercase text-[var(--color-muted)] font-medium">
-              Name <span class="text-[var(--color-primary)]">*</span>
+        <form method="POST" action="/submit.php" id="form-contact" class="space-y-8" novalidate>
+
+          <!-- Hidden identifiers -->
+          <input type="hidden" name="form_id" value="contact">
+          <input type="hidden" name="_timestamp" value="<?= time() ?>">
+
+          <!-- Honeypot -->
+          <div style="position:absolute;left:-9999px;top:-9999px" aria-hidden="true">
+            <input type="text" name="_website" tabindex="-1" autocomplete="off">
+          </div>
+
+          <!-- Name + Company row -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div>
+              <label for="full_name" class="block font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-3">
+                Your name <span class="text-[#3D5A73]">*</span>
+              </label>
+              <input
+                type="text"
+                id="full_name"
+                name="full_name"
+                required
+                autocomplete="name"
+                placeholder="Jane Smith"
+                class="w-full font-body text-sm text-[#111110] bg-transparent border-b border-[#E2E1DD] py-3 outline-none placeholder:text-[#B4B3B0] focus:border-[#111110] transition-colors duration-200">
+            </div>
+            <div>
+              <label for="company" class="block font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-3">
+                Company / organisation
+              </label>
+              <input
+                type="text"
+                id="company"
+                name="company"
+                autocomplete="organization"
+                placeholder="Acme Inc."
+                class="w-full font-body text-sm text-[#111110] bg-transparent border-b border-[#E2E1DD] py-3 outline-none placeholder:text-[#B4B3B0] focus:border-[#111110] transition-colors duration-200">
+            </div>
+          </div>
+
+          <!-- Email -->
+          <div>
+            <label for="email" class="block font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-3">
+              Email address <span class="text-[#3D5A73]">*</span>
             </label>
             <input
-              type="text"
-              id="full_name"
-              name="full_name"
+              type="email"
+              id="email"
+              name="email"
               required
-              placeholder="Your name"
-              class="contact-input w-full border-b border-[var(--color-border)] bg-transparent py-3 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-muted)]/50 focus:outline-none focus:border-[var(--color-ink)] transition-colors duration-200">
+              autocomplete="email"
+              placeholder="jane@acmeinc.com"
+              class="w-full font-body text-sm text-[#111110] bg-transparent border-b border-[#E2E1DD] py-3 outline-none placeholder:text-[#B4B3B0] focus:border-[#111110] transition-colors duration-200">
           </div>
-          <div class="flex flex-col gap-2">
-            <label for="company" class="text-xs tracking-[0.1em] uppercase text-[var(--color-muted)] font-medium">
-              Company
+
+          <!-- Services interest -->
+          <div>
+            <label class="block font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-4">
+              What are you interested in? <span class="text-[#3D5A73]">*</span>
             </label>
-            <input
-              type="text"
-              id="company"
-              name="company"
-              placeholder="Your company"
-              class="contact-input w-full border-b border-[var(--color-border)] bg-transparent py-3 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-muted)]/50 focus:outline-none focus:border-[var(--color-ink)] transition-colors duration-200">
+            <div class="flex flex-wrap gap-3" role="group" aria-label="Services">
+              <?php
+              $services = ['Brand Identity', 'Website Design', 'Creative Strategy', 'Full-studio engagement', "Not sure yet"];
+              foreach ($services as $svc):
+                $val = strtolower(str_replace([' ', '-'], '_', $svc));
+              ?>
+                <label class="inline-flex items-center gap-2 cursor-pointer group">
+                  <input type="checkbox" name="services[]" value="<?= htmlspecialchars($val) ?>"
+                    class="sr-only peer">
+                  <span class="font-body text-xs tracking-wide px-4 py-2 rounded-full border border-[#E2E1DD] text-[#6B6B68] peer-checked:border-[#111110] peer-checked:text-[#111110] peer-checked:bg-[#F0EFEB] group-hover:border-[#B4B3B0] transition-all duration-200 cursor-pointer">
+                    <?= htmlspecialchars($svc) ?>
+                  </span>
+                </label>
+              <?php endforeach; ?>
+            </div>
           </div>
-        </div>
 
-        <!-- Email -->
-        <div class="flex flex-col gap-2">
-          <label for="email" class="text-xs tracking-[0.1em] uppercase text-[var(--color-muted)] font-medium">
-            Email <span class="text-[var(--color-primary)]">*</span>
-          </label>
-          <input
-            type="email"
-            id="email"
-            name="email"
-            required
-            placeholder="your@email.com"
-            class="contact-input w-full border-b border-[var(--color-border)] bg-transparent py-3 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-muted)]/50 focus:outline-none focus:border-[var(--color-ink)] transition-colors duration-200">
-        </div>
+          <!-- Budget -->
+          <div>
+            <label for="budget" class="block font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-3">
+              Approximate budget
+            </label>
+            <select id
+              class="w-full font-body text-sm text-[#111110] bg-transparent border-b border-[#E2E1DD] py-3 outline-none focus:border-[#111110] transition-colors duration-200 appearance-none cursor-pointer">
+              <option value="" disabled selected>Select a range</option>
+              <option value="under_5k">Under £5,000</option>
+              <option value="5_10k">£5,000 – £10,000</option>
+              <option value="10_20k">£10,000 – £20,000</option>
+              <option value="20k_plus">£20,000+</option>
+              <option value="unsure">Not sure yet</option>
+            </select>
+          </div>
 
-        <!-- Project type -->
-        <div class="flex flex-col gap-2">
-          <label for="project_type" class="text-xs tracking-[0.1em] uppercase text-[var(--color-muted)] font-medium">
-            I am interested in <span class="text-[var(--color-primary)]">*</span>
-          </label>
-          <select
-            id="project_type"
-            name="project_type"
-            required
-            class="contact-input w-full border-b border-[var(--color-border)] bg-transparent py-3 text-sm text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-ink)] transition-colors duration-200 cursor-pointer appearance-none">
-            <option value="" disabled selected>Select a discipline</option>
-            <option value="identity">Brand Identity</option>
-            <option value="web">Website Design</option>
-            <option value="strategy">Creative Strategy</option>
-            <option value="combined">Combined engagement</option>
-            <option value="other">Not sure yet</option>
-          </select>
-        </div>
+          <!-- Message -->
+          <div>
+            <label for="message" class="block font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-3">
+              Tell us about your project <span class="text-[#3D5A73]">*</span>
+            </label>
+            <textarea
+              id="message"
+              name="message"
+              required
+              rows="5"
+              placeholder="What are you trying to achieve? What's the context? Even rough ideas are welcome."
+              class="w-full font-body text-sm text-[#111110] bg-transparent border-b border-[#E2E1DD] py-3 outline-none placeholder:text-[#B4B3B0] focus:border-[#111110] transition-colors duration-200 resize-none"></textarea>
+          </div>
 
-        <!-- Budget -->
-        <div class="flex flex-col gap-2">
-          <label for="budget" class="text-xs tracking-[0.1em] uppercase text-[var(--color-muted)] font-medium">
-            Approximate budget
-          </label>
-          <select
-            id="budget"
-            name="budget"
-            class="contact-input w-full border-b border-[var(--color-border)] bg-transparent py-3 text-sm text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-ink)] transition-colors duration-200 cursor-pointer appearance-none">
-            <option value="" disabled selected>Select a range</option>
-            <option value="under-5k">Under £5,000</option>
-            <option value="5k-15k">£5,000 – £15,000</option>
-            <option value="15k-30k">£15,000 – £30,000</option>
-            <option value="30k-plus">£30,000+</option>
-            <option value="unknown">Not sure yet</option>
-          </select>
-        </div>
+          <!-- Privacy -->
+          <div>
+            <label class="inline-flex items-start gap-3 cursor-pointer group">
+              <input type="checkbox" name="privacy_consent" required class="mt-0.5 accent-[#111110] cursor-pointer flex-shrink-0">
+              <span class="font-body text-xs leading-relaxed text-[#6B6B68]">
+                I agree to my information being used to respond to this enquiry. We don't share it with anyone.
+              </span>
+            </label>
+          </div>
 
-        <!-- Message -->
-        <div class="flex flex-col gap-2">
-          <label for="message" class="text-xs tracking-[0.1em] uppercase text-[var(--color-muted)] font-medium">
-            Tell us about your project <span class="text-[var(--color-primary)]">*</span>
-          </label>
-          <textarea
-            id="message"
-            name="message"
-            required
-            rows="5"
-            placeholder="What are you trying to achieve? Where are you now, and where do you want to be?"
-            class="contact-input w-full border-b border-[var(--color-border)] bg-transparent py-3 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-muted)]/50 focus:outline-none focus:border-[var(--color-ink)] transition-colors duration-200 resize-none leading-relaxed"></textarea>
-        </div>
+          <!-- Submit -->
+          <div class="pt-4">
+            <button
+              type="submit"
+              class="inline-flex items-center gap-3 font-body text-sm font-medium tracking-widest uppercase text-white bg-[#111110] px-10 py-4 rounded-[2px] transition-all duration-200 hover:bg-[#3D5A73] hover:-translate-y-0.5 cursor-pointer border-0">
+              Send message
+              <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
+            </button>
+          </div>
 
-        <!-- Submit -->
-        <div class="pt-4">
-          <button
-            type="submit"
-            class="inline-flex items-center gap-3 text-sm font-medium tracking-[0.08em] uppercase text-[var(--color-ink)] border-b border-[var(--color-ink)] pb-1 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors duration-300 bg-transparent cursor-pointer">
-            Send enquiry
-            <i class="icon-sm" data-lucide="arrow-right" aria-hidden="true"></i>
-          </button>
-          <p class="text-xs text-[var(--color-muted)] font-light mt-4">
-            We respond to every message within two working days.
-          </p>
-        </div>
+        </form>
 
-      </form>
-    </div>
+      </div>
 
-    <!-- Info sidebar -->
-    <aside class="lg:col-span-4 lg:col-start-9" data-reveal>
-      <div class="flex flex-col gap-12 pt-2">
+      <!-- Info column -->
+      <div class="lg:col-span-4 lg:col-start-9" data-reveal>
 
-        <div class="pt-8 border-t border-[var(--color-border)]">
-          <p class="text-xs tracking-[0.12em] uppercase text-[var(--color-muted)] font-medium mb-4">New projects</p>
-          <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light">
-            We are currently accepting enquiries for projects starting from Q3 2026. Use the form to tell us about your brief and timeline.
-          </p>
-        </div>
+        <div class="space-y-12">
 
-        <div class="pt-8 border-t border-[var(--color-border)]">
-          <p class="text-xs tracking-[0.12em] uppercase text-[var(--color-muted)] font-medium mb-4">Typical engagement</p>
-          <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light">
-            Brand identity projects typically run 8–12 weeks. Web design projects run 10–16 weeks. Combined engagements are structured to suit the brief.
-          </p>
-        </div>
+          <div>
+            <p class="font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-5">What to expect</p>
+            <div class="space-y-5">
+              <?php
+              $expectations = [
+                ['icon' => 'clock', 'text' => 'We respond to all enquiries within two business days.'],
+                ['icon' =>  "message-square", 'text' => "If it sounds like a good fit, we'll arrange a short introductory call — no pitch, just a conversation."],
+                ['icon' =>  "file-text", 'text' => "After that, we'll put together a scope and proposal. No obligation to proceed."],
+              ];
+              foreach ($expectations as $e): ?>
+                <div class="flex items-start gap-4">
+                  <i class="icon text-[#3D5A73] flex-shrink-0 mt-0.5" data-lucide="<?= $e['icon'] ?>" aria-hidden="true"></i>
+                  <p class="font-body text-sm leading-relaxed text-[#6B6B68]"><?= htmlspecialchars($e['text']) ?></p>
+                </div>
+              <?php endforeach; ?>
+            </div>
+          </div>
 
-        <div class="pt-8 border-t border-[var(--color-border)]">
-          <p class="text-xs tracking-[0.12em] uppercase text-[var(--color-muted)] font-medium mb-4">Before we begin</p>
-          <p class="text-sm text-[var(--color-muted)] leading-relaxed font-light">
-            Every project starts with a no-commitment discovery call. We want to understand your brief properly before we propose a scope or a fee.
-          </p>
+          <div class="pt-8 border-t border-[#E2E1DD]">
+            <p class="font-body text-xs tracking-widest uppercase text-[#6B6B68] mb-5">Availability</p>
+            <p class="font-body text-sm leading-relaxed text-[#6B6B68] mb-5">
+              We're currently taking enquiries for Q3 2026. New projects typically start 4–6 weeks after a proposal is agreed.
+            </p>
+            <div class="inline-flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></span>
+              <span class="font-body text-xs text-[#6B6B68]">Accepting new enquiries</span>
+            </div>
+          </div>
+
         </div>
 
       </div>
-    </aside>
 
+    </div>
   </div>
 </section>
 

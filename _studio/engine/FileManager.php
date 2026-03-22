@@ -720,6 +720,14 @@ SAFETY;
 SAFETY;
         }
 
+        // 5. Ensure .icon.hidden { display: none } overrides .icon { display: inline-block }
+        // style.css loads after tailwind.css, so .icon's display:inline-block
+        // wins over .hidden's display:none by cascade order. Without this,
+        // the icon-swap toggle (hamburger ↔ close) breaks.
+        if (str_contains($css, '.icon') && !str_contains($css, '.icon.hidden')) {
+            $inject[] = '.icon.hidden { display: none; }';
+        }
+
         if (!empty($inject)) {
             $css .= "\n" . implode("\n", $inject) . "\n";
             file_put_contents($stylePath, $css);

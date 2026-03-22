@@ -606,6 +606,7 @@ include '_partials/header.php';
 - Partials use `__DIR__` for includes so they work regardless of server configuration
 - `<?= ... ?>` short echo tags for clean inline output
 - `htmlspecialchars()` on all dynamic output for security
+- PHP strings: always use single quotes. Escape apostrophes with `\'` (e.g. `'don\'t'`). Never switch to double quotes to avoid escaping — it risks breaking array boundaries
 - CRITICAL: Never put raw HTML directly after `<?php` without closing the PHP block first with `?>`.
 
 ### Clean URLs

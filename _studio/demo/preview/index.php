@@ -250,10 +250,10 @@ include '_partials/header.php';
 
         <?php
         $steps = [
-          ['num' =>  "01', 'title' => 'Discovery", 'desc' => "We start by listening. Understanding the business, the audience, the competitive landscape, and the gap in the market that this brand can occupy uniquely. This isn't a brief — it's a conversation."],
+          ['num' => '01', 'title' => 'Discovery', 'desc' => 'We start by listening. Understanding the business, the audience, the competitive landscape, and the gap in the market that this brand can occupy uniquely. This isn\'t a brief — it\'s a conversation.'],
           ['num' => '02', 'title' => 'Strategy', 'desc' => 'Positioning, voice, and visual direction. We define where you stand, what you stand for, and how that translates into a visual and verbal language. The strategy is the backbone everything else hangs on.'],
           ['num' => '03', 'title' => 'Design', 'desc' => 'The work itself. Identity systems, web design, art direction. We work iteratively — showing thinking early and often, not presenting a finished solution and hoping it lands.'],
-          ['num' =>  "04', 'title' => 'Delivery", 'desc' => "Complete handover with everything you need to maintain and extend the brand independently. Guidelines, assets, code. We don't disappear after launch."],
+          ['num' => '04', 'title' => 'Delivery', 'desc' => 'Complete handover with everything you need to maintain and extend the brand independently. Guidelines, assets, code. We don\'t disappear after launch.'],
         ];
         foreach ($steps as $step): ?>
           <div class="flex gap-8 py-10 border-b border-[#E2E1DD] first:border-t first:border-[#E2E1DD] group">

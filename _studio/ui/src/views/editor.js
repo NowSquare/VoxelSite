@@ -23,11 +23,11 @@ function renderEditorLayout() {
         <div class="vs-editor-sidebar-header">
           <span class="vs-editor-sidebar-title">Explorer</span>
           <div style="display:flex;gap:2px;">
-            <button id="editor-new-file" class="vs-btn vs-btn-ghost vs-btn-icon" title="New file" style="width:24px;height:24px;">
-              ${icons.filePlus}
+            <button id="editor-new-file" class="vs-btn vs-btn-ghost vs-btn-icon" title="New file" style="width:28px;height:28px;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/><path d="M12 18v-6"/></svg>
             </button>
-            <button id="editor-refresh-tree" class="vs-btn vs-btn-ghost vs-btn-icon" title="Refresh file list" style="width:24px;height:24px;">
-              ${icons.rotateCcw}
+            <button id="editor-refresh-tree" class="vs-btn vs-btn-ghost vs-btn-icon" title="Refresh file list" style="width:28px;height:28px;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
             </button>
           </div>
         </div>
@@ -67,7 +67,7 @@ function renderEditorLayout() {
       <!-- Main Editor Area -->
       <div class="vs-editor-main">
         <!-- Editor Topbar -->
-        <div class="vs-editor-topbar" style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--vs-border-subtle); background: var(--vs-bg-surface); height: 44px;">
+        <div class="vs-editor-topbar" style="display: flex; align-items: stretch; justify-content: space-between; border-bottom: 1px solid var(--vs-border-subtle); background: var(--vs-bg-surface); height: 44px;">
           <!-- Tab Bar Wrapper -->
           <div style="flex: 1; display: flex; align-items: stretch; min-width: 0; position: relative;">
             <!-- Scroll Left Button -->
@@ -84,7 +84,7 @@ function renderEditorLayout() {
             </button>
           </div>
           <!-- Editor Controls -->
-          <div class="vs-editor-controls" style="display: flex; align-items: center; gap: 6px; padding: 0 12px;">
+          <div class="vs-editor-controls" style="display: flex; align-items: center; gap: 6px; padding: 0 12px; flex-shrink: 0;">
             <button id="editor-word-wrap-btn" class="vs-btn vs-btn-ghost vs-btn-icon" title="Toggle Word Wrap" style="width: 28px; height: 28px;">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16-3 3 3 3"/><path d="M3 12h14.5a1 1 0 0 1 0 7H13"/><path d="M3 19h6"/><path d="M3 5h18"/></svg>
             </button>

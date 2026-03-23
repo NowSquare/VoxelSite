@@ -975,6 +975,79 @@ SAFETY;
     }
 
     /**
+     * Append content-hash version queries to shipped script tags.
+     *
+     * Shipped JS files (navigation.js, form-handler.js, icon-resolver.js)
+     * are replaced on every generation. Browsers may cache the old version
+     * indefinitely, causing bugs (double icons, missing safety nets).
+     *
+     * This method scans the footer partial (and standalone pages) for
+     * <script src="/assets/js/SHIPPED_FILE.js"> and appends ?v=XXXXXXXX
+     * (first 8 chars of the file's MD5). Any existing ?v= is stripped first.
+     *
+     * Called after all ensureShipped*() methods have run.
+     */
+    public function versionShippedScripts(): void
+    {
+        $shippedFiles = ['navigation.js', 'form-handler.js', 'icon-resolver.js'];
+
+        // Build version map: filename => ?v=hash
+        $versions = [];
+        foreach ($shippedFiles as $file) {
+            $path = $this->assetsPath . '/js/' . $file;
+            if (file_exists($path)) {
+                $versions[$file] = substr(md5_file($path), 0, 8);
+            }
+        }
+
+        if (empty($versions)) {
+            return;
+        }
+
+        // Process footer partial (primary target)
+        $footerPath = $this->resolvePath('_partials/footer.php', true);
+        if (file_exists($footerPath)) {
+            $this->applyScriptVersions($footerPath, $versions);
+        }
+
+        // Also process standalone pages (those with </body> directly)
+        foreach (glob($this->previewPath . '/*.php') as $pagePath) {
+            $content = file_get_contents($pagePath);
+            if (str_contains($content, '</body>')) {
+                $this->applyScriptVersions($pagePath, $versions);
+            }
+        }
+    }
+
+    /**
+     * Apply version query strings to script tags in a single file.
+     *
+     * @param string $filePath  Absolute path to the file to process
+     * @param array  $versions  Map of filename => 8-char hash
+     */
+    private function applyScriptVersions(string $filePath, array $versions): void
+    {
+        $content = file_get_contents($filePath);
+        $changed = false;
+
+        foreach ($versions as $file => $hash) {
+            // Match: /assets/js/FILE.js or /assets/js/FILE.js?v=anything
+            // Replace with: /assets/js/FILE.js?v=HASH
+            $pattern = '/(src=["\']\/assets\/js\/' . preg_quote($file, '/') . ')(\?v=[a-f0-9]*)?(["\'"])/';
+            $replacement = '${1}?v=' . $hash . '${3}';
+            $updated = preg_replace($pattern, $replacement, $content);
+            if ($updated !== $content) {
+                $content = $updated;
+                $changed = true;
+            }
+        }
+
+        if ($changed) {
+            file_put_contents($filePath, $content);
+        }
+    }
+
+    /**
      * Inject form-handler.js into _partials/footer.php.
      *
      * Called when a content page contains a form but doesn't have </body>

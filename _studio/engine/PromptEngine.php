@@ -755,6 +755,7 @@ class PromptEngine
                 $this->fileManager->ensureShippedNavigation();
                 $this->fileManager->ensureShippedIconResolver();
                 $this->fileManager->injectIconResolverIntoFooter();
+                $this->fileManager->versionShippedScripts();
 
                 // Capture after state
                 $this->emitSSE('status', ['message' => 'Finalizing...']);

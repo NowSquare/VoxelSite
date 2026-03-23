@@ -169,6 +169,7 @@ class PublishService
         try {
             $fileManager->ensureShippedNavigation();
             $fileManager->ensureShippedIconResolver();
+            $fileManager->versionShippedScripts();
         } catch (\Throwable $e) {
             $errors[] = 'Shipped JS deploy: ' . $e->getMessage();
         }

@@ -497,8 +497,9 @@ Pages use PHP `include` for shared layout elements. **Navigation and footer live
       <ul class="list-none flex items-center gap-6"><!-- desktop links --></ul>
     </nav>
     <button class="nav-toggle bg-transparent border-0 cursor-pointer" id="nav-toggle" aria-expanded="false"
-            aria-controls="mobile-menu" aria-label="Open navigation">
-      <!-- hamburger SVG or text -->
+            aria-controls="mobile-menu" aria-label="Open navigation" data-nav-style="classic">
+      <i id="icon-menu" class="icon" data-lucide="menu" aria-hidden="true"></i>
+      <i id="icon-close" class="icon hidden" data-lucide="x" aria-hidden="true"></i>
     </button>
   </div>
 </header>
@@ -512,9 +513,20 @@ Pages use PHP `include` for shared layout elements. **Navigation and footer live
 ```
 
 **Close button — every mobile menu MUST include a visible close button.** All patterns work automatically with the shipped `navigation.js`:
-- **Icon swap:** put `id="icon-menu"` and `id="icon-close"` SVGs inside `#nav-toggle`. JS toggles `.hidden`. **The header (`z-index: 10000`) sits above the mobile menu (`z-index: 9999`)**, so the toggle button in the header always remains clickable.
+- **Icon swap (preferred):** put `id="icon-menu"` and `id="icon-close"` icons inside `#nav-toggle`. At runtime, `navigation.js` **replaces** these with an animated CSS hamburger that morphs into an X. The icon markup is just a bootstrap — the engine upgrades it automatically.
 - **Separate close button:** put a `<button class="mobile-menu-close">` inside `#mobile-menu`. JS wires it up automatically. Style it in `style.css`.
 - If you forget: the engine auto-injects a default close button (X icon, top-right). But you should design your own — it'll look better.
+
+**Hamburger style variants** — set `data-nav-style` on the `#nav-toggle` button to match the site's personality. `navigation.js` reads this attribute and renders the matching animated design:
+
+| `data-nav-style` | Bars | Description | Best for |
+|------------------|------|-------------|----------|
+| `classic` | 3 equal | Standard 3-line hamburger. Middle fades, top/bottom rotate to X. | Universal default, business, corporate |
+| `minimal` | 2 equal | Clean 2-line toggle. Both bars rotate to X. | Minimalist, editorial, studio |
+| `asymmetric` | 3 descending | Bars at 100%, 66%, 33% width. Normalize to full-width then X. | Creative, portfolio, boutique |
+| `refined` | 3, middle short | Top/bottom full-width, middle at 50% centered. Middle fades, outer rotate. | Luxury, fashion, architecture |
+
+Choose based on the site's character — don't always default to `classic`. Minimal sites deserve `minimal` or `refined`. Creative/bold sites suit `asymmetric`. The hamburger uses `currentColor`, so it inherits the toggle button's text color automatically.
 
 **⚠ Z-INDEX RULE: `.site-header` MUST have a higher z-index than `.mobile-menu`.** The icon-swap close button lives inside the header. If the mobile menu's z-index is higher, the close button is unreachable. Always: header ≥ 10000, mobile-menu = 9999.
 

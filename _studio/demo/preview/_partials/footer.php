@@ -57,9 +57,9 @@
 
   <!-- Scripts -->
   <script src="/assets/js/main.js" defer></script>
-  <script src="/assets/js/navigation.js" defer></script>
-  <script src="/assets/js/icon-resolver.js" defer></script>
+  <script src="/assets/js/navigation.js?v=25f38c27" defer></script>
+  <script src="/assets/js/icon-resolver.js?v=8e57c563" defer></script>
 
-<script src="/assets/js/form-handler.js" defer></script>
+<script src="/assets/js/form-handler.js?v=951abe29" defer></script>
 </body>
 </html>

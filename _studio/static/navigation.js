@@ -80,6 +80,56 @@
         }
       }
 
+      // ── Padding safety net ──
+      // The header sits above the menu (higher z-index). If the menu's
+      // top padding doesn't clear the header height, links hide behind
+      // the header bar. Auto-fix: measure once, pad if needed.
+      if (header) {
+        var headerH = header.offsetHeight;
+        var menuPadTop = parseInt(getComputedStyle(menu).paddingTop, 10) || 0;
+        if (menuPadTop < headerH) {
+          menu.style.paddingTop = headerH + 'px';
+        }
+      }
+
+      // ── Animated hamburger ↔ X variant system ──
+      // The AI sets data-nav-style on the toggle to pick a personality.
+      // Each variant defines bar count, gap, per-bar overrides (width,
+      // alignment), and the CSS rules for the open-state X morph.
+      // Defaults to 'classic' if no attribute is specified.
+      var _navVariants = {
+        classic:    { bars: 3, gap: 5, spans: [null, null, null],
+          open: '.nav-toggle--open .vx-hamburger span:nth-child(1){transform:translateY(7px) rotate(45deg)}'
+              + '.nav-toggle--open .vx-hamburger span:nth-child(2){opacity:0;transform:scaleX(0)}'
+              + '.nav-toggle--open .vx-hamburger span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}' },
+        minimal:    { bars: 2, gap: 8, spans: [null, null],
+          open: '.nav-toggle--open .vx-hamburger span:nth-child(1){transform:translateY(5px) rotate(45deg)}'
+              + '.nav-toggle--open .vx-hamburger span:nth-child(2){transform:translateY(-5px) rotate(-45deg)}' },
+        asymmetric: { bars: 3, gap: 5, spans: [null, 'width:66%', 'width:33%'],
+          open: '.nav-toggle--open .vx-hamburger span:nth-child(1){transform:translateY(7px) rotate(45deg)}'
+              + '.nav-toggle--open .vx-hamburger span:nth-child(2){opacity:0;transform:scaleX(0);width:100%!important}'
+              + '.nav-toggle--open .vx-hamburger span:nth-child(3){transform:translateY(-7px) rotate(-45deg);width:100%!important}' },
+        refined:    { bars: 3, gap: 5, spans: [null, 'width:50%;align-self:center', null],
+          open: '.nav-toggle--open .vx-hamburger span:nth-child(1){transform:translateY(7px) rotate(45deg)}'
+              + '.nav-toggle--open .vx-hamburger span:nth-child(2){opacity:0;transform:scaleX(0);width:100%!important;align-self:stretch!important}'
+              + '.nav-toggle--open .vx-hamburger span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}' }
+      };
+
+      var _navStyled = false;
+      function _injectNavCSS(variantKey) {
+        if (_navStyled) return;
+        _navStyled = true;
+        var v = _navVariants[variantKey] || _navVariants.classic;
+        var s = document.createElement('style');
+        s.id = 'vx-nav-anim';
+        s.textContent =
+          '.vx-hamburger{display:flex;flex-direction:column;justify-content:center;width:24px;height:24px;cursor:pointer}'
+          + '.vx-hamburger span{display:block;height:2px;background:currentColor;border-radius:1px;width:100%;'
+          +   'transition:transform .3s cubic-bezier(.16,1,.3,1),opacity .2s ease,width .3s cubic-bezier(.16,1,.3,1)}'
+          + v.open;
+        document.head.appendChild(s);
+      }
+
       function open() {
         isOpen = true;
         menu.classList.add('is-open');
@@ -91,8 +141,12 @@
         // Pattern A: swap icons (query live DOM — refs change after hydration)
         var im = document.getElementById('icon-menu');
         var ic = document.getElementById('icon-close');
-        if (im) im.classList.add('hidden');
-        if (ic) ic.classList.remove('hidden');
+        if (im && ic) {
+          im.classList.add('hidden');
+          ic.classList.remove('hidden');
+        }
+        // Animated hamburger: add open class for CSS morph
+        toggle.classList.add('nav-toggle--open');
       }
 
       function close() {
@@ -106,14 +160,43 @@
         // Pattern A: swap icons back (query live DOM)
         var im = document.getElementById('icon-menu');
         var ic = document.getElementById('icon-close');
-        if (im) im.classList.remove('hidden');
-        if (ic) ic.classList.add('hidden');
+        if (im && ic) {
+          im.classList.remove('hidden');
+          ic.classList.add('hidden');
+        }
+        // Animated hamburger: remove open class
+        toggle.classList.remove('nav-toggle--open');
       }
 
       // Toggle button opens/closes
       toggle.addEventListener('click', function () {
         isOpen ? close() : open();
       });
+
+      // ── Upgrade static icon-swap to animated hamburger ──
+      // If the toggle has #icon-menu/#icon-close (Lucide icons), replace
+      // them with a CSS-animated hamburger that morphs into an X.
+      // The AI picks the variant via data-nav-style on the toggle button.
+      var iconMenu = document.getElementById('icon-menu');
+      var iconClose = document.getElementById('icon-close');
+      if (iconMenu && iconClose && toggle.contains(iconMenu)) {
+        var variantKey = toggle.getAttribute('data-nav-style') || 'classic';
+        var variant = _navVariants[variantKey] || _navVariants.classic;
+        _injectNavCSS(variantKey);
+        // Replace the two SVGs with a single animated hamburger
+        iconMenu.remove();
+        iconClose.remove();
+        var bars = document.createElement('div');
+        bars.className = 'vx-hamburger';
+        bars.style.gap = variant.gap + 'px';
+        bars.setAttribute('aria-hidden', 'true');
+        for (var i = 0; i < variant.bars; i++) {
+          var span = document.createElement('span');
+          if (variant.spans[i]) span.style.cssText = variant.spans[i];
+          bars.appendChild(span);
+        }
+        toggle.appendChild(bars);
+      }
 
       // Pattern B/C: Separate close button(s)
       closeButtons.forEach(function (btn) {
@@ -136,6 +219,21 @@
       // Close on background/overlay click (click on menu container itself)
       menu.addEventListener('click', function (e) {
         if (e.target === menu) close();
+      });
+
+      // ── Auto-close on viewport widen ──
+      // When the user resizes past the mobile breakpoint (device rotation,
+      // window resize), the desktop nav appears and the toggle is hidden.
+      // If the mobile menu was left open, close it to prevent a stuck overlay.
+      // Checks if the toggle became display:none (= desktop CSS kicked in).
+      var _resizeTimer;
+      window.addEventListener('resize', function () {
+        clearTimeout(_resizeTimer);
+        _resizeTimer = setTimeout(function () {
+          if (isOpen && getComputedStyle(toggle).display === 'none') {
+            close();
+          }
+        }, 150);
       });
     }
 

@@ -15,8 +15,20 @@ use VoxelSite\Database;
 use VoxelSite\FileManager;
 use VoxelSite\SiteGraphIndexer;
 
+$user   = $_REQUEST['_user'] ?? null;
 $method = $_REQUEST['_route_method'];
 $path   = $_REQUEST['_route_path'];
+
+// ── Role guard: owner and editor only ──
+// The blanket viewer write-block in router.php doesn't cover GET endpoints.
+// Site graph is a creative tool — viewers should not access it.
+if ($user['role'] === 'viewer') {
+    jsonResponse(['ok' => false, 'error' => [
+        'code'    => 'forbidden',
+        'message' => 'Site workspace requires editor or owner access.',
+    ]], 403);
+    return;
+}
 
 // ═══════════════════════════════════════════
 //  GET /site-graph — Full graph index

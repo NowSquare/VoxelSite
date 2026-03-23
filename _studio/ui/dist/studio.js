@@ -2604,7 +2604,7 @@ Option 3`}" style="height: auto; resize: vertical; min-height: 64px;">${b(Pe)}</
               <span class="vs-role-badge vs-role-editor">Editor</span>
               <span class="vs-role-badge vs-role-viewer">Viewer</span>
             </div>
-            ${[["Use AI chat",!0,!0,!1],["Edit pages & code",!0,!0,!1],["Use notes",!0,!0,!1],["View board",!0,!0,!0],["Edit board",!0,!0,!1],["Manage assets",!0,!0,!1],["Publish changes",!0,!0,!1],["View form submissions",!0,!0,!0],["Preview the site",!0,!0,!0],["Manage designs",!0,!0,!1],["Change settings",!0,!1,!1],["Manage team members",!0,!1,!1]].map(([e,t,s,n])=>`
+            ${[["Use AI chat",!0,!0,!1],["Edit pages & code",!0,!0,!1],["Site workspace",!0,!0,!1],["Use notes",!0,!0,!1],["View board",!0,!0,!0],["Edit board",!0,!0,!1],["Manage assets",!0,!0,!1],["Publish changes",!0,!0,!1],["View form submissions",!0,!0,!0],["Preview the site",!0,!0,!0],["Manage designs",!0,!0,!1],["Change settings",!0,!1,!1],["Manage team members",!0,!1,!1]].map(([e,t,s,n])=>`
               <div class="vs-role-matrix-row">
                 <span class="vs-role-matrix-label">${e}</span>
                 <span class="vs-role-matrix-cell">${t?"\u2713":"\u2014"}</span>

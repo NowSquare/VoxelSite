@@ -159,6 +159,7 @@ export function renderTeamModals() {
             ${[
               ['Use AI chat',           true,  true,  false],
               ['Edit pages & code',     true,  true,  false],
+              ['Site workspace',         true,  true,  false],
               ['Use notes',              true,  true,  false],
               ['View board',             true,  true,  true],
               ['Edit board',             true,  true,  false],

@@ -748,9 +748,11 @@ class PromptEngine
                 // Create a minimal fallback so the site has basic styling.
                 $this->fileManager->ensureStyleCssExists();
 
-                // Ensure icon-resolver.js is shipped and injected.
-                // Unconditional — every site gets the resolver so data-lucide
-                // placeholders always hydrate, regardless of write order.
+                // Ensure shipped JS assets are deployed unconditionally.
+                // These files must exist on disk for the published site to work —
+                // the AI is told NOT to generate them, so ensureShipped*() is the
+                // only mechanism that puts them in assets/js/.
+                $this->fileManager->ensureShippedNavigation();
                 $this->fileManager->ensureShippedIconResolver();
                 $this->fileManager->injectIconResolverIntoFooter();
 

@@ -162,6 +162,17 @@ class PublishService
             syncAssetDirectory($internalAssetsDir, $this->assetsDir);
         }
 
+        // Ensure shipped JS assets exist on disk.
+        // These are engine-provided files the AI is told not to generate.
+        // Without this, navigation.js / icon-resolver.js may be missing
+        // after publish, causing MIME type errors on Nginx/reverse-proxy setups.
+        try {
+            $fileManager->ensureShippedNavigation();
+            $fileManager->ensureShippedIconResolver();
+        } catch (\Throwable $e) {
+            $errors[] = 'Shipped JS deploy: ' . $e->getMessage();
+        }
+
         // Step 6: AEO generation  
         $aeoFiles = [];
         try {

@@ -23,6 +23,7 @@ Full documentation: **[voxelsite.com/docs](https://voxelsite.com/docs)**
 
 - **AI Studio** — chat-driven interface to create and edit multi-page websites
 - **Code Editor** — built-in Monaco editor with file explorer, multi-tab editing, create and delete files
+- **Site** — structural graph explorer showing pages, partials, routes, tokens, and assets as an interactive hierarchy diagram with impact analysis, blast radius queries, and URL migration preview
 - **Visual Editor** — click-to-edit text, swap images, adjust styles, reorder sections with ▲/▼ buttons, add new sections from a visual picker, and describe changes with AI — all directly on the live preview
 - **Live Preview** — see every change before publishing
 - **Undo/Redo** — full revision history with safe editing workflow

@@ -38,6 +38,8 @@ import { renderAssetsView } from './src/views/assets.js';
 import { renderDesignsView, confirmNewDesign, showSaveDesignModal } from './src/views/designs.js';
 import { renderNotesView, cleanupNotes } from './src/views/notes.js';
 import { renderBoardView, cleanupBoard } from './src/views/board.js';
+import { renderSiteControlView } from './src/views/site-control/index.js';
+const renderSiteMapView = renderSiteControlView;
 import { showToast, showToastWithAction } from './src/ui/toasts.js';
 import { escapeHtml, escapeAttr, getCodeLanguage, formatRefUrl } from './src/helpers.js';
 import { closeModal, showConfirmModal, showPromptModal, onBackdropClick } from './src/ui/modals.js';
@@ -69,8 +71,9 @@ const NAV_GROUPS = [
     label: 'Create',
     defaultRoute: 'chat',
     routes: [
-      { route: 'chat',   label: 'Chat',   roles: ['owner', 'editor'] },
-      { route: 'editor', label: 'Editor', roles: ['owner', 'editor'] },
+      { route: 'chat',     label: 'Chat',   roles: ['owner', 'editor'] },
+      { route: 'site-map', label: 'Site',   roles: ['owner', 'editor'], badge: 'Beta' },
+      { route: 'editor',   label: 'Editor', roles: ['owner', 'editor'] },
     ],
   },
   {
@@ -87,10 +90,10 @@ const NAV_GROUPS = [
     label: 'Manage',
     defaultRoute: 'forms',
     routes: [
-      { route: 'assets',  label: 'Assets' },
-      { route: 'forms',   label: 'Forms' },
-      { route: 'actions', label: 'Actions' },
-      { route: 'designs', label: 'Designs', roles: ['owner', 'editor'] },
+      { route: 'assets',   label: 'Assets' },
+      { route: 'forms',    label: 'Forms' },
+      { route: 'actions',  label: 'Actions' },
+      { route: 'designs',  label: 'Designs',  roles: ['owner', 'editor'] },
     ],
   },
 ];
@@ -216,8 +219,9 @@ const MOBILE_NAV_ICONS = {
   board:   'layoutGrid',
   assets:  'image',
   forms:   'inbox',
-  actions: 'zap',
-  designs: 'palette',
+  actions:  'zap',
+  designs:  'palette',
+  'site-map': 'globe',
 };
 
 /**
@@ -243,7 +247,7 @@ function getMobileNavItems() {
   }
 
   const items = activeGroup.routes
-    .filter(r => !r.roles || r.roles.includes(role))
+    .filter(r => (!r.roles || r.roles.includes(role)) && !DESKTOP_ONLY_ROUTES.includes(r.route))
     .map(r => ({
       route: r.route,
       label: r.label,
@@ -265,7 +269,7 @@ function getDefaultRouteForRole() {
 }
 
 /** Routes that require desktop/tablet — too complex for mobile */
-const DESKTOP_ONLY_ROUTES = ['chat', 'editor'];
+const DESKTOP_ONLY_ROUTES = ['chat', 'editor', 'site-map'];
 
 /**
  * Block a write action in demo mode.
@@ -403,6 +407,7 @@ async function init() {
     .on('actions',           () => renderApp())
     .on('actions/:actionId', () => renderApp())
     .on('designs',           () => renderApp())
+    .on('site-map',          () => renderApp())
     .on('settings',          () => renderApp())
     .on('team',              () => renderApp())
     .on('profile',           () => renderApp())
@@ -509,6 +514,9 @@ function renderApp() {
   } else if (route === 'board') {
     // Board has its own full-width layout (three-column kanban)
     mainContent = `<div class="h-full overflow-hidden">${renderBoardView()}</div>`;
+  } else if (route === 'site-map') {
+    // Site Map is full-screen like the Editor — no padding/max-width wrapper
+    mainContent = isViewerRole ? renderContentLayout() : renderSiteMapView();
   } else if (isDashboard) {
     // Dashboard (chat + preview) is owner/editor only — redirect viewers
     mainContent = isViewerRole ? renderContentLayout() : renderDashboardLayout();
@@ -580,7 +588,7 @@ function renderTopBar() {
           return `
             <a href="#/${item.route}"
                class="vs-nav-item ${isActive ? 'vs-nav-item-active' : ''}">
-              ${item.label}
+              ${item.label}${item.badge ? `<span class="vs-nav-badge-beta">${escapeHtml(item.badge)}</span>` : ''}
             </a>
           `;
         }).join('')
@@ -920,6 +928,8 @@ function renderPageContent(route, params) {
       return renderActionDetailView(params.actionId);
     case 'designs':
       return (role === 'owner' || role === 'editor') ? renderDesignsView() : renderAccessDenied();
+    case 'site-map':
+      return (role === 'owner' || role === 'editor') ? renderSiteMapView() : renderAccessDenied();
     case 'notes':
       return renderAccessDenied(); // Viewers land here via renderContentLayout — owner/editor bypass via renderApp()
     case 'board':

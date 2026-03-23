@@ -92,6 +92,68 @@
     }
   }
 
+  // ── Error display system ──
+  // Uses an injected <style> for animation + ::before dot (can't do these
+  // inline) and reads the computed font from a nearby styled element so
+  // errors match the site's typography on ANY theme. The !important rules
+  // override whatever paragraph styles the AI-generated CSS might apply.
+  var _errStyled = false;
+  function _injectErrorCSS() {
+    if (_errStyled) return;
+    _errStyled = true;
+    var s = document.createElement('style');
+    s.id = 'vx-form-errors';
+    s.textContent =
+      '@keyframes vxErrIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}'
+      + '.field-error{'
+      +   'margin:8px 0 0!important;padding:0!important;'
+      +   'background:none!important;border:none!important;box-shadow:none!important;'
+      +   'font-size:0.8125rem!important;font-weight:500!important;'
+      +   'line-height:1.4!important;letter-spacing:0.01em!important;'
+      +   'color:#dc2626!important;'
+      +   'display:flex!important;align-items:center!important;gap:6px!important;'
+      +   'animation:vxErrIn .2s ease-out both!important;'
+      +   'max-width:100%!important;box-sizing:border-box!important;'
+      + '}'
+      + '.field-error strong{font-weight:700!important}'
+      + '.field-error::before{'
+      +   'content:""!important;flex-shrink:0!important;'
+      +   'width:6px!important;height:6px!important;'
+      +   'border-radius:50%!important;background:currentColor!important;'
+      + '}';
+    document.head.appendChild(s);
+  }
+
+  // Read the actual computed font from the form — VoxelSite sites apply
+  // fonts via Tailwind classes (.font-body) on individual elements, not on
+  // <body>, so `inherit` falls through to the browser's default serif.
+  // We probe a label or input inside the form, then fall back to body.
+  function _resolveFont(form) {
+    var probe = form.querySelector('label') || form.querySelector('input') || document.body;
+    return window.getComputedStyle(probe).fontFamily;
+  }
+
+  function createFieldError(message, id, form) {
+    _injectErrorCSS();
+    var el = document.createElement('p');
+    el.className = 'field-error';
+    el.setAttribute('role', 'alert');
+    if (id) el.id = id;
+    // Bold the field name portion: "Email Address is required" → "<strong>Email Address</strong> is required"
+    var parts = message.match(/^(.+?)(\s+(?:is|must|should|cannot|can't|has|are)\b.+)$/i);
+    if (parts) {
+      var strong = document.createElement('strong');
+      strong.textContent = parts[1];
+      el.appendChild(strong);
+      el.appendChild(document.createTextNode(parts[2]));
+    } else {
+      el.textContent = message;
+    }
+    // Set the font explicitly — the only inline style we need.
+    el.style.fontFamily = _resolveFont(form || document.body);
+    return el;
+  }
+
   // ── Bind AJAX submission to each form ──
   Array.prototype.forEach.call(forms, function(form) {
     // Create an aria-live region for screen readers
@@ -124,9 +186,12 @@
       btn.textContent = 'Sending...';
       btn.disabled = true;
 
-      // Clear previous errors
+      // Clear previous errors + reset field styling
       form.querySelectorAll('.field-error').forEach(function(el) { el.remove(); });
-      form.querySelectorAll('[aria-invalid]').forEach(function(el) { el.removeAttribute('aria-invalid'); });
+      form.querySelectorAll('[aria-invalid]').forEach(function(el) {
+        el.removeAttribute('aria-invalid');
+        el.style.removeProperty('border-color');
+      });
 
       try {
         var res = await fetch(form.action, {
@@ -184,22 +249,38 @@
           Object.entries(data.errors).forEach(function(entry) {
             var field = entry[0], msg = entry[1];
             var el = form.querySelector('[name="' + field + '"]');
+            if (!el) {
+              // Multiselect: checkboxes use name="field[]" in HTML
+              el = form.querySelector('[name="' + field + '[]"]');
+            }
             if (el) {
               el.setAttribute('aria-invalid', 'true');
-              var err = document.createElement('p');
-              err.className = 'field-error';
-              err.setAttribute('role', 'alert');
-              err.id = 'error-' + field;
-              err.textContent = msg;
+              var isCheckable = (el.type === 'checkbox' || el.type === 'radio');
+              if (!isCheckable) {
+                el.style.borderColor = '#f87171';
+              }
+              var err = createFieldError(msg, 'error-' + field, form);
               el.setAttribute('aria-describedby', err.id);
-              el.parentNode.appendChild(err);
+              // For checkboxes/radios, insert after the entire group container
+              // (fieldset or wrapping div), not after an individual label.
+              var anchor = el;
+              if (isCheckable) {
+                anchor = el.closest('fieldset') || el.closest('[class*="group"]') || el.closest('div:has(input[type="' + el.type + '"])') || el.parentNode;
+                // Walk up to the outermost wrapper that contains all same-name inputs
+                while (anchor.parentNode && anchor.parentNode !== form && anchor.parentNode.querySelectorAll('[name="' + el.name + '"]').length > 0) {
+                  anchor = anchor.parentNode;
+                }
+              }
+              anchor.parentNode.insertBefore(err, anchor.nextSibling);
               if (!firstErrorField) firstErrorField = el;
             }
           });
 
-          // Focus first error field for accessibility
+          // Scroll to and focus the first error so the user sees what failed
           if (firstErrorField) {
-            firstErrorField.focus();
+            firstErrorField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Delay focus slightly so scrollIntoView finishes first
+            setTimeout(function() { firstErrorField.focus({ preventScroll: true }); }, 350);
           }
 
           btn.textContent = origText;
@@ -208,22 +289,19 @@
           // Announce to screen readers
           liveRegion.textContent = 'There were errors in your submission. Please correct them and try again.';
         } else {
-          var err = document.createElement('p');
-          err.className = 'field-error';
-          err.setAttribute('role', 'alert');
-          err.textContent = data.message || 'Something went wrong. Please try again.';
-          btn.parentNode.appendChild(err);
+          var err = createFieldError(data.message || 'Something went wrong. Please try again.', null, form);
+          err.style.setProperty('margin-top', '1rem', 'important');
+          btn.parentNode.insertBefore(err, btn.nextSibling);
           btn.textContent = origText;
           btn.disabled = false;
         }
       } catch (ex) {
-        var err = document.createElement('p');
-        err.className = 'field-error';
-        err.setAttribute('role', 'alert');
-        err.textContent = ex.message && !ex.message.includes('Failed to fetch')
+        var msg = ex.message && !ex.message.includes('Failed to fetch')
           ? ex.message
           : 'Network error. Please check your connection and try again.';
-        btn.parentNode.appendChild(err);
+        var err = createFieldError(msg, null, form);
+        err.style.setProperty('margin-top', '1rem', 'important');
+        btn.parentNode.insertBefore(err, btn.nextSibling);
         btn.textContent = origText;
         btn.disabled = false;
       }

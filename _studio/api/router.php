@@ -233,6 +233,10 @@ $routes = [
     ['POST',   '/site/reset',            'site.php',           true],
     ['POST',   '/site/reset-install',    'site.php',           true],
 
+    // Site graph (read-only)
+    ['GET',    '/site-graph',              'site-graph.php',    true],
+    ['GET',    '/site-graph/blast-radius', 'site-graph.php',    true],
+
     // Team
     ['GET',    '/team',                  'team.php',           true],
     ['POST',   '/team',                  'team.php',           true],

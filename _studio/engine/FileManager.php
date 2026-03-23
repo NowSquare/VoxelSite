@@ -953,8 +953,10 @@ SAFETY;
      *
      * The AI is still responsible for the HTML structure and CSS styling.
      * This file only handles behavior.
+     *
+     * Called unconditionally by PromptEngine after all writes.
      */
-    private function ensureShippedNavigation(): void
+    public function ensureShippedNavigation(): void
     {
         $dest = $this->assetsPath . '/js/navigation.js';
         $source = dirname(__DIR__) . '/static/navigation.js';
@@ -1629,6 +1631,48 @@ SAFETY;
 
         ksort($filesBySlug);
         return array_values($filesBySlug);
+    }
+
+    /**
+     * List all PHP partial files in the preview/_partials directory (recursive).
+     *
+     * Matches the recursive traversal pattern used in files.php (lines 453-470).
+     * Unlike listPreviewFiles() which only returns root-level page files,
+     * this method walks the entire _partials/ tree.
+     *
+     * @return array<int, array{path: string, name: string, size: int, modified: string}>
+     */
+    public function listPartialFiles(): array
+    {
+        $partialsDir = $this->previewPath . '/_partials';
+        if (!is_dir($partialsDir)) {
+            return [];
+        }
+
+        $files = [];
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($partialsDir, \FilesystemIterator::SKIP_DOTS)
+        );
+        foreach ($iterator as $item) {
+            if (!$item->isFile()) {
+                continue;
+            }
+            if (strtolower($item->getExtension()) !== 'php') {
+                continue;
+            }
+            $absolutePath = $item->getPathname();
+            $relativeTail = substr($absolutePath, strlen($partialsDir) + 1);
+            $relativePath = '_partials/' . str_replace('\\', '/', $relativeTail);
+            $files[] = [
+                'path'     => $relativePath,
+                'name'     => pathinfo($item->getFilename(), PATHINFO_FILENAME),
+                'size'     => (int) $item->getSize(),
+                'modified' => gmdate('Y-m-d\TH:i:s\Z', (int) $item->getMTime()),
+            ];
+        }
+
+        usort($files, fn($a, $b) => strcasecmp($a['path'], $b['path']));
+        return $files;
     }
 
     /**

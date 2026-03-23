@@ -144,7 +144,7 @@ export function renderCard(node) {
   return `
     <div class="vs-site-card ${node.isHomepage ? 'is-homepage' : ''} ${isSelected ? 'is-selected' : ''} ${isInferred ? 'is-inferred' : ''}"
          data-page-id="${escapeHtml(node.id)}"
-         title="${escapeHtml(node.slug ? '/' + node.slug : '/')}">
+         title="${escapeHtml(node.isHomepage ? '/' : '/' + node.slug)}">
       ${node.isHomepage ? '<span class="vs-site-card-star">★</span>' : ''}
       <span class="vs-site-card-label">${escapeHtml(node.label)}</span>
       ${isInferred ? '<span class="vs-site-card-inferred">ⁱ</span>' : ''}

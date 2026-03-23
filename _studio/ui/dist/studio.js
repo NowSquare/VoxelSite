@@ -3416,7 +3416,7 @@ ${s}
     `),r.length>0){l+='<div class="vs-site-tier vs-site-tier-l1">';for(let p of r)l+=_o(p);l+="</div>"}let u=(a?[a,...r]:r).filter(p=>p.children.length>0&&!$t.has(p.id));if(u.length>0){l+='<div class="vs-site-tier vs-site-tier-l2">';for(let p of u){l+=`<div class="vs-site-tier-group" data-parent-id="${b(p.id)}">`,l+=`<div class="vs-site-tier-group-label">${b(p.label)}</div>`,l+='<div class="vs-site-tier-group-cards">';let c=t?p.children.filter(v=>_n(v,t)):p.children;for(let v of c)if(l+=_o(v),v.children.length>0&&!$t.has(v.id)){let m=n(v),f=t?m.filter(y=>y.label.toLowerCase().includes(t)||y.slug.toLowerCase().includes(t)):m;if(f.length>0){l+='<div class="vs-site-tier-l3-inline">';for(let y of f)l+=_o(y);l+="</div>"}}l+="</div></div>"}l+="</div>"}return l+="</div>",l}function _o(e){let t=Fs()===e.id,s=e.hierarchySource==="inferred";return`
     <div class="vs-site-card ${e.isHomepage?"is-homepage":""} ${t?"is-selected":""} ${s?"is-inferred":""}"
          data-page-id="${b(e.id)}"
-         title="${b(e.slug?"/"+e.slug:"/")}">
+         title="${b(e.isHomepage?"/":"/"+e.slug)}">
       ${e.isHomepage?'<span class="vs-site-card-star">\u2605</span>':""}
       <span class="vs-site-card-label">${b(e.label)}</span>
       ${s?'<span class="vs-site-card-inferred">\u2071</span>':""}

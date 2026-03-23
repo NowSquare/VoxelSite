@@ -2149,6 +2149,266 @@ if (str_starts_with($path, '/cards/')) {
 
 
 // ═══════════════════════════════════════════
+//  Site Graph
+// ═══════════════════════════════════════════
+
+// Build a convincing graph from the Studioform demo site.
+// Mirrors the shape of SiteGraph::toArray() + SiteGraph::summary().
+
+if ($path === '/site-graph') {
+    $now = time();
+
+    // ── Pages ──
+    $pages = [
+        ['file' => 'index.php',     'slug' => 'index',     'title' => 'Home',      'homepage' => true,  'order' => 0, 'size' => 20546],
+        ['file' => 'about.php',     'slug' => 'about',     'title' => 'About',     'homepage' => false, 'order' => 1, 'size' => 9378],
+        ['file' => 'services.php',  'slug' => 'services',  'title' => 'Services',  'homepage' => false, 'order' => 2, 'size' => 13319],
+        ['file' => 'portfolio.php', 'slug' => 'portfolio', 'title' => 'Portfolio', 'homepage' => false, 'order' => 3, 'size' => 10231],
+        ['file' => 'contact.php',   'slug' => 'contact',   'title' => 'Contact',   'homepage' => false, 'order' => 4, 'size' => 10028],
+    ];
+
+    $partials = [
+        ['file' => '_partials/header.php', 'label' => 'header.php'],
+        ['file' => '_partials/nav.php',    'label' => 'nav.php'],
+        ['file' => '_partials/footer.php', 'label' => 'footer.php'],
+        ['file' => '_partials/schema.php', 'label' => 'schema.php'],
+    ];
+
+    $tokens = [
+        '--color-bg'     => '#fafaf8',
+        '--color-ink'    => '#111110',
+        '--color-accent' => '#1a1a1a',
+        '--color-ink-mid'=> '#7a7974',
+        '--color-rule'   => '#e4e3de',
+        '--font-display' => "'Cormorant Garamond', Georgia, serif",
+    ];
+
+    $assets = [
+        'assets/css/style.css',
+        'assets/css/tailwind.css',
+        'assets/js/main.js',
+        'assets/js/navigation.js',
+        'assets/js/form-handler.js',
+        'assets/js/icon-resolver.js',
+    ];
+
+    // ── Build nodes ──
+    $nodes = [];
+    $edges = [];
+
+    foreach ($pages as $p) {
+        $id = 'page:' . $p['file'];
+        $nodes[] = [
+            'id'    => $id,
+            'type'  => 'page',
+            'label' => $p['title'],
+            'meta'  => [
+                'slug'        => $p['slug'],
+                'filePath'    => $p['file'],
+                'isHomepage'  => $p['homepage'],
+                'navOrder'    => $p['order'],
+                'level'       => 1,
+                'childCount'  => count($partials),
+                'parentPageId'    => null,
+                'hierarchySource' => null,
+                'size'        => $p['size'],
+            ],
+        ];
+    }
+
+    foreach ($partials as $pt) {
+        $id = 'partial:' . $pt['file'];
+        $nodes[] = [
+            'id'    => $id,
+            'type'  => 'partial',
+            'label' => $pt['label'],
+            'meta'  => ['filePath' => $pt['file']],
+        ];
+    }
+
+    foreach ($pages as $p) {
+        $urlPath = $p['homepage'] ? '/' : '/' . $p['slug'];
+        $routeId = 'route:' . $urlPath;
+        $nodes[] = [
+            'id'    => $routeId,
+            'type'  => 'route',
+            'label' => $urlPath,
+            'meta'  => ['method' => 'GET', 'urlPath' => $urlPath],
+        ];
+    }
+
+    foreach ($tokens as $prop => $value) {
+        $nodes[] = [
+            'id'    => 'token:' . $prop,
+            'type'  => 'token',
+            'label' => $prop,
+            'meta'  => ['property' => $prop, 'value' => $value],
+        ];
+    }
+
+    foreach ($assets as $assetPath) {
+        $nodes[] = [
+            'id'    => 'asset:' . $assetPath,
+            'type'  => 'asset',
+            'label' => basename($assetPath),
+            'meta'  => ['filePath' => $assetPath],
+        ];
+    }
+
+    // ── Build edges ──
+
+    // Pages include partials
+    foreach ($pages as $p) {
+        $pageId = 'page:' . $p['file'];
+        foreach ($partials as $pt) {
+            $edges[] = ['source' => $pageId, 'target' => 'partial:' . $pt['file'], 'type' => 'includes', 'meta' => []];
+        }
+    }
+
+    // Routes serve pages
+    foreach ($pages as $p) {
+        $urlPath = $p['homepage'] ? '/' : '/' . $p['slug'];
+        $edges[] = ['source' => 'route:' . $urlPath, 'target' => 'page:' . $p['file'], 'type' => 'serves', 'meta' => []];
+    }
+
+    // Pages link to routes (cross-page navigation)
+    foreach ($pages as $p) {
+        $pageId = 'page:' . $p['file'];
+        foreach ($pages as $target) {
+            if ($target['file'] === $p['file']) continue;
+            $targetUrl = $target['homepage'] ? '/' : '/' . $target['slug'];
+            $edges[] = ['source' => $pageId, 'target' => 'route:' . $targetUrl, 'type' => 'links_to', 'meta' => []];
+        }
+    }
+
+    // style.css consumes all tokens
+    foreach ($tokens as $prop => $_) {
+        $edges[] = ['source' => 'asset:assets/css/style.css', 'target' => 'token:' . $prop, 'type' => 'consumes_token', 'meta' => []];
+    }
+
+    // Pages embed assets (CSS/JS)
+    foreach ($pages as $p) {
+        $pageId = 'page:' . $p['file'];
+        foreach ($assets as $assetPath) {
+            $edges[] = ['source' => $pageId, 'target' => 'asset:' . $assetPath, 'type' => 'embeds_asset', 'meta' => []];
+        }
+    }
+
+    // Contact page has a form
+    $nodes[] = ['id' => 'form:submit.php:0', 'type' => 'form', 'label' => 'Contact Form', 'meta' => ['action' => 'submit.php']];
+    $edges[] = ['source' => 'page:contact.php', 'target' => 'form:submit.php:0', 'type' => 'embeds_form', 'meta' => []];
+
+    $summary = [
+        'pages'    => count($pages),
+        'partials' => count($partials),
+        'routes'   => count($pages),
+        'tokens'   => count($tokens),
+        'forms'    => 1,
+        'assets'   => count($assets),
+        'edges'    => count($edges),
+    ];
+
+    jsonResponse(['ok' => true, 'data' => [
+        'summary'       => $summary,
+        'nodes'         => $nodes,
+        'edges'         => $edges,
+        'built_at'      => gmdate('Y-m-d\TH:i:s\Z', $now),
+        'build_time_ms' => 4.2,
+    ]]);
+    return;
+}
+
+if ($path === '/site-graph/blast-radius') {
+    $nodeId = trim((string) ($_GET['node'] ?? ''));
+
+    if ($nodeId === '') {
+        jsonResponse(['ok' => false, 'error' => [
+            'code'    => 'validation',
+            'message' => 'Missing required query parameter: node',
+        ]], 400);
+        return;
+    }
+
+    // Demo pages — used for blast-radius responses
+    $demoPages = [
+        'page:index.php'     => ['id' => 'page:index.php',     'type' => 'page', 'label' => 'Home',      'meta' => ['slug' => 'index',     'filePath' => 'index.php',     'isHomepage' => true,  'navOrder' => 0, 'level' => 1]],
+        'page:about.php'     => ['id' => 'page:about.php',     'type' => 'page', 'label' => 'About',     'meta' => ['slug' => 'about',     'filePath' => 'about.php',     'isHomepage' => false, 'navOrder' => 1, 'level' => 1]],
+        'page:services.php'  => ['id' => 'page:services.php',  'type' => 'page', 'label' => 'Services',  'meta' => ['slug' => 'services',  'filePath' => 'services.php',  'isHomepage' => false, 'navOrder' => 2, 'level' => 1]],
+        'page:portfolio.php' => ['id' => 'page:portfolio.php', 'type' => 'page', 'label' => 'Portfolio', 'meta' => ['slug' => 'portfolio', 'filePath' => 'portfolio.php', 'isHomepage' => false, 'navOrder' => 3, 'level' => 1]],
+        'page:contact.php'   => ['id' => 'page:contact.php',   'type' => 'page', 'label' => 'Contact',   'meta' => ['slug' => 'contact',   'filePath' => 'contact.php',   'isHomepage' => false, 'navOrder' => 4, 'level' => 1]],
+    ];
+
+    $allPages = array_values($demoPages);
+    $totalPages = count($allPages);
+
+    // Determine affected pages based on node type
+    $affected = [];
+    $type = explode(':', $nodeId, 2)[0] ?? '';
+
+    if ($type === 'page') {
+        // A page change only affects itself
+        $affected = isset($demoPages[$nodeId]) ? [$demoPages[$nodeId]] : [];
+    } elseif ($type === 'partial' || $type === 'asset') {
+        // Partials and assets are shared by all pages
+        $affected = $allPages;
+    } elseif ($type === 'route') {
+        // A route serves one page
+        $urlPath = substr($nodeId, 6); // strip 'route:'
+        foreach ($demoPages as $page) {
+            $pageUrl = $page['meta']['isHomepage'] ? '/' : '/' . $page['meta']['slug'];
+            if ($pageUrl === $urlPath) {
+                $affected = [$page];
+                break;
+            }
+        }
+    } elseif ($type === 'token') {
+        // Tokens are in the global stylesheet → all pages
+        $affected = $allPages;
+    } elseif ($type === 'form') {
+        // Form only affects the contact page
+        $affected = [
+            $demoPages['page:contact.php'],
+        ];
+    }
+
+    // Build target node
+    $target = null;
+    if (isset($demoPages[$nodeId])) {
+        $target = $demoPages[$nodeId];
+    } elseif (str_starts_with($nodeId, 'partial:')) {
+        $target = ['id' => $nodeId, 'type' => 'partial', 'label' => basename(substr($nodeId, 8)), 'meta' => ['filePath' => substr($nodeId, 8)]];
+    } elseif (str_starts_with($nodeId, 'route:')) {
+        $urlPath = substr($nodeId, 6);
+        $target = ['id' => $nodeId, 'type' => 'route', 'label' => $urlPath, 'meta' => ['method' => 'GET', 'urlPath' => $urlPath]];
+    } elseif (str_starts_with($nodeId, 'token:')) {
+        $prop = substr($nodeId, 6);
+        $target = ['id' => $nodeId, 'type' => 'token', 'label' => $prop, 'meta' => ['property' => $prop]];
+    } elseif (str_starts_with($nodeId, 'asset:')) {
+        $target = ['id' => $nodeId, 'type' => 'asset', 'label' => basename(substr($nodeId, 6)), 'meta' => ['filePath' => substr($nodeId, 6)]];
+    } elseif (str_starts_with($nodeId, 'form:')) {
+        $target = ['id' => $nodeId, 'type' => 'form', 'label' => 'Contact Form', 'meta' => ['action' => 'submit.php']];
+    }
+
+    if (!$target) {
+        jsonResponse(['ok' => false, 'error' => [
+            'code'    => 'not_found',
+            'message' => "Node not found in graph: {$nodeId}",
+        ]], 404);
+        return;
+    }
+
+    jsonResponse(['ok' => true, 'data' => [
+        'target'         => $target,
+        'affected_pages' => $affected,
+        'affected_count' => count($affected),
+        'total_pages'    => $totalPages,
+        'is_global'      => count($affected) === $totalPages,
+    ]]);
+    return;
+}
+
+
+// ═══════════════════════════════════════════
 //  Team
 // ═══════════════════════════════════════════
 

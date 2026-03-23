@@ -276,6 +276,7 @@ class DemoMode
         '/notes/search',                   // Search notes
         '/cards',                          // List active cards (Board)
         '/cards/archived',                 // List archived cards (Board)
+        '/site-graph',                     // Site graph index
     ];
 
     /**
@@ -291,6 +292,7 @@ class DemoMode
         '/agentic/actions/',        // /agentic/actions/:id, /agentic/actions/:id/records, etc.
         '/notes/',                  // /notes/:id (detail view)
         '/cards/',                  // /cards/:id (individual card)
+        '/site-graph/',             // /site-graph/blast-radius
     ];
 
     /**

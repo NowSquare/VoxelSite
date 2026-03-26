@@ -2149,6 +2149,23 @@ if (str_starts_with($path, '/cards/')) {
 
 
 // ═══════════════════════════════════════════
+//  Site Control / Site Graph (shared page data)
+// ═══════════════════════════════════════════
+
+// Single source of truth for demo page definitions.
+// Used by: /site-graph, /site-graph/blast-radius, /site-control/nav-preflight.
+// Same pattern as $demoActions above.
+
+$demoSitePages = [
+    ['file' => 'index.php',     'slug' => 'index',     'title' => 'Home',      'homepage' => true,  'order' => 0, 'size' => 20546],
+    ['file' => 'about.php',     'slug' => 'about',     'title' => 'About',     'homepage' => false, 'order' => 1, 'size' => 9378],
+    ['file' => 'services.php',  'slug' => 'services',  'title' => 'Services',  'homepage' => false, 'order' => 2, 'size' => 13319],
+    ['file' => 'portfolio.php', 'slug' => 'portfolio', 'title' => 'Portfolio', 'homepage' => false, 'order' => 3, 'size' => 10231],
+    ['file' => 'contact.php',   'slug' => 'contact',   'title' => 'Contact',   'homepage' => false, 'order' => 4, 'size' => 10028],
+];
+
+
+// ═══════════════════════════════════════════
 //  Site Graph
 // ═══════════════════════════════════════════
 
@@ -2158,14 +2175,8 @@ if (str_starts_with($path, '/cards/')) {
 if ($path === '/site-graph') {
     $now = time();
 
-    // ── Pages ──
-    $pages = [
-        ['file' => 'index.php',     'slug' => 'index',     'title' => 'Home',      'homepage' => true,  'order' => 0, 'size' => 20546],
-        ['file' => 'about.php',     'slug' => 'about',     'title' => 'About',     'homepage' => false, 'order' => 1, 'size' => 9378],
-        ['file' => 'services.php',  'slug' => 'services',  'title' => 'Services',  'homepage' => false, 'order' => 2, 'size' => 13319],
-        ['file' => 'portfolio.php', 'slug' => 'portfolio', 'title' => 'Portfolio', 'homepage' => false, 'order' => 3, 'size' => 10231],
-        ['file' => 'contact.php',   'slug' => 'contact',   'title' => 'Contact',   'homepage' => false, 'order' => 4, 'size' => 10028],
-    ];
+    // ── Pages (from shared $demoSitePages) ──
+    $pages = $demoSitePages;
 
     $partials = [
         ['file' => '_partials/header.php', 'label' => 'header.php'],
@@ -2329,14 +2340,23 @@ if ($path === '/site-graph/blast-radius') {
         return;
     }
 
-    // Demo pages — used for blast-radius responses
-    $demoPages = [
-        'page:index.php'     => ['id' => 'page:index.php',     'type' => 'page', 'label' => 'Home',      'meta' => ['slug' => 'index',     'filePath' => 'index.php',     'isHomepage' => true,  'navOrder' => 0, 'level' => 1]],
-        'page:about.php'     => ['id' => 'page:about.php',     'type' => 'page', 'label' => 'About',     'meta' => ['slug' => 'about',     'filePath' => 'about.php',     'isHomepage' => false, 'navOrder' => 1, 'level' => 1]],
-        'page:services.php'  => ['id' => 'page:services.php',  'type' => 'page', 'label' => 'Services',  'meta' => ['slug' => 'services',  'filePath' => 'services.php',  'isHomepage' => false, 'navOrder' => 2, 'level' => 1]],
-        'page:portfolio.php' => ['id' => 'page:portfolio.php', 'type' => 'page', 'label' => 'Portfolio', 'meta' => ['slug' => 'portfolio', 'filePath' => 'portfolio.php', 'isHomepage' => false, 'navOrder' => 3, 'level' => 1]],
-        'page:contact.php'   => ['id' => 'page:contact.php',   'type' => 'page', 'label' => 'Contact',   'meta' => ['slug' => 'contact',   'filePath' => 'contact.php',   'isHomepage' => false, 'navOrder' => 4, 'level' => 1]],
-    ];
+    // Demo pages — derived from shared $demoSitePages
+    $demoPages = [];
+    foreach ($demoSitePages as $p) {
+        $id = 'page:' . $p['file'];
+        $demoPages[$id] = [
+            'id'    => $id,
+            'type'  => 'page',
+            'label' => $p['title'],
+            'meta'  => [
+                'slug'       => $p['slug'],
+                'filePath'   => $p['file'],
+                'isHomepage' => $p['homepage'],
+                'navOrder'   => $p['order'],
+                'level'      => 1,
+            ],
+        ];
+    }
 
     $allPages = array_values($demoPages);
     $totalPages = count($allPages);
@@ -2403,6 +2423,89 @@ if ($path === '/site-graph/blast-radius') {
         'affected_count' => count($affected),
         'total_pages'    => $totalPages,
         'is_global'      => count($affected) === $totalPages,
+    ]]);
+    return;
+}
+
+
+// ═══════════════════════════════════════════
+//  Site Control — Nav Preflight
+// ═══════════════════════════════════════════
+
+// Mirrors GET /site-control/nav-preflight from site-control.php.
+// Derives nav tree from shared $demoSitePages, same source as /site-graph.
+
+if ($path === '/site-control/nav-preflight') {
+    $pageId = trim($_GET['pageId'] ?? '');
+
+    if ($pageId === '') {
+        jsonResponse(['ok' => false, 'error' => [
+            'code'    => 'missing_field',
+            'message' => 'pageId is required.',
+        ]], 400);
+        return;
+    }
+
+    // Resolve pageId to a demo page
+    $filePath = str_starts_with($pageId, 'page:') ? substr($pageId, 5) : $pageId;
+    $foundPage = null;
+    foreach ($demoSitePages as $p) {
+        if ($p['file'] === $filePath) {
+            $foundPage = $p;
+            break;
+        }
+    }
+
+    if (!$foundPage) {
+        jsonResponse(['ok' => false, 'error' => [
+            'code'    => 'page_not_found',
+            'message' => "Page '{$pageId}' not found.",
+        ]], 404);
+        return;
+    }
+
+    $isHomepage = $foundPage['homepage'];
+    $pageHref = $isHomepage ? '/' : '/' . $foundPage['slug'];
+
+    // Build navLinks from $demoSitePages (all root-level, canonical)
+    $navLinks = [];
+    foreach ($demoSitePages as $p) {
+        $entry = [
+            'href'  => $p['homepage'] ? '/' : '/' . $p['slug'],
+            'label' => $p['title'],
+        ];
+        if ($p['homepage']) {
+            $entry['home'] = true;
+        }
+        $navLinks[] = $entry;
+    }
+
+    // Compute movable tree (exclude pinned Home)
+    $movableTree = array_values(array_filter($navLinks, fn($e) => empty($e['home'])));
+
+    // Compute current position (matching NavLinksParser::findPosition shape)
+    $movableIndex = 0;
+    $currentPosition = null;
+    foreach ($navLinks as $entry) {
+        if (!empty($entry['home'])) continue;
+        if ($entry['href'] === $pageHref) {
+            $currentPosition = [
+                'parentHref'   => null,
+                'index'        => $movableIndex,
+                'siblingCount' => count($movableTree),
+            ];
+            break;
+        }
+        $movableIndex++;
+    }
+
+    jsonResponse(['ok' => true, 'data' => [
+        'navStatus'       => 'canonical',
+        'isInNav'         => true,
+        'isHomepage'      => $isHomepage,
+        'currentPosition' => $currentPosition,
+        'navTree'         => $movableTree,
+        'hasHomeEntry'    => true,
     ]]);
     return;
 }

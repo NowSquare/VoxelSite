@@ -277,6 +277,7 @@ class DemoMode
         '/cards',                          // List active cards (Board)
         '/cards/archived',                 // List archived cards (Board)
         '/site-graph',                     // Site graph index
+        '/site-control/nav-preflight',     // Move panel preflight (nav tree)
     ];
 
     /**

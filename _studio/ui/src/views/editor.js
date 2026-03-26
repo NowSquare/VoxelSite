@@ -177,7 +177,7 @@ async function initEditorPage() {
     } catch { /* ignore quota errors */ }
   };
 
-  // Make accessible for cleanup on route change
+  // Make accessible for cleanup on route change + cross-workspace reconciliation
   window.__vsEditorPage = {
     dispose: () => {
       persistEditorState();   // ← save before teardown
@@ -186,7 +186,72 @@ async function initEditorPage() {
         editorState.monacoInstance.dispose();
         editorState.monacoInstance = null;
       }
-    }
+    },
+
+    /**
+     * Cross-workspace reconciliation: a file was moved/renamed.
+     * If the old path is open in a tab, remap it to the new path and reload content.
+     * Called by Site Control after successful URL rename or structural move.
+     */
+    reconcileMove: async (oldPath, newPath) => {
+      if (editorState.disposed) return;
+      const tab = editorState.openTabs.find(t => t.path === oldPath);
+      if (!tab) return;
+
+      // Remap the tab's path
+      tab.path = newPath;
+      if (editorState.activeTab === oldPath) {
+        editorState.activeTab = newPath;
+      }
+
+      // Reload content from the new path
+      const { ok, data } = await api.get(`/files/content?path=${encodeURIComponent(newPath)}`);
+      if (ok && typeof data?.content === 'string') {
+        tab.baseline = data.content;
+        tab._buffer = data.content;
+        tab.dirty = false;
+        if (editorState.activeTab === newPath && editorState.monacoInstance) {
+          setEditorContent(data.content, newPath);
+        }
+      }
+
+      await loadFileTree();
+      renderTabs();
+      renderTree();
+      updateFileInfo();
+      updateSaveState();
+      persistEditorState();
+    },
+
+    /**
+     * Cross-workspace reconciliation: a file was deleted.
+     * If the path is open in a tab, close it silently (no dirty prompt — file is gone).
+     * Called by Site Control after successful page delete.
+     */
+    reconcileDelete: async (path) => {
+      if (editorState.disposed) return;
+      const idx = editorState.openTabs.findIndex(t => t.path === path);
+      if (idx === -1) return;
+
+      editorState.openTabs.splice(idx, 1);
+
+      if (editorState.activeTab === path) {
+        const nextTab = editorState.openTabs[Math.min(idx, editorState.openTabs.length - 1)];
+        if (nextTab) {
+          await switchToTab(nextTab.path);
+        } else {
+          editorState.activeTab = null;
+          showEmptyState();
+          updateFileInfo();
+          updateSaveState();
+        }
+      }
+
+      await loadFileTree();
+      renderTabs();
+      renderTree();
+      persistEditorState();
+    },
   };
 
   const treeEl = document.getElementById('editor-tree');
@@ -868,13 +933,34 @@ async function initEditorPage() {
           e.stopPropagation();
           const item = btn.closest('.vs-tree-item');
           const path = item.dataset.folder;
-          if (editorState.expandedFolders.has(path)) {
+          if (!path) return;
+
+          const wasExpanded = editorState.expandedFolders.has(path);
+          if (wasExpanded) {
             editorState.expandedFolders.delete(path);
           } else {
             editorState.expandedFolders.add(path);
           }
+          const nowExpanded = !wasExpanded;
+
+          // Toggle chevron on the DOM element directly
+          const toggle = item.querySelector('.vs-tree-folder-toggle');
+          if (toggle) toggle.setAttribute('data-expanded', String(nowExpanded));
+
+          // Toggle children visibility
+          const children = item.nextElementSibling;
+          if (children && children.classList.contains('vs-tree-folder-children')) {
+            children.setAttribute('data-collapsed', String(!nowExpanded));
+            children.style.display = nowExpanded ? '' : 'none';
+          }
+
+          // Swap folder icon
+          const iconEl = item.querySelector('.vs-tree-item-icon');
+          if (iconEl) {
+            iconEl.innerHTML = nowExpanded ? (icons.folderOpen || icons.folder) : icons.folder;
+          }
+
           persistEditorState();
-          renderTree();
         });
       });
     };
@@ -891,13 +977,20 @@ async function initEditorPage() {
       header.dataset.bound = "true";
       header.addEventListener('click', () => {
         const sectionId = header.dataset.section;
+        const section = header.closest('.vs-explorer-section');
+        const treeEl = section?.querySelector('.vs-editor-tree');
+        if (!section || !treeEl) return;
+
         if (editorState.expandedSections.has(sectionId)) {
           editorState.expandedSections.delete(sectionId);
+          header.classList.remove('is-expanded');
+          treeEl.style.display = 'none';
         } else {
           editorState.expandedSections.add(sectionId);
+          header.classList.add('is-expanded');
+          treeEl.style.display = 'block';
         }
         persistEditorState();
-        renderTree();
       });
     });
   };

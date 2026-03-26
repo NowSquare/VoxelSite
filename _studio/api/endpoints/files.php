@@ -178,8 +178,8 @@ if ($method === 'PUT' && $path === '/files/content') {
             $fileManager->writeFile($editablePath, $content);
         }
 
-        // Keep the page registry in sync when editing top-level page PHP files.
-        if (preg_match('/^[A-Za-z0-9._-]+\.php$/', $editablePath) === 1) {
+        // Keep the page registry in sync when editing any preview page PHP file.
+        if (isPreviewPagePhp($editablePath)) {
             $fileManager->syncPageRegistry();
         }
 
@@ -228,6 +228,8 @@ if ($method === 'POST' && $path === '/files/create') {
     // Resolve the absolute directory where this file would live
     $studioRoot = dirname(__DIR__, 2);
     $projectRoot = dirname(__DIR__, 3);
+    $previewDir = getenv('VS_TEST_PREVIEW_DIR') ?: $studioRoot . '/preview';
+    $assetsDir  = getenv('VS_TEST_ASSETS_DIR') ?: $projectRoot . '/assets';
 
     if (str_starts_with($editablePath, '_prompts/')) {
         jsonResponse(['ok' => false, 'error' => [
@@ -238,9 +240,9 @@ if ($method === 'POST' && $path === '/files/create') {
     }
 
     if (str_starts_with($editablePath, 'assets/')) {
-        $absolutePath = $projectRoot . '/' . $editablePath;
+        $absolutePath = $assetsDir . '/' . substr($editablePath, 7);
     } else {
-        $absolutePath = $studioRoot . '/preview/' . $editablePath;
+        $absolutePath = $previewDir . '/' . $editablePath;
     }
 
     // Prevent overwriting existing files
@@ -282,8 +284,8 @@ if ($method === 'POST' && $path === '/files/create') {
         return;
     }
 
-    // Sync page registry if it's a top-level PHP file
-    if (preg_match('/^[A-Za-z0-9._-]+\.php$/', $editablePath) === 1) {
+    // Sync page registry if it's a preview page PHP file
+    if (isPreviewPagePhp($editablePath)) {
         $fileManager->syncPageRegistry();
     }
 
@@ -406,8 +408,8 @@ if ($method === 'DELETE' && $path === '/files') {
             return;
         }
 
-        // Sync page registry if it was a top-level PHP page
-        if (preg_match('/^[A-Za-z0-9._-]+\.php$/', $editablePath) === 1) {
+        // Sync page registry if it was a preview page PHP file
+        if (isPreviewPagePhp($editablePath)) {
             $fileManager->syncPageRegistry();
         }
 
@@ -437,16 +439,29 @@ function listEditableFiles(): array
 {
     $studioRoot = dirname(__DIR__, 2);
     $projectRoot = dirname(__DIR__, 3);
-    $previewRoot = $studioRoot . '/preview';
-    $assetsRoot = $projectRoot . '/assets';
+    $previewRoot = getenv('VS_TEST_PREVIEW_DIR') ?: $studioRoot . '/preview';
+    $assetsRoot = getenv('VS_TEST_ASSETS_DIR') ?: $projectRoot . '/assets';
     $files = [];
 
-    $pageFiles = glob($previewRoot . '/*.php') ?: [];
-    foreach ($pageFiles as $absolutePath) {
-        if (!is_file($absolutePath)) {
-            continue;
-        }
-        $relativePath = basename($absolutePath);
+    // Recursive page discovery — nested pages like work/about.php are first-class
+    $pageIterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($previewRoot, FilesystemIterator::SKIP_DOTS)
+    );
+    foreach ($pageIterator as $item) {
+        if (!$item->isFile()) continue;
+        if (strtolower($item->getExtension()) !== 'php') continue;
+
+        $absolutePath = $item->getPathname();
+        $relativePath = substr($absolutePath, strlen($previewRoot) + 1);
+        $relativePath = str_replace('\\', '/', $relativePath);
+
+        // Skip _partials/ — those are listed separately below
+        if (str_starts_with($relativePath, '_partials/')) continue;
+        // Skip hidden/internal dirs
+        if (str_starts_with($relativePath, '_') || str_starts_with($relativePath, '.')) continue;
+        // Skip items inside hidden/internal subdirs (e.g. .git/foo.php)
+        if (preg_match('#(^|/)[\._ ]#', $relativePath)) continue;
+
         $files[] = buildEditableFileMeta($relativePath, $absolutePath, 'page');
     }
 
@@ -630,8 +645,12 @@ function normalizeEditablePath(string $rawPath): ?string
         return null;
     }
 
-    if (preg_match('/^[A-Za-z0-9._-]+\.php$/', $path) === 1) {
-        return $path;
+    // Preview page PHP files — root or nested (e.g. about.php, work/about.php)
+    if (preg_match('#^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*\.php$#', $path) === 1) {
+        // Reject paths that look like partials or prompts entering through this gate
+        if (!str_starts_with($path, '_')) {
+            return $path;
+        }
     }
     if (preg_match('#^_partials/[A-Za-z0-9._/-]+\.php$#', $path) === 1) {
         return $path;
@@ -654,6 +673,8 @@ function resolveEditableAbsolutePath(string $relativePath): ?string
 {
     $studioRoot = dirname(__DIR__, 2);
     $projectRoot = dirname(__DIR__, 3);
+    $previewDir = getenv('VS_TEST_PREVIEW_DIR') ?: $studioRoot . '/preview';
+    $assetsDir  = getenv('VS_TEST_ASSETS_DIR') ?: $projectRoot . '/assets';
 
     if (str_starts_with($relativePath, '_root/')) {
         // Root config files live directly in the project root
@@ -661,8 +682,8 @@ function resolveEditableAbsolutePath(string $relativePath): ?string
         $absolute = $projectRoot . '/' . $filename;
         $allowedRoot = $projectRoot;
     } elseif (str_starts_with($relativePath, 'assets/')) {
-        $absolute = $projectRoot . '/' . $relativePath;
-        $allowedRoot = $projectRoot . '/assets';
+        $absolute = $assetsDir . '/' . substr($relativePath, 7);
+        $allowedRoot = $assetsDir;
     } elseif (str_starts_with($relativePath, '_prompts/')) {
         $relativeTail = substr($relativePath, 9);
         $customPath = $studioRoot . '/custom_prompts/' . $relativeTail;
@@ -674,8 +695,8 @@ function resolveEditableAbsolutePath(string $relativePath): ?string
             $allowedRoot = $studioRoot . '/prompts';
         }
     } else {
-        $absolute = $studioRoot . '/preview/' . $relativePath;
-        $allowedRoot = $studioRoot . '/preview';
+        $absolute = $previewDir . '/' . $relativePath;
+        $allowedRoot = $previewDir;
     }
 
     if (!is_file($absolute)) {
@@ -697,4 +718,21 @@ function resolveEditableAbsolutePath(string $relativePath): ?string
     }
 
     return null;
+}
+
+/**
+ * Check if a normalized editable path is a preview page PHP file
+ * (as opposed to a partial, asset, prompt, or config file).
+ *
+ * Matches: about.php, work/about.php, blog/2025/post.php
+ * Rejects: _partials/nav.php, _prompts/foo.md, assets/css/style.css
+ */
+function isPreviewPagePhp(string $path): bool
+{
+    if (!str_ends_with($path, '.php')) return false;
+    if (str_starts_with($path, '_partials/')) return false;
+    if (str_starts_with($path, '_prompts/')) return false;
+    if (str_starts_with($path, 'assets/')) return false;
+    if (str_starts_with($path, '_root/')) return false;
+    return true;
 }

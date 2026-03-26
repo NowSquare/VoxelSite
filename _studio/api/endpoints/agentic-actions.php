@@ -280,7 +280,7 @@ if ($method === 'GET' && isset($params['id']) && preg_match('#^/agentic/actions/
 //  PUT /agentic/actions/:id — Update action
 // ═══════════════════════════════════════════
 
-if ($method === 'PUT' && isset($params['id'])) {
+if ($method === 'PUT' && isset($params['id']) && !isset($params['rid'])) {
     $id = $params['id'];
     $body = getJsonBody();
 

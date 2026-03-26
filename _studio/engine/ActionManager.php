@@ -1712,7 +1712,8 @@ class ActionManager
 
             $publicAction = [
                 'id' => $action['id'],
-                'name' => $action['bar_button_label'] ?? $action['name'],
+                'name' => $action['name'],
+                'button_label' => $action['bar_button_label'] ?? '',
                 'description' => $action['description'] ?? '',
                 'icon' => $action['icon'] ?? 'circle',
                 'fields' => [],
@@ -1990,40 +1991,42 @@ class ActionManager
         $guestEmail = $data[$emailField] ?? null;
 
         if (empty($guestEmail) || !filter_var($guestEmail, FILTER_VALIDATE_EMAIL)) {
-            return; // No valid guest email — skip silently
+            // Even without a guest email, try to notify the owner
+            $this->sendOwnerNotification($action, $data, $code, null);
+            return;
         }
 
         $mailer = Mailer::getInstance();
         $siteName = $this->getSiteName();
         $actionName = $action['name'] ?? $action['id'];
 
-        // Build subject
-        $subject = "{$actionName} Confirmed — {$code}";
+        // Subject: clean, generic — just the action name and request code
+        $subject = "{$actionName} — Request {$code}";
 
-        // Build body with field summary
-        $body = "Hi,\n\n";
-        $body .= "Your {$actionName} has been confirmed.\n\n";
-        $body .= "Confirmation Code: {$code}\n";
-        $body .= "Keep this code for your records.\n\n";
-        $body .= "Details:\n";
+        // Body: confirmation statement, then field summary, then site name
+        $body = "This is a confirmation of your request {$code}.\n\n";
+        $body .= "Details:\n\n";
 
         foreach ($action['fields'] ?? [] as $field) {
             $name = $field['name'];
             if (isset($data[$name]) && $name !== $emailField) {
                 $label = $field['label'] ?? $name;
                 $value = is_array($data[$name]) ? implode(', ', $data[$name]) : (string) $data[$name];
-                $body .= "  {$label}: {$value}\n";
+                $body .= "{$label}: {$value}\n";
             }
         }
 
-        $body .= "\n" . ($action['responses']['email_footer'] ?? "Thank you for choosing {$siteName}.");
+        // Sign off with site name only — no filler phrases
+        if ($siteName) {
+            $body .= "\n" . $siteName;
+        }
 
         $mailer->send($guestEmail, $subject, $body, [
             'from_name' => $siteName,
         ]);
 
-        // Owner notification
-        $this->sendOwnerNotification($action, $data, $code);
+        // Owner notification (pass guest email for reply-to)
+        $this->sendOwnerNotification($action, $data, $code, $guestEmail);
     }
 
     /**
@@ -2032,14 +2035,18 @@ class ActionManager
      * Reads the owner email from Settings. If not configured, skips.
      * Summarizes the new record so the owner can act on it.
      */
-    private function sendOwnerNotification(array $action, array $data, string $code): void
+    private function sendOwnerNotification(array $action, array $data, string $code, ?string $guestEmail = null): void
     {
-        // Get owner email from settings
+        // Resolve owner email: try dedicated setting, then fall back to
+        // the SMTP from-address — same pattern as submit.php for forms.
         $settings = new Settings();
-        $ownerEmail = $settings->get('notifications.owner_email') ?? $settings->get('owner_email') ?? null;
+        $ownerEmail = $settings->get('notifications.owner_email')
+            ?? $settings->get('owner_email')
+            ?? $settings->get('mail.from_address')
+            ?? null;
 
-        if (empty($ownerEmail)) {
-            return; // No owner email configured — skip
+        if (empty($ownerEmail) || !filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
+            return; // No valid recipient — skip
         }
 
         $mailer = Mailer::getInstance();
@@ -2048,7 +2055,7 @@ class ActionManager
 
         $subject = "New {$actionName} — {$code}";
 
-        $body = "New {$actionName} received on {$siteName}.\n\n";
+        $body = "New {$actionName} received.\n\n";
         $body .= "Code: {$code}\n";
         $body .= "Status: " . ($action['confirmation']['auto_confirm'] ?? true ? 'Confirmed' : 'Pending') . "\n\n";
 
@@ -2063,9 +2070,13 @@ class ActionManager
 
         $body .= "\nManage in Studio: Actions > {$actionName}";
 
-        $mailer->send($ownerEmail, $subject, $body, [
-            'from_name' => "{$siteName} Studio",
-        ]);
+        // Set guest email as reply-to so the owner can reply directly
+        $options = ['from_name' => "{$siteName} Studio"];
+        if ($guestEmail && filter_var($guestEmail, FILTER_VALIDATE_EMAIL)) {
+            $options['reply_to'] = $guestEmail;
+        }
+
+        $mailer->send($ownerEmail, $subject, $body, $options);
     }
 
     /**

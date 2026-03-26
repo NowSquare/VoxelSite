@@ -434,7 +434,7 @@ async function loadActions() {
                   font-size: 11px; padding: 1px 8px;
                 ">${isActive ? 'Active' : 'Draft'}</span>
                 <span class="vs-form-card-dot">·</span>
-                <span>${total} record${total !== 1 ? 's' : ''}</span>
+                <span>${total} submission${total !== 1 ? 's' : ''}</span>
                 ${stats.today > 0 ? `<span class="vs-form-card-dot">·</span><span>+${stats.today} today</span>` : ''}
                 <span class="vs-form-card-dot">·</span>
                 <span>${lastActivity}</span>
@@ -797,11 +797,11 @@ async function loadActionDetail(actionId) {
         <h2 class="vs-settings-card-title">Action</h2>
         <div class="flex flex-col gap-4">
           <div>
-            <label for="action-name" class="block text-sm font-medium text-vs-text-secondary mb-1">Name</label>
+            <label for="action-name" class="block text-sm font-medium text-vs-text-secondary mb-1">Name <span style="font-weight: 400; color: var(--vs-text-ghost);">— form title and email subject</span></label>
             <input type="text" id="action-name" class="vs-input" value="${escapeHtml(action.name || '')}" />
           </div>
           <div>
-            <label for="action-description" class="block text-sm font-medium text-vs-text-secondary mb-1">Description <span style="font-weight: 400; color: var(--vs-text-ghost);">— for your reference and AI agents, not shown to visitors</span></label>
+            <label for="action-description" class="block text-sm font-medium text-vs-text-secondary mb-1">Description <span style="font-weight: 400; color: var(--vs-text-ghost);">— shown to visitors and AI agents</span></label>
             <input type="text" id="action-description" class="vs-input" value="${escapeHtml(action.description || '')}" placeholder="e.g. Register for our quarterly workshops" />
           </div>
 
@@ -1725,7 +1725,7 @@ async function loadActionRecords(actionId, page = 1) {
 
   container.innerHTML = `
     <div class="vs-settings-card" style="margin-top: 16px;">
-      <h2 class="vs-settings-card-title">Records</h2>
+      <h2 class="vs-settings-card-title">Submissions</h2>
       <div class="vs-form-filter-bar" style="margin-bottom: 12px;">
         <div class="flex items-center gap-2 flex-wrap">
           <select id="action-filter-status" class="vs-input vs-input-compact">
@@ -1736,14 +1736,14 @@ async function loadActionRecords(actionId, page = 1) {
             <option value="cancelled" ${status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
             <option value="no-show" ${status === 'no-show' ? 'selected' : ''}>No-show</option>
           </select>
-          <input type="text" id="action-filter-search" class="vs-input vs-input-compact" placeholder="Search records..." value="${escapeHtml(search)}" style="min-width: 180px;" />
+          <input type="text" id="action-filter-search" class="vs-input vs-input-compact" placeholder="Search submissions..." value="${escapeHtml(search)}" style="min-width: 180px;" />
         </div>
         <div class="flex items-center gap-2">
-          ${window.IS_DEMO ? '' : `<button id="btn-purge-records" class="vs-btn vs-btn-secondary vs-btn-sm" title="Remove old records" ${total === 0 ? 'disabled style="opacity:0.4;pointer-events:none;"' : ''}>
+          ${window.IS_DEMO ? '' : `<button id="btn-purge-records" class="vs-btn vs-btn-secondary vs-btn-sm" title="Remove old submissions" ${total === 0 ? 'disabled style="opacity:0.4;pointer-events:none;"' : ''}>
             ${icons.trash} Purge Old
           </button>`}
 
-          <button id="btn-export-action-csv" class="vs-btn vs-btn-secondary vs-btn-sm" ${total === 0 ? 'disabled style="opacity:0.4;pointer-events:none;"' : ''} title="${total === 0 ? 'No records to export' : 'Download records as CSV'}">
+          <button id="btn-export-action-csv" class="vs-btn vs-btn-secondary vs-btn-sm" ${total === 0 ? 'disabled style="opacity:0.4;pointer-events:none;"' : ''} title="${total === 0 ? 'No submissions to export' : 'Download submissions as CSV'}">
             ${icons.download} Export CSV
           </button>
         </div>
@@ -1805,7 +1805,7 @@ async function loadActionRecords(actionId, page = 1) {
                     <td style="padding: 8px 12px; font-size: 12px; color: var(--vs-text-ghost);">${sourceLabel}</td>
                     <td style="padding: 8px 12px; font-size: 12px; color: var(--vs-text-ghost);">${formatRelativeTime(rec.created_at)}</td>
                     ${window.IS_DEMO ? '<td style="width: 32px;"></td>' : `<td style="padding: 8px 4px; width: 32px; text-align: center;">
-                      <button type="button" class="vs-record-delete" data-rid="${rec.id}" title="Delete record" style="
+                      <button type="button" class="vs-record-delete" data-rid="${rec.id}" title="Delete submission" style="
                         border: none; background: none; cursor: pointer; padding: 4px; color: var(--vs-text-ghost);
                         display: inline-flex; align-items: center; border-radius: var(--radius-md);
                         transition: color 0.12s, background 0.12s;
@@ -1853,11 +1853,11 @@ async function loadActionRecords(actionId, page = 1) {
         ${totalPages > 1 ? `
           <div class="flex items-center justify-between" style="padding: 12px 0; font-size: 13px;">
             <button class="vs-btn vs-btn-ghost vs-btn-sm" id="action-records-prev" ${page <= 1 ? 'disabled' : ''} data-page="${page - 1}">← Previous</button>
-            <span class="text-vs-text-tertiary">Page ${page} of ${totalPages} · ${total} record${total !== 1 ? 's' : ''}</span>
+            <span class="text-vs-text-tertiary">Page ${page} of ${totalPages} · ${total} submission${total !== 1 ? 's' : ''}</span>
             <button class="vs-btn vs-btn-ghost vs-btn-sm" id="action-records-next" ${page >= totalPages ? 'disabled' : ''} data-page="${page + 1}">Next →</button>
           </div>
         ` : `
-          <div class="text-sm text-vs-text-ghost text-center" style="padding: 8px 0;">${total} record${total !== 1 ? 's' : ''}</div>
+          <div class="text-sm text-vs-text-ghost text-center" style="padding: 8px 0;">${total} submission${total !== 1 ? 's' : ''}</div>
         `}
       `}
     </div>
@@ -1930,8 +1930,8 @@ async function loadActionRecords(actionId, page = 1) {
     overlay.innerHTML = `
       <div class="vs-modal" style="max-width: 400px;">
         <div class="vs-modal-header">
-          <h2 class="vs-modal-title">Purge Old Records</h2>
-          <p class="vs-modal-desc">Remove records older than a chosen period. This cannot be undone.</p>
+          <h2 class="vs-modal-title">Purge Old Submissions</h2>
+          <p class="vs-modal-desc">Remove submissions older than a chosen period. This cannot be undone.</p>
         </div>
         <div class="vs-modal-body">
           <select id="vs-purge-select" class="vs-input" style="width: 100%; font-size: 13px;">
@@ -1985,7 +1985,7 @@ async function loadActionRecords(actionId, page = 1) {
       if (viewerGuard()) return;
       const rid = btn.dataset.rid;
       const confirmed = await showConfirmModal({
-        title: 'Delete Record',
+        title: 'Delete Submission',
         description: 'Permanently delete this record? This cannot be undone.',
         confirmLabel: 'Delete',
         danger: true,
@@ -1993,10 +1993,10 @@ async function loadActionRecords(actionId, page = 1) {
       if (!confirmed) return;
       const { ok } = await api.delete(`/agentic/actions/${encodeURIComponent(actionId)}/records/${rid}`);
       if (ok) {
-        showToast('Record deleted', 'success');
+        showToast('Submission deleted', 'success');
         loadActionRecords(actionId, page);
       } else {
-        showToast('Failed to delete record', 'error');
+        showToast('Failed to delete submission', 'error');
       }
     });
   });

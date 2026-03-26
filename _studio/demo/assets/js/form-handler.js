@@ -65,8 +65,8 @@
 
       if (formSuccess) {
         banner.className = 'form-banner form-banner-success';
-        banner.style.cssText = 'margin:1rem auto;max-width:640px;padding:1.25rem 1.5rem;background:#ecfdf5;border:2px solid #10b981;border-radius:10px;color:#065f46;font-size:0.95rem;line-height:1.5;text-align:center;display:flex;align-items:center;justify-content:center;gap:0.625rem;';
-        banner.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="#d1fae5"/><path d="M7.5 12.25L10.5 15.25L17 8.5" stroke="#059669" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        banner.style.cssText = 'margin:1rem auto;max-width:640px;padding:1.25rem 1.5rem;border:1px solid currentColor;border-radius:10px;font-size:0.95rem;line-height:1.5;text-align:center;display:flex;align-items:center;justify-content:center;gap:0.625rem;opacity:.65;';
+        banner.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="currentColor" opacity=".08"/><path d="M7.5 12.25L10.5 15.25L17 8.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity=".6"/></svg>';
       } else {
         banner.className = 'form-banner form-banner-error';
         banner.style.cssText = 'margin:1rem auto;max-width:640px;padding:1rem 1.25rem;background:#fef2f2;border:2px solid #ef4444;border-radius:10px;color:#991b1b;font-size:0.95rem;line-height:1.5;text-align:center;';
@@ -92,18 +92,20 @@
     }
   }
 
-  // ── Error display system ──
-  // Uses an injected <style> for animation + ::before dot (can't do these
-  // inline) and reads the computed font from a nearby styled element so
-  // errors match the site's typography on ANY theme. The !important rules
-  // override whatever paragraph styles the AI-generated CSS might apply.
-  var _errStyled = false;
-  function _injectErrorCSS() {
-    if (_errStyled) return;
-    _errStyled = true;
+  // ── Form UI system ──
+  // Uses an injected <style> for animations and pseudo-elements (can't do
+  // these inline) and reads the computed font from a nearby styled element
+  // so errors and success states match the site's typography on ANY theme.
+  // The !important rules override whatever paragraph styles the
+  // AI-generated CSS might apply.
+  var _formStyled = false;
+  function _injectFormCSS() {
+    if (_formStyled) return;
+    _formStyled = true;
     var s = document.createElement('style');
-    s.id = 'vx-form-errors';
+    s.id = 'vx-form-ui';
     s.textContent =
+      // ── Error animations + styling ──
       '@keyframes vxErrIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}'
       + '.field-error{'
       +   'margin:8px 0 0!important;padding:0!important;'
@@ -120,6 +122,41 @@
       +   'content:""!important;flex-shrink:0!important;'
       +   'width:6px!important;height:6px!important;'
       +   'border-radius:50%!important;background:currentColor!important;'
+      + '}'
+      // ── Success state ──
+      // Choreography: circle scales in → checkmark draws → message fades up.
+      // Every color uses currentColor so the component adapts to any theme:
+      // dark backgrounds with light text, light backgrounds with dark text,
+      // or anything in between. Opacity controls visual weight.
+      + '@keyframes vxCircle{from{transform:scale(.85)}to{transform:scale(1)}}'
+      + '@keyframes vxDraw{to{stroke-dashoffset:0}}'
+      + '@keyframes vxFadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:.5;transform:translateY(0)}}'
+      + '.form-success{'
+      +   'display:flex!important;flex-direction:column!important;align-items:center!important;'
+      +   'gap:2rem!important;padding:3.5rem 2rem!important;text-align:center!important;'
+      + '}'
+      // Circle: transform-only animation. Do NOT animate opacity here —
+      // it would override the SVG element's inline opacity=".06",
+      // turning the subtle tint into a solid disk.
+      + '.form-success-circle{animation:vxCircle .5s cubic-bezier(.4,0,.2,1) both!important}'
+      // Checkmark: stroke draws in after circle settles.
+      // Like opacity, do NOT use !important on stroke-dashoffset —
+      // it would block the animation's forwards fill from persisting.
+      + '.form-success-check{'
+      +   'stroke-dasharray:32!important;stroke-dashoffset:32;'
+      +   'animation:vxDraw .5s .2s cubic-bezier(.4,0,.2,1) forwards!important;'
+      + '}'
+      // Message: inherits font from the form (set via inline style).
+      // Starts invisible; the animation fades to 50% opacity and persists
+      // via fill-mode:forwards. We intentionally do NOT set a static
+      // opacity:0!important because that would override the animation fill.
+      + '.form-success-msg{'
+      +   'font-size:.9375rem!important;font-weight:400!important;'
+      +   'line-height:1.65!important;letter-spacing:-.005em!important;'
+      +   'color:currentColor!important;'
+      +   'max-width:340px!important;'
+      +   'opacity:0;'
+      +   'animation:vxFadeUp .45s .65s cubic-bezier(.4,0,.2,1) forwards!important;'
       + '}';
     document.head.appendChild(s);
   }
@@ -134,7 +171,7 @@
   }
 
   function createFieldError(message, id, form) {
-    _injectErrorCSS();
+    _injectFormCSS();
     var el = document.createElement('p');
     el.className = 'field-error';
     el.setAttribute('role', 'alert');
@@ -220,27 +257,38 @@
             return;
           }
 
-          // Replace form with a single iconic checkmark
+          // ── Premium success state ──
+          // Choreography: circle → checkmark draws → message fades up.
+          // All colors use currentColor so this adapts to any theme.
+          _injectFormCSS();
+          var font = _resolveFont(form);
           var successDiv = document.createElement('div');
           successDiv.className = 'form-success';
           successDiv.setAttribute('role', 'status');
           successDiv.setAttribute('tabindex', '-1');
-          successDiv.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:1.25rem;padding:3.5rem 1.5rem;text-align:center;';
+          successDiv.style.fontFamily = font;
+
+          // Single circle + stroke-drawn checkmark.
+          // Path length ≈ 31.1 (two line segments), dasharray 32 covers it.
           successDiv.innerHTML = ''
-            + '<svg width="72" height="72" viewBox="0 0 72 72" fill="none" style="flex-shrink:0;">'
-            +   '<circle cx="36" cy="36" r="36" fill="#ecfdf5"/>'
-            +   '<circle cx="36" cy="36" r="30" fill="#d1fae5"/>'
-            +   '<path d="M24 36.5L32.5 45L50 27" stroke="#059669" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>'
+            + '<svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true">'
+            +   '<circle class="form-success-circle" cx="32" cy="32" r="30" fill="currentColor" opacity=".06"/>'
+            +   '<path class="form-success-check" d="M22 33L29 40L44 25" '
+            +     'stroke="currentColor" stroke-width="2.5" stroke-linecap="round" '
+            +     'stroke-linejoin="round" opacity=".5"/>'
             + '</svg>';
+
           if (data.message) {
-            var msgSpan = document.createElement('span');
-            msgSpan.style.cssText = 'font-size:0.95rem;color:#065f46;max-width:340px;line-height:1.5;';
-            msgSpan.textContent = data.message;
-            successDiv.appendChild(msgSpan);
+            var msgP = document.createElement('p');
+            msgP.className = 'form-success-msg';
+            msgP.textContent = data.message;
+            successDiv.appendChild(msgP);
           }
+
           form.innerHTML = '';
           form.appendChild(successDiv);
           successDiv.focus();
+          successDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
           // Announce to screen readers
           liveRegion.textContent = data.message || 'Form submitted successfully.';

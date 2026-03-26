@@ -247,10 +247,11 @@
       var btn = document.createElement('button');
       btn.className = 'vs-actions-bar-btn';
       btn.setAttribute('data-action-id', action.id);
-      btn.setAttribute('aria-label', action.name);
+      var btnLabel = action.button_label || action.name;
+      btn.setAttribute('aria-label', btnLabel);
       btn.innerHTML =
         '<span class="vs-actions-bar-icon">' + getIcon(action.icon) + '</span>' +
-        '<span class="vs-actions-bar-label">' + escapeHtml(action.name) + '</span>';
+        '<span class="vs-actions-bar-label">' + escapeHtml(btnLabel) + '</span>';
 
       // Stagger delay for FAB animation
       if (variant === 'floating-fab') {
@@ -337,6 +338,14 @@
 
     header.querySelector('.vs-actions-panel-close').addEventListener('click', closePanel);
 
+    // Description — shown to visitors as contextual subtitle
+    if (action.description) {
+      var desc = document.createElement('p');
+      desc.className = 'vs-actions-panel-desc';
+      desc.textContent = action.description;
+      header.appendChild(desc);
+    }
+
     // Form
     var form = document.createElement('form');
     form.className = 'vs-actions-form';
@@ -375,7 +384,8 @@
         group.appendChild(desc);
       }
 
-      // Error slot
+      // Error slot — empty by default, populated on validation failure.
+      // CSS :not(:empty) handles margin so no phantom spacing when empty.
       var error = document.createElement('div');
       error.className = 'vs-actions-field-error';
       error.id = 'vs-action-err-' + action.id + '-' + field.name;
@@ -1038,7 +1048,7 @@
   }
 
   function showResult(resultEl, form, success, message, code, errors) {
-    resultEl.style.display = 'block';
+    resultEl.style.display = 'flex';
     resultEl.className = 'vs-actions-result ' + (success ? 'is-success' : 'is-error');
 
     var icon = success ? getIcon('check') : getIcon('alert-triangle');

@@ -275,6 +275,7 @@
 
 .vs-actions-panel-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px 12px;
@@ -289,6 +290,14 @@
   font-weight: 600;
   color: var(--vs-actions-text);
   margin: 0;
+}
+
+.vs-actions-panel-desc {
+  width: 100%;
+  font-size: 13px;
+  color: var(--vs-actions-text-muted);
+  margin: 4px 0 0;
+  line-height: 1.45;
 }
 
 .vs-actions-panel-close {
@@ -317,8 +326,8 @@
 
 /* ── Form ── */
 .vs-actions-form {
-  padding: 0 24px 24px;
-  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  padding: 0 24px 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 
 .vs-actions-form-group {
@@ -686,13 +695,17 @@ select.vs-actions-input {
 .vs-actions-field-error {
   font-size: 12px;
   color: var(--vs-actions-error);
-  margin-top: 4px;
+  margin-top: 0;
   min-height: 0;
+}
+
+.vs-actions-field-error:not(:empty) {
+  margin-top: 4px;
 }
 
 /* ── Submit Button ── */
 .vs-actions-form-actions {
-  margin-top: 24px;
+  margin-top: 20px;
 }
 
 .vs-actions-submit {
@@ -740,13 +753,12 @@ select.vs-actions-input {
 
 /* ── Result ── */
 .vs-actions-result {
-  margin: 0 !important;
-  padding: 16px 24px !important;
-  display: flex !important;
-  flex-direction: row !important;
-  flex-wrap: nowrap !important;
-  gap: 10px !important;
-  align-items: center !important;
+  margin: 0;
+  padding: 16px 24px;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 10px;
+  align-items: center;
   font-family: var(--vs-actions-font);
   box-sizing: border-box;
 }

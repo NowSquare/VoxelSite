@@ -360,10 +360,25 @@ class FormHandler
             ? json_decode(file_get_contents($siteJsonPath), true)
             : [];
 
-        // Resolve recipient
+        // Resolve recipient — fall back to the configured From address
+        // when the schema template (e.g. {{site.contact.email}}) resolves
+        // empty because the site.json path doesn't exist.
         $recipient = $this->resolveTemplate($emailConfig['recipient'], $data, $siteData ?? [], $submissionId);
         if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
-            return;
+            // Fallback: use the mail From address from Studio settings
+            try {
+                $settings = new \VoxelSite\Settings();
+                $recipient = (string) $settings->get('mail.from_address', '');
+            } catch (\Throwable $_) {
+                $recipient = '';
+            }
+            if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+                Logger::warning('forms', 'No valid notification recipient', [
+                    'template'  => $emailConfig['recipient'],
+                    'resolved'  => $recipient,
+                ]);
+                return;
+            }
         }
 
         // Resolve subject line
@@ -374,6 +389,10 @@ class FormHandler
         $body .= 'Form: ' . ($schema['name'] ?? $schema['id'] ?? 'Unknown') . "\n";
         $body .= 'Date: ' . date('Y-m-d H:i:s') . "\n";
         $body .= 'Source: Web form' . "\n";
+        $referrer = $_SERVER['HTTP_REFERER'] ?? '';
+        if ($referrer) {
+            $body .= 'Page: ' . $referrer . "\n";
+        }
         $body .= str_repeat('─', 40) . "\n\n";
 
         foreach ($data as $key => $value) {

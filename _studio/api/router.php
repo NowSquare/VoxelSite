@@ -237,6 +237,14 @@ $routes = [
     ['GET',    '/site-graph',              'site-graph.php',    true],
     ['GET',    '/site-graph/blast-radius', 'site-graph.php',    true],
 
+    // Site Control mutations
+    ['POST',   '/site-control/url-rename',       'site-control.php',  true],
+    ['GET',    '/site-control/nav-preflight',    'site-control.php',  true],
+    ['POST',   '/site-control/nav-reorder',      'site-control.php',  true],
+    ['POST',   '/site-control/page-rename',      'site-control.php',  true],
+    ['POST',   '/site-control/page-delete',      'site-control.php',  true],
+    ['POST',   '/site-control/structural-move',  'site-control.php',  true],
+
     // Team
     ['GET',    '/team',                  'team.php',           true],
     ['POST',   '/team',                  'team.php',           true],

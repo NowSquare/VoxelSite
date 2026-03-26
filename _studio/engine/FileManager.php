@@ -28,8 +28,10 @@ class FileManager
     public function __construct(?Database $db = null)
     {
         $this->db = $db ?? Database::getInstance();
-        $this->previewPath = dirname(__DIR__) . '/preview';
-        $this->assetsPath = dirname(__DIR__, 2) . '/assets';
+        // Test seam: allow env var overrides for subprocess-based endpoint tests.
+        // In production these env vars are never set, so the default paths apply.
+        $this->previewPath = getenv('VS_TEST_PREVIEW_DIR') ?: dirname(__DIR__) . '/preview';
+        $this->assetsPath  = getenv('VS_TEST_ASSETS_DIR')  ?: dirname(__DIR__, 2) . '/assets';
         $this->promptsPath = dirname(__DIR__) . '/prompts';
         $this->customPromptsPath = dirname(__DIR__) . '/custom_prompts';
     }
@@ -1874,10 +1876,7 @@ SAFETY;
             if (is_dir($fullPath)) {
                 $this->scanPreviewDirRecursive($fullPath, $relativePath, $results);
             } elseif (preg_match('/\.(php|html)$/i', $item)) {
-                $slug = pathinfo($item, PATHINFO_FILENAME);
-                if ($item === 'index.php' || $item === 'index.html') {
-                    $slug = 'index';
-                }
+                $slug = self::deriveSlugFromFilePath($relativePath);
 
                 $results[] = [
                     'path'     => $relativePath,
@@ -1890,11 +1889,34 @@ SAFETY;
     }
 
     /**
+     * Derive the canonical slug from a relative file path.
+     *
+     * Examples:
+     *   'about.php'            → 'about'
+     *   'work/about.php'       → 'work/about'
+     *   'work/about/team.php'  → 'work/about/team'
+     *   'index.php'            → 'index'
+     *   'index.html'           → 'index'
+     */
+    public static function deriveSlugFromFilePath(string $relPath): string
+    {
+        $slug = preg_replace('/\.(php|html)$/i', '', $relPath) ?? $relPath;
+        // Normalize directory separators for Windows compatibility
+        return str_replace('\\', '/', $slug);
+    }
+
+    /**
      * Sync the pages database table with files on disk.
      *
-     * Scans preview/ for PHP page files, adds missing pages,
-     * removes stale records. Called after every AI operation
-     * to keep the registry accurate.
+     * Scans preview/ recursively for PHP/HTML page files at any depth,
+     * adds missing pages, removes stale records, and repairs drifted
+     * mirrored fields (slug, file_path, title). Called after every AI
+     * operation to keep the registry accurate.
+     *
+     * Phase 4: recursive discovery replaces the previous root-only scan.
+     * The slug is derived from the file path (e.g. work/about.php → work/about).
+     *
+     * **Sync writes DB only. Sync never writes files.**
      *
      * Also infers nav_order from the nav partial when pages are
      * missing ordering data, so the Studio grid matches the
@@ -1903,43 +1925,127 @@ SAFETY;
     public function syncPageRegistry(): void
     {
         $now = now();
-        $files = $this->listPreviewFiles();
-        $existingSlugs = [];
+        $files = $this->listPreviewFilesRecursive();
 
+        // ── Phase 1: Build lookup maps ──
+        // Collect all current DB rows for comparison
+        $dbRows = $this->db->query(
+            "SELECT id, slug, file_path, title FROM pages WHERE page_type = 'page'"
+        );
+        $dbBySlug = [];
+        $dbByFilePath = [];
+        foreach ($dbRows as $row) {
+            $dbBySlug[(string) $row['slug']] = $row;
+            $dbByFilePath[(string) $row['file_path']] = $row;
+        }
+
+        $matchedDbIds = [];   // DB row IDs that were claimed by a disk file
+        $unmatchedFiles = []; // Disk files that found no DB row by slug or file_path
+
+        // ── Phase 2: Match disk files to DB rows ──
         foreach ($files as $file) {
-            $existingSlugs[] = $file['slug'];
+            $slug = $file['slug'];
+            $existing = null;
 
-            // Check if page exists in DB
-            $existing = $this->db->queryOne(
-                'SELECT id FROM pages WHERE slug = ?',
-                [$file['slug']]
-            );
+            // Strategy A: exact slug match
+            if (isset($dbBySlug[$slug])) {
+                $existing = $dbBySlug[$slug];
+            }
 
-            if ($existing === null) {
-                // Determine title from PHP file if possible
-                $title = $this->extractTitle($file['path']);
+            // Strategy B: exact file_path match (catches renames where slug changed but file didn't)
+            if ($existing === null && isset($dbByFilePath[$file['path']])) {
+                $existing = $dbByFilePath[$file['path']];
+            }
 
-                $this->db->insert('pages', [
-                    'slug'       => $file['slug'],
-                    'title'      => $title ?? ucfirst(str_replace('-', ' ', $file['slug'])),
-                    'file_path'  => $file['path'],
-                    'is_homepage' => $file['slug'] === 'index' ? 1 : 0,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ]);
+            if ($existing !== null) {
+                $matchedDbIds[(int) $existing['id']] = true;
+
+                // Repair drifted mirrored fields
+                $repairs = [];
+
+                if ((string) $existing['slug'] !== $slug) {
+                    $repairs['slug'] = $slug;
+                }
+                if ((string) $existing['file_path'] !== $file['path']) {
+                    $repairs['file_path'] = $file['path'];
+                }
+
+                // Title repair: only if DB title looks auto-generated and file has a real title
+                $fileTitle = $this->extractTitle($file['path']);
+                if ($fileTitle !== null && (string) $existing['title'] !== $fileTitle) {
+                    $autoTitle = ucfirst(str_replace('-', ' ', basename($slug)));
+                    if ((string) $existing['title'] === $autoTitle) {
+                        $repairs['title'] = $fileTitle;
+                    }
+                }
+
+                if (!empty($repairs)) {
+                    $repairs['updated_at'] = $now;
+                    $this->db->update('pages', $repairs, 'id = ?', [(int) $existing['id']]);
+                }
+            } else {
+                $unmatchedFiles[] = $file;
             }
         }
 
-        // Remove pages whose files no longer exist
-        if (!empty($existingSlugs)) {
-            $placeholders = implode(',', array_fill(0, count($existingSlugs), '?'));
-            $this->db->delete(
-                'pages',
-                "slug NOT IN ({$placeholders}) AND page_type = 'page'",
-                $existingSlugs
-            );
-        } else {
-            $this->db->delete('pages', "page_type = 'page'");
+        // ── Phase 3: Reclaim orphaned DB rows by basename ──
+        // If a file moved (about.php → work/about.php), neither slug nor file_path
+        // matches. Try to reclaim the orphaned row by matching the basename so that
+        // pages.id stays stable and FK references (e.g. collections.index_page_id)
+        // are not silently broken.
+        if (!empty($unmatchedFiles)) {
+            // Build a map of orphaned DB rows (not claimed in Phase 2) keyed by basename
+            $orphansByBasename = [];
+            foreach ($dbRows as $row) {
+                if (isset($matchedDbIds[(int) $row['id']])) {
+                    continue;
+                }
+                $basename = pathinfo((string) $row['file_path'], PATHINFO_FILENAME);
+                $orphansByBasename[$basename][] = $row;
+            }
+
+            $stillUnmatched = [];
+            foreach ($unmatchedFiles as $file) {
+                $basename = pathinfo($file['path'], PATHINFO_FILENAME);
+                $candidates = $orphansByBasename[$basename] ?? [];
+
+                if (count($candidates) === 1) {
+                    // Unique basename match — safe to reclaim this row
+                    $orphan = $candidates[0];
+                    $matchedDbIds[(int) $orphan['id']] = true;
+                    unset($orphansByBasename[$basename]);
+
+                    $this->db->update('pages', [
+                        'slug'       => $file['slug'],
+                        'file_path'  => $file['path'],
+                        'updated_at' => $now,
+                    ], 'id = ?', [(int) $orphan['id']]);
+                } else {
+                    $stillUnmatched[] = $file;
+                }
+            }
+            $unmatchedFiles = $stillUnmatched;
+        }
+
+        // ── Phase 4: Insert truly new files ──
+        foreach ($unmatchedFiles as $file) {
+            $title = $this->extractTitle($file['path']);
+
+            $this->db->insert('pages', [
+                'slug'        => $file['slug'],
+                'title'       => $title ?? ucfirst(str_replace('-', ' ', basename($file['slug']))),
+                'file_path'   => $file['path'],
+                'is_homepage' => $file['slug'] === 'index' ? 1 : 0,
+                'created_at'  => $now,
+                'updated_at'  => $now,
+            ]);
+        }
+
+        // ── Phase 5: Remove DB rows whose files no longer exist on disk ──
+        foreach ($dbRows as $row) {
+            if (!isset($matchedDbIds[(int) $row['id']])) {
+                $this->db->delete('pages', 'id = ?', [(int) $row['id']]);
+            }
         }
 
         // Infer nav_order from the nav partial for pages that are missing it.
@@ -1948,42 +2054,101 @@ SAFETY;
     }
 
     /**
-     * Parse the nav partial to infer nav_order for pages without one.
+     * Sync nav_order and nav_parent_id from the canonical nav partial.
      *
-     * Reads the <a href="..."> links from _partials/nav.php and assigns
-     * sequential nav_order values to matching pages that currently have
-     * nav_order = NULL.
+     * Uses NavLinksParser to read the file truth and project both ordering
+     * and hierarchy into DB columns. These columns are read-only caches;
+     * the file is always the source of truth.
+     *
+     * Canonical path: NavLinksParser::parse() succeeds - full tree sync.
+     * Legacy path: NavLinksParser::extractFromLegacyNav() - flat order only.
      */
-    private function syncNavOrderFromPartial(): void
+    public function syncNavOrderFromPartial(): void
     {
-        // Only run if any pages are missing nav_order
-        $missingCount = $this->db->queryOne(
-            "SELECT COUNT(*) as cnt FROM pages WHERE nav_order IS NULL AND page_type = 'page'"
-        );
-        if (!$missingCount || (int) $missingCount['cnt'] === 0) {
-            return;
-        }
-
         $navContent = $this->readFile('_partials/nav.php');
         if ($navContent === null) {
             return;
         }
 
-        // Extract href slugs from nav links in order
-        if (!preg_match_all('/<a\b[^>]*\bhref\s*=\s*["\']([^"\']+)["\']/', $navContent, $matches)) {
+        // Try canonical parse first
+        $navLinks = NavLinksParser::parse($navContent);
+
+        if ($navLinks !== null) {
+            // Full tree sync: derive both nav_order and nav_parent_id
+            $this->syncFromCanonicalTree($navLinks);
             return;
         }
 
-        $order = 1;
-        foreach ($matches[1] as $href) {
-            // Normalize href to slug: "/" => "index", "/about" => "about", "/about.php" => "about"
-            $href = trim($href, '/');
-            $href = preg_replace('/\.php$/', '', $href) ?? $href;
-            $slug = $href === '' ? 'index' : $href;
+        // Fall back to legacy extraction (flat order only, no hierarchy)
+        $extracted = NavLinksParser::extractFromLegacyNav($navContent);
+        if ($extracted !== null) {
+            $this->syncFromFlatList($extracted);
+        }
+    }
 
-            // Only update pages that don't already have a nav_order
+    /**
+     * Sync DB projections from a canonical nav tree (supports hierarchy).
+     */
+    private function syncFromCanonicalTree(array $navLinks): void
+    {
+        // Clear all nav projections first so removed pages get nulled
+        $this->db->exec(
+            "UPDATE pages SET nav_order = NULL, nav_parent_id = NULL WHERE page_type = 'page'"
+        );
+
+        $order = 1;
+        foreach ($navLinks as $entry) {
+            // Skip pinned Home — it is immovable and not part of the orderable space
+            if (!empty($entry['home'])) {
+                continue;
+            }
+
+            $slug = $this->hrefToSlug($entry['href']);
             $page = $this->db->queryOne(
-                "SELECT id, nav_order FROM pages WHERE slug = ?",
+                'SELECT id FROM pages WHERE slug = ?',
+                [$slug]
+            );
+
+            if ($page) {
+                $pageId = (int) $page['id'];
+                $this->db->update('pages', ['nav_order' => $order], 'id = ?', [$pageId]);
+                $order++;
+
+                // Process children (depth-1)
+                if (!empty($entry['children'])) {
+                    $childOrder = 1;
+                    foreach ($entry['children'] as $child) {
+                        $childSlug = $this->hrefToSlug($child['href']);
+                        $childPage = $this->db->queryOne(
+                            'SELECT id FROM pages WHERE slug = ?',
+                            [$childSlug]
+                        );
+                        if ($childPage) {
+                            $childPageId = (int) $childPage['id'];
+                            $this->db->update('pages', [
+                                'nav_order'     => $childOrder,
+                                'nav_parent_id' => $pageId,
+                            ], 'id = ?', [$childPageId]);
+                            $childOrder++;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Sync DB projections from a flat extracted link list (legacy navs).
+     */
+    private function syncFromFlatList(array $navLinks): void
+    {
+        $order = 1;
+        foreach ($navLinks as $entry) {
+            $slug = $this->hrefToSlug($entry['href']);
+
+            // Only update pages that are missing nav_order (additive)
+            $page = $this->db->queryOne(
+                'SELECT id, nav_order FROM pages WHERE slug = ?',
                 [$slug]
             );
 
@@ -1994,6 +2159,17 @@ SAFETY;
             $order++;
         }
     }
+
+    /**
+     * Convert a nav href to a page slug.
+     */
+    private function hrefToSlug(string $href): string
+    {
+        $href = trim($href, '/');
+        $href = preg_replace('/\.php$/', '', $href) ?? $href;
+        return $href === '' ? 'index' : $href;
+    }
+
 
     /**
      * Clear all AI-generated site files and database records.

@@ -11,10 +11,166 @@ import {
   graphModel,
   filterText,
   collapsedPages,
+  selectedNodeId,
   getStructureHighlight,
   getServingRoute,
 } from './state.js';
 import { nodeMatchesFilter } from './structure-nav.js';
+import { renderNodeActions } from './node-actions.js';
+
+// ═══════════════════════════════════════════
+//  SVG Connector System
+// ═══════════════════════════════════════════
+
+/**
+ * Compute and insert SVG hierarchy connectors between parent-child cards.
+ *
+ * Must be called after DOM has rendered (use double-rAF).
+ * Reads card positions from the DOM, builds orthogonal elbow paths,
+ * and inserts an SVG overlay into the diagram container.
+ *
+ * @param {Array} tree — the current hierarchy tree
+ */
+export function computeConnectors(tree) {
+  const diagram = document.getElementById('vs-site-diagram');
+  if (!diagram || !tree || tree.length === 0) return;
+
+  // Remove existing connector SVG
+  const existing = diagram.querySelector('.vs-sc-connectors');
+  if (existing) existing.remove();
+
+  // Collect all parent-child edges from the tree,
+  // mirroring the visual layout of renderDiagram().
+  const edges = [];
+
+  /**
+   * Collect explicit tree edges (nodes with children).
+   */
+  const collectTreeEdges = (nodes) => {
+    for (const node of nodes) {
+      if (node.children.length > 0 && !collapsedPages.has(node.id)) {
+        for (const child of node.children) {
+          edges.push({ parentId: node.id, childId: child.id });
+        }
+        collectTreeEdges(node.children);
+      }
+    }
+  };
+
+  // Apply the same filter as renderDiagram
+  const filter = filterText.toLowerCase();
+  const filterTree = (nodes) => {
+    if (!filter) return nodes;
+    const result = [];
+    for (const node of nodes) {
+      if (nodeMatchesFilter(node, filter)) {
+        const filteredChildren = filterTree(node.children);
+        result.push({ ...node, children: filteredChildren });
+      }
+    }
+    return result;
+  };
+
+  const filtered = filterTree(tree);
+
+  // The diagram places homepage at tier 0, and all other root-level pages
+  // at tier 1 (visually below the homepage). We draw connectors from
+  // homepage to each L1 sibling to mirror this visual parent-child layout.
+  const homepage = filtered.find(n => n.isHomepage);
+  const level1 = filtered.filter(n => !n.isHomepage);
+
+  if (homepage) {
+    // Homepage → L1 sibling connectors (visual hierarchy)
+    for (const l1 of level1) {
+      edges.push({ parentId: homepage.id, childId: l1.id });
+    }
+  }
+
+  // Explicit parent-child edges from the tree data
+  collectTreeEdges(filtered);
+
+  if (edges.length === 0) return;
+
+  // Diagram container rect (coordinate origin)
+  const diagRect = diagram.getBoundingClientRect();
+  const scrollLeft = diagram.scrollLeft;
+  const scrollTop = diagram.scrollTop;
+
+  // Build path data for each edge
+  const paths = [];
+  for (const { parentId, childId } of edges) {
+    const parentEl = diagram.querySelector(`.vs-site-card[data-page-id="${CSS.escape(parentId)}"]`);
+    const childEl = diagram.querySelector(`.vs-site-card[data-page-id="${CSS.escape(childId)}"]`);
+    if (!parentEl || !childEl) continue;
+
+    const pRect = parentEl.getBoundingClientRect();
+    const cRect = childEl.getBoundingClientRect();
+
+    // Convert to diagram-relative coordinates (accounting for scroll)
+    const px = pRect.left - diagRect.left + scrollLeft + pRect.width / 2;
+    const py = pRect.top - diagRect.top + scrollTop + pRect.height;
+    const cx = cRect.left - diagRect.left + scrollLeft + cRect.width / 2;
+    const cy = cRect.top - diagRect.top + scrollTop;
+
+    // Midpoint Y for the elbow
+    const midY = py + (cy - py) / 2;
+
+    // Orthogonal elbow path: down from parent, across, down to child
+    const d = `M ${px} ${py} V ${midY} H ${cx} V ${cy}`;
+
+    // Check if this edge involves the selected node
+    const isActive = selectedNodeId &&
+      (parentId === selectedNodeId || childId === selectedNodeId);
+
+    paths.push({ d, isActive });
+  }
+
+  if (paths.length === 0) return;
+
+  // Compute SVG viewBox from scroll dimensions
+  const svgWidth = diagram.scrollWidth;
+  const svgHeight = diagram.scrollHeight;
+
+  // Build SVG
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'vs-sc-connectors');
+  svg.setAttribute('width', svgWidth);
+  svg.setAttribute('height', svgHeight);
+  svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+  svg.setAttribute('aria-hidden', 'true');
+
+  // Hierarchy rails group
+  const railsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  railsGroup.setAttribute('class', 'vs-sc-hierarchy-rails');
+
+  // Render inactive paths first, active paths on top.
+  // SVG painter's model: later elements render on top.
+  // Without this sort, inactive gray paths overdraw
+  // shared horizontal rail segments of active orange paths.
+  const inactive = paths.filter(p => !p.isActive);
+  const active   = paths.filter(p => p.isActive);
+
+  for (const { d } of inactive) {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    railsGroup.appendChild(path);
+  }
+  for (const { d } of active) {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    path.classList.add('active');
+    railsGroup.appendChild(path);
+  }
+
+  svg.appendChild(railsGroup);
+
+  // Impact overlays group (Phase 2 stub — empty)
+  const impactGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  impactGroup.setAttribute('class', 'vs-sc-impact-overlays');
+  svg.appendChild(impactGroup);
+
+  diagram.appendChild(svg);
+}
 
 // ═══════════════════════════════════════════
 //  Center Pane — Tiered Diagram
@@ -72,9 +228,49 @@ export function renderDiagram(tree) {
   const homepage = filtered.find(n => n.isHomepage);
   const level1 = filtered.filter(n => !n.isHomepage);
 
+  /**
+   * Render a tier-group container for a parent node's children.
+   * Used for any page with children (homepage or L1 pages).
+   */
+  const renderChildGroup = (parent) => {
+    if (parent.children.length === 0 || collapsedPages.has(parent.id)) return '';
+
+    const l2Children = filter
+      ? parent.children.filter(c => nodeMatchesFilter(c, filter))
+      : parent.children;
+
+    if (l2Children.length === 0) return '';
+
+    let groupHtml = `<div class="vs-site-tier-group" data-parent-id="${escapeHtml(parent.id)}">`;
+    groupHtml += `<div class="vs-site-tier-group-label"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>${escapeHtml(parent.label)}</div>`;
+    groupHtml += `<div class="vs-site-tier-group-cards">`;
+
+    for (const child of l2Children) {
+      groupHtml += renderCard(child);
+
+      // Level 3+ descendants (flattened from any depth)
+      if (child.children.length > 0 && !collapsedPages.has(child.id)) {
+        const l3Pages = collectL3Descendants(child);
+        const l3Filtered = filter
+          ? l3Pages.filter(p => p.label.toLowerCase().includes(filter) || p.slug.toLowerCase().includes(filter))
+          : l3Pages;
+
+        if (l3Filtered.length > 0) {
+          groupHtml += `<div class="vs-site-tier-l3-inline">`;
+          for (const descendant of l3Filtered) {
+            groupHtml += renderCard(descendant);
+          }
+          groupHtml += `</div>`;
+        }
+      }
+    }
+    groupHtml += `</div></div>`;
+    return groupHtml;
+  };
+
   let html = '<div class="vs-site-tiers">';
 
-  // Level 0: Homepage
+  // Level 0: Homepage (always centered, alone in its tier)
   if (homepage) {
     html += `
       <div class="vs-site-tier vs-site-tier-home">
@@ -83,53 +279,27 @@ export function renderDiagram(tree) {
     `;
   }
 
-  // Level 1: Top-level pages
-  if (level1.length > 0) {
+  // Level 1+: Each L1 page is a vertical column — card on top, children below.
+  // Homepage children also get their own column alongside the L1 pages.
+  if (level1.length > 0 || (homepage && homepage.children.length > 0 && !collapsedPages.has(homepage.id))) {
     html += `<div class="vs-site-tier vs-site-tier-l1">`;
-    for (const node of level1) {
-      html += renderCard(node);
-    }
-    html += `</div>`;
-  }
 
-  // Level 2+: Children of Level 1 pages (+ homepage children)
-  // Level 4+ pages are flattened into the L3 row beneath their L2 ancestor
-  const allL1 = homepage ? [homepage, ...level1] : level1;
-  const l2Groups = allL1.filter(n => n.children.length > 0 && !collapsedPages.has(n.id));
-
-  if (l2Groups.length > 0) {
-    html += `<div class="vs-site-tier vs-site-tier-l2">`;
-    for (const parent of l2Groups) {
-      html += `<div class="vs-site-tier-group" data-parent-id="${escapeHtml(parent.id)}">`;
-      html += `<div class="vs-site-tier-group-label">${escapeHtml(parent.label)}</div>`;
-      html += `<div class="vs-site-tier-group-cards">`;
-
-      // Filter L2 children
-      const l2Children = filter
-        ? parent.children.filter(c => nodeMatchesFilter(c, filter))
-        : parent.children;
-
-      for (const child of l2Children) {
-        html += renderCard(child);
-
-        // Level 3+ descendants (flattened from any depth)
-        if (child.children.length > 0 && !collapsedPages.has(child.id)) {
-          const l3Pages = collectL3Descendants(child);
-          const l3Filtered = filter
-            ? l3Pages.filter(p => p.label.toLowerCase().includes(filter) || p.slug.toLowerCase().includes(filter))
-            : l3Pages;
-
-          if (l3Filtered.length > 0) {
-            html += `<div class="vs-site-tier-l3-inline">`;
-            for (const descendant of l3Filtered) {
-              html += renderCard(descendant);
-            }
-            html += `</div>`;
-          }
-        }
+    // Homepage children column (if any)
+    if (homepage && homepage.children.length > 0 && !collapsedPages.has(homepage.id)) {
+      const homepageGroup = renderChildGroup(homepage);
+      if (homepageGroup) {
+        html += `<div class="vs-site-tier-column">${homepageGroup}</div>`;
       }
-      html += `</div></div>`;
     }
+
+    // Each L1 page column: card + optional child group
+    for (const node of level1) {
+      html += `<div class="vs-site-tier-column">`;
+      html += renderCard(node);
+      html += renderChildGroup(node);
+      html += `</div>`;
+    }
+
     html += `</div>`;
   }
 
@@ -141,66 +311,41 @@ export function renderCard(node) {
   const isSelected = getStructureHighlight() === node.id;
   const isInferred = node.hierarchySource === 'inferred';
 
+  // Resolve the serving route for this page
+  const servingRouteId = getServingRoute(node.id);
+  let routeLabel = '';
+  if (servingRouteId) {
+    const routeNode = graphModel.nodes.get(servingRouteId);
+    if (routeNode) {
+      const slug = routeNode.label || routeNode.id.replace('route:', '');
+      routeLabel = slug;
+    }
+  } else if (node.isHomepage) {
+    routeLabel = '/ · Homepage';
+  } else if (node.slug) {
+    routeLabel = '/' + node.slug;
+  }
+
+  const classes = [
+    'vs-site-card',
+    node.isHomepage ? 'is-homepage' : '',
+    isSelected ? 'is-selected' : '',
+    isInferred ? 'is-inferred' : '',
+  ].filter(Boolean).join(' ');
+
   return `
-    <div class="vs-site-card ${node.isHomepage ? 'is-homepage' : ''} ${isSelected ? 'is-selected' : ''} ${isInferred ? 'is-inferred' : ''}"
+    <div class="${classes}"
          data-page-id="${escapeHtml(node.id)}"
-         title="${escapeHtml(node.isHomepage ? '/' : '/' + node.slug)}">
-      ${node.isHomepage ? '<span class="vs-site-card-star">★</span>' : ''}
-      <span class="vs-site-card-label">${escapeHtml(node.label)}</span>
-      ${isInferred ? '<span class="vs-site-card-inferred">ⁱ</span>' : ''}
-      ${node.childCount > 0 ? `<span class="vs-site-card-children">${node.childCount}</span>` : ''}
-    </div>
-  `;
-}
-
-// ═══════════════════════════════════════════
-//  Bottom — Detail Strip
-// ═══════════════════════════════════════════
-
-export function renderDetailStrip(pageId) {
-  if (!graphModel || !pageId) return '';
-
-  const node = graphModel.nodes.get(pageId);
-  if (!node) return '';
-
-  const meta = node.meta || {};
-
-  // Find shared partials affecting this page
-  const includesEdges = graphModel.edgesBySource.get(pageId) || [];
-  const sharedPartials = includesEdges
-    .filter(e => e.type === 'includes')
-    .map(e => graphModel.nodes.get(e.target))
-    .filter(n => n && n.meta?.isShared)
-    .map(n => n.label || n.id.replace('partial:_partials/', ''));
-
-  const level = meta.level || 1;
-  const childCount = meta.childCount || 0;
-  const source = meta.hierarchySource;
-  const navOrder = meta.navOrder;
-  const isInNav = navOrder !== undefined && navOrder !== null && navOrder > 0;
-
-  return `
-    <div class="vs-site-detail-content">
-      <span class="vs-site-detail-icon">${icons.fileText}</span>
-      <span class="vs-site-detail-title">${escapeHtml(node.label || node.id)}</span>
-      <span class="vs-site-detail-sep">·</span>
-      <span class="vs-site-detail-meta">Level ${level}</span>
-      ${childCount > 0 ? `
-        <span class="vs-site-detail-sep">·</span>
-        <span class="vs-site-detail-meta">${childCount} ${childCount === 1 ? 'child' : 'children'}</span>
-      ` : ''}
-      ${sharedPartials.length > 0 ? `
-        <span class="vs-site-detail-sep">·</span>
-        <span class="vs-site-detail-meta">Shared: ${escapeHtml(sharedPartials.join(', '))}</span>
-      ` : ''}
-      ${isInNav ? `
-        <span class="vs-site-detail-sep">·</span>
-        <span class="vs-site-detail-meta">In nav (order: ${navOrder})</span>
-      ` : ''}
-      ${source === 'inferred' ? `
-        <span class="vs-site-detail-sep">·</span>
-        <span class="vs-site-detail-inferred">ⁱ Inferred from URL</span>
-      ` : ''}
+         title="${escapeHtml(routeLabel || node.label)}">
+      <div class="vs-site-card-body">
+        <div class="vs-site-card-title">
+          ${node.isHomepage ? '<span class="vs-site-card-star">★</span>' : ''}
+          <span class="vs-site-card-label">${escapeHtml(node.label)}</span>
+        </div>
+        ${routeLabel ? `<div class="vs-site-card-route">${escapeHtml(routeLabel)}</div>` : ''}
+      </div>
+      ${node.childCount > 0 ? `<span class="vs-site-card-count">${node.childCount}</span>` : ''}
+      ${renderNodeActions(node.id)}
     </div>
   `;
 }

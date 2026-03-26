@@ -276,10 +276,13 @@ class PageService
         }
 
         return [
-            'page'             => $this->getPage($nextSlug),
-            'renamed'          => $renamed,
-            'updated_files'    => $tailwindChangedPaths,
-            'suggested_prompt' => $suggestedPrompt,
+            'page'                    => $this->getPage($nextSlug),
+            'renamed'                 => $renamed,
+            'updated_files'           => array_values(array_unique($tailwindChangedPaths)),
+            'reference_updated_files' => $refUpdatedFiles ?? [],
+            'old_file_path'           => (string) $page['file_path'],
+            'new_file_path'           => (string) ($dbUpdates['file_path'] ?? $page['file_path']),
+            'suggested_prompt'        => $suggestedPrompt,
         ];
     }
 
@@ -355,7 +358,7 @@ class PageService
     {
         $updatedFiles = [];
 
-        foreach ($this->collectAllPreviewPaths() as $path) {
+        foreach ($this->collectAllRewriteablePaths() as $path) {
             $content = $this->fileManager->readFile($path);
             if ($content === null) {
                 continue;
@@ -377,23 +380,25 @@ class PageService
     // ═══════════════════════════════════════════
 
     /**
-     * Remove all references to a deleted page across preview files.
+     * Remove or neutralize all references to a deleted page across preview files.
      *
-     * Multi-pass approach (identical to Studio pages.php):
+     * Multi-pass approach:
      * - Pass 1: In partials — remove entire <li> elements containing dead links
      * - Pass 2: In partials — remove standalone <a> elements pointing to deleted page
-     * - Pass 3: In page files — unlink <a> tags (keep text content, remove wrapper)
+     * - Pass 3: In page files — neutralize <a> tags (replace href with $replacementHref,
+     *           preserving the element, its classes, and all other attributes)
      * - Pass 4: Everywhere — remove PHP active-state conditionals for the deleted slug
      * - Pass 5: Everywhere — clean up empty containers (<ul>/<ol> left empty)
      *
+     * @param string $replacementHref  What to set the href to in neutralized links (default '#')
      * @return array{updated_files: string[]}
      */
-    private function removePageReferencesAfterDelete(string $deletedSlug): array
+    public function removePageReferencesAfterDelete(string $deletedSlug, string $replacementHref = '#'): array
     {
         $updatedFiles = [];
         $hrefPattern = self::buildSlugHrefPattern($deletedSlug);
 
-        foreach ($this->collectAllPreviewPaths() as $path) {
+        foreach ($this->collectAllRewriteablePaths() as $path) {
             $content = $this->fileManager->readFile($path);
             if ($content === null) {
                 continue;
@@ -406,7 +411,7 @@ class PageService
                 $content = self::removeListItemsForSlug($content, $hrefPattern);
                 $content = self::removeStandaloneLinksForSlug($content, $hrefPattern);
             } else {
-                $content = self::unlinkReferencesToSlug($content, $hrefPattern);
+                $content = self::neutralizeLinksToSlug($content, $hrefPattern, $replacementHref);
             }
 
             $content = self::removeSlugConditionals($content, $deletedSlug);
@@ -532,6 +537,35 @@ class PageService
         return array_values(array_unique($paths));
     }
 
+    /**
+     * Collect ALL files that may contain route references for rewriting.
+     *
+     * This includes:
+     * - All page files (recursive, any depth)
+     * - All partials (_partials/ recursive)
+     * - NOT assets, images, or non-PHP files
+     *
+     * Phase 4: this is the canonical collector for the rewrite surface.
+     * Structural Move, URL Rename, and Delete all use this to ensure
+     * no stale references remain in footer/header/nav fragments.
+     */
+    private function collectAllRewriteablePaths(): array
+    {
+        $paths = [];
+
+        // 1. All page files (recursive) — nested pages at any depth
+        foreach ($this->fileManager->listPreviewFilesRecursive() as $file) {
+            $paths[] = (string) $file['path'];
+        }
+
+        // 2. All partials — footer, header, nav, etc.
+        foreach ($this->fileManager->listPartialFiles() as $file) {
+            $paths[] = (string) $file['path'];
+        }
+
+        return array_values(array_unique($paths));
+    }
+
     private static function buildSlugHrefPattern(string $slug): string
     {
         $escaped = preg_quote($slug, '/');
@@ -565,13 +599,24 @@ class PageService
         return preg_replace($pattern, '', $content) ?? $content;
     }
 
-    private static function unlinkReferencesToSlug(string $content, string $hrefPattern): string
+    /**
+     * Neutralize links to the deleted slug in page files.
+     *
+     * Instead of stripping the <a> tag entirely (which would break styling
+     * on button-class links, grid items, flex children, etc.), we replace
+     * just the href value with $replacementHref (default '#').
+     *
+     * Before:  <a href="/contact" class="btn btn-primary">Contact us</a>
+     * After:   <a href="#" class="btn btn-primary">Contact us</a>
+     */
+    private static function neutralizeLinksToSlug(string $content, string $hrefPattern, string $replacementHref = '#'): string
     {
-        $tc = self::phpAwareTagContent();
-        $pattern = '/<a\s' . $tc . '?\bhref\s*=\s*["\']' . $hrefPattern . '["\']' . $tc . '>'
-            . '((?:(?!<\/a>).)*?)'
-            . '<\/a>/si';
-        return preg_replace($pattern, '$1', $content) ?? $content;
+        // HTML-escape for safe attribute interpolation, then escape for preg_replace replacement context
+        $safeHref = htmlspecialchars($replacementHref, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeHref = str_replace(['\\', '$'], ['\\\\', '\\$'], $safeHref);
+
+        $pattern = '/(\\bhref\\s*=\\s*)["\']' . $hrefPattern . '["\']/i';
+        return preg_replace($pattern, '$1"' . $safeHref . '"', $content) ?? $content;
     }
 
     private static function removeSlugConditionals(string $content, string $slug): string
@@ -594,7 +639,7 @@ class PageService
         return $content;
     }
 
-    private static function rewriteHrefSlug(string $content, string $oldSlug, string $replacement): string
+    public static function rewriteHrefSlug(string $content, string $oldSlug, string $replacement): string
     {
         $normalizedOld = strtolower(trim($oldSlug));
 
@@ -634,7 +679,7 @@ class PageService
         ) ?? $content;
     }
 
-    private static function rewritePageSlugComparisons(string $content, string $oldSlug, string $newSlug): string
+    public static function rewritePageSlugComparisons(string $content, string $oldSlug, string $newSlug): string
     {
         $normalizedOld = strtolower(trim($oldSlug));
 
@@ -664,6 +709,62 @@ class PageService
     }
 
     // ═══════════════════════════════════════════
+    //  Batch Rewrite Engine (Phase 4)
+    // ═══════════════════════════════════════════
+
+    /**
+     * Apply multiple slug rewrites to file content in overlap-safe order.
+     *
+     * Sorts by old slug length descending (longest-path-first) to prevent
+     * /about from matching before /about/team in a subtree move.
+     *
+     * @param string $content    File content to rewrite
+     * @param array  $slugMap    ['old/slug' => 'new/slug', ...] — will be sorted longest-first
+     * @return string            Rewritten content
+     */
+    public static function batchRewriteSlugReferences(string $content, array $slugMap): string
+    {
+        // Sort by old slug length descending (longest-path-first)
+        uksort($slugMap, fn($a, $b) => strlen($b) - strlen($a));
+
+        foreach ($slugMap as $oldSlug => $newSlug) {
+            $content = self::rewriteHrefSlug($content, $oldSlug, $newSlug);
+            $content = self::rewritePageSlugComparisons($content, $oldSlug, $newSlug);
+        }
+
+        return $content;
+    }
+
+    /**
+     * Rewrite all rewriteable files for a batch of slug changes.
+     *
+     * Covers pages (any depth) + partials (footer, header, nav, etc.).
+     * Returns list of files that were actually modified.
+     *
+     * @param array $slugMap ['old/slug' => 'new/slug', ...]
+     * @return string[] List of file paths that were modified
+     */
+    public function rewriteAllReferencesForSlugMap(array $slugMap): array
+    {
+        $updatedFiles = [];
+
+        foreach ($this->collectAllRewriteablePaths() as $path) {
+            $content = $this->fileManager->readFile($path);
+            if ($content === null) {
+                continue;
+            }
+
+            $rewritten = self::batchRewriteSlugReferences($content, $slugMap);
+            if ($rewritten !== $content) {
+                $this->fileManager->writeFile($path, $rewritten);
+                $updatedFiles[] = $path;
+            }
+        }
+
+        return $updatedFiles;
+    }
+
+    // ═══════════════════════════════════════════
     //  Static Helpers
     // ═══════════════════════════════════════════
 
@@ -676,6 +777,45 @@ class PageService
         $value = preg_replace('/[^a-z0-9-]+/', '-', $value) ?? '';
         $value = trim($value, '-');
         return $value;
+    }
+
+    /**
+     * Normalize a path-based slug that may contain multiple segments.
+     *
+     * Each segment is independently normalized (lowercase, alphanumeric + hyphens).
+     * Returns null if the input is empty or any segment normalizes to empty.
+     *
+     * Examples:
+     *   'Work/About Us' → 'work/about-us'
+     *   'services/web-design' → 'services/web-design'
+     *   'bad//path' → null (empty segment)
+     *   '' → null
+     *
+     * The existing normalizeSlug() (flat, strips '/') stays untouched
+     * for backward compatibility in flows that use single-segment slugs.
+     */
+    public static function normalizePathSlug(string $input): ?string
+    {
+        $input = trim($input, " \t\n\r\0\x0B/");
+        if ($input === '') {
+            return null;
+        }
+
+        $segments = explode('/', $input);
+        $normalized = [];
+
+        foreach ($segments as $seg) {
+            $seg = strtolower(trim($seg));
+            $seg = preg_replace('/[^a-z0-9-]/', '-', $seg) ?? '';
+            $seg = preg_replace('/-+/', '-', $seg) ?? '';
+            $seg = trim($seg, '-');
+            if ($seg === '') {
+                return null;
+            }
+            $normalized[] = $seg;
+        }
+
+        return implode('/', $normalized);
     }
 
     /**

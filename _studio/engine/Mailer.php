@@ -170,14 +170,32 @@ class Mailer
     /**
      * Test the current email configuration.
      *
+     * Tests the connection first, then sends a real test email through
+     * the standard send() path so From headers are built correctly.
+     *
      * @return array{success: bool, message: string, driver: string}
      */
     public function testConnection(string $testRecipient): array
     {
         $driver = $this->getDriver();
-        $result = $driver->testConnection($testRecipient);
-        $result['driver'] = $driver->getName();
-        return $result;
+
+        // Send test email through the standard send() path
+        // so From address/name from settings are applied correctly.
+        $subject = 'VoxelSite — Email Test';
+        $body = "This is a test email from VoxelSite.\n\n";
+        $body .= "If you're reading this, your SMTP configuration is working.\n";
+        $body .= 'Sent at: ' . gmdate('Y-m-d H:i:s T') . "\n";
+        $body .= "Driver: {$driver->getName()}\n";
+
+        $sent = $this->send($testRecipient, $subject, $body);
+
+        return [
+            'success' => $sent,
+            'message' => $sent
+                ? "Connected to {$driver->getName()} and test email sent successfully."
+                : 'Failed to send test email: ' . $this->lastError,
+            'driver'  => $driver->getName(),
+        ];
     }
 
     /**
@@ -191,9 +209,39 @@ class Mailer
     public static function testConfig(array $config, string $testRecipient): array
     {
         $driver = self::createDriverFromConfig($config);
-        $result = $driver->testConnection($testRecipient);
-        $result['driver'] = $driver->getName();
-        return $result;
+
+        // Build From header from the config being tested
+        $fromAddress = $config['from_address'] ?? '';
+        $fromName    = $config['from_name'] ?? '';
+        $fromHeader  = $fromName ? "{$fromName} <{$fromAddress}>" : $fromAddress;
+
+        $subject = 'VoxelSite — Email Test';
+        $body = "This is a test email from VoxelSite.\n\n";
+        $body .= "If you're reading this, your SMTP configuration is working.\n";
+        $body .= 'Sent at: ' . gmdate('Y-m-d H:i:s T') . "\n";
+        $body .= "Driver: {$driver->getName()}\n";
+
+        $headers = [
+            'From' => $fromHeader,
+            'Content-Type' => 'text/plain; charset=UTF-8',
+        ];
+
+        try {
+            $sent = $driver->send($testRecipient, $subject, $body, $headers);
+            return [
+                'success' => $sent,
+                'message' => $sent
+                    ? "Connected to {$driver->getName()} and test email sent successfully."
+                    : "Connected but failed to send test email via {$driver->getName()}.",
+                'driver'  => $driver->getName(),
+            ];
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'SMTP error: ' . $e->getMessage(),
+                'driver'  => $driver->getName(),
+            ];
+        }
     }
 
     /**

@@ -421,8 +421,15 @@ if ($method === 'DELETE' && isset($params['slug'])) {
     // Remove from database
     $db->delete('pages', 'slug = ?', [$slug]);
 
+    // Read optional replacementHref for link neutralization (default '#')
+    $body = json_decode(file_get_contents('php://input'), true) ?: [];
+    $replacementHref = trim($body['replacementHref'] ?? '#');
+    if ($replacementHref === '' || str_starts_with($replacementHref, '//') || preg_match('/^[a-z][a-z0-9+\-.]*:/i', $replacementHref)) {
+        $replacementHref = '#';
+    }
+
     // Remove references from ALL preview files — nav, footer, cross-links.
-    $cleanupResult = removePageReferencesAfterDelete($fileManager, $slug);
+    $cleanupResult = removePageReferencesAfterDelete($fileManager, $slug, $replacementHref);
     $tailwindChangedPaths = array_merge($tailwindChangedPaths, $cleanupResult['updated_files']);
 
     // Also try BEM-style nav rebuild as bonus
@@ -554,13 +561,15 @@ function buildRenameCleanupPrompt(string $oldSlug, string $newSlug, string $newT
  * Multi-pass approach:
  * - Pass 1: In partials — remove entire <li> elements containing dead links
  * - Pass 2: In partials — remove standalone <a> elements pointing to deleted page
- * - Pass 3: In page files — unlink <a> tags (keep text content, remove wrapper)
+ * - Pass 3: In page files — neutralize <a> tags (replace href with $replacementHref,
+ *           preserving the element, its classes, and all other attributes)
  * - Pass 4: Everywhere — remove PHP active-state conditionals for the deleted slug
  * - Pass 5: Everywhere — clean up empty containers (<ul>/<ol> left empty)
  *
+ * @param string $replacementHref  What to set the href to in neutralized links (default '#')
  * @return array{updated_files: string[]}
  */
-function removePageReferencesAfterDelete(FileManager $fileManager, string $deletedSlug): array
+function removePageReferencesAfterDelete(FileManager $fileManager, string $deletedSlug, string $replacementHref = '#'): array
 {
     $updatedFiles = [];
     $hrefPattern = buildSlugHrefPattern($deletedSlug);
@@ -579,8 +588,8 @@ function removePageReferencesAfterDelete(FileManager $fileManager, string $delet
             $content = removeListItemsForSlug($content, $hrefPattern);
             $content = removeStandaloneLinksForSlug($content, $hrefPattern);
         } else {
-            // Page files: unlink dead references (keep visible text)
-            $content = unlinkReferencesToSlug($content, $hrefPattern);
+            // Page files: neutralize dead links (replace href with $replacementHref, preserve element)
+            $content = neutralizeLinksToSlug($content, $hrefPattern, $replacementHref);
         }
 
         // Clean up PHP active-state conditionals referencing the deleted slug
@@ -620,16 +629,31 @@ function buildDeleteCleanupPrompt(string $slug, string $title, array $updatedFil
 // ═══════════════════════════════════════════════════
 
 /**
- * Collect all preview file paths (pages + partials).
+ * Collect ALL files that may contain route references for rewriting.
+ *
+ * This includes:
+ * - All page files (recursive, any depth)
+ * - All partials (_partials/ recursive)
+ * - NOT assets, images, or non-PHP files
+ *
+ * Matches PageService::collectAllRewriteablePaths() for behavioral parity.
  *
  * @return string[]
  */
 function collectAllPreviewPaths(FileManager $fileManager): array
 {
     $paths = [];
-    foreach ($fileManager->listPreviewFiles() as $file) {
+
+    // 1. All page files (recursive) — nested pages at any depth
+    foreach ($fileManager->listPreviewFilesRecursive() as $file) {
         $paths[] = (string) $file['path'];
     }
+
+    // 2. All partials — footer, header, nav, etc.
+    foreach ($fileManager->listPartialFiles() as $file) {
+        $paths[] = (string) $file['path'];
+    }
+
     return array_values(array_unique($paths));
 }
 
@@ -701,21 +725,22 @@ function removeStandaloneLinksForSlug(string $content, string $hrefPattern): str
 }
 
 /**
- * Unlink <a> tags pointing to the deleted slug in page body content.
+ * Neutralize <a> tags pointing to the deleted slug in page body content.
  *
- * Keeps the visible text/HTML, removes the <a> wrapper.
- * <a href="/slug" class="btn">Read More</a> → Read More
+ * Instead of stripping the <a> tag entirely (which would break button
+ * styling, grid items, flex children, etc.), replace just the href value.
+ *
+ * <a href="/slug" class="btn">Read More</a> → <a href="#" class="btn">Read More</a>
  */
-function unlinkReferencesToSlug(string $content, string $hrefPattern): string
+function neutralizeLinksToSlug(string $content, string $hrefPattern, string $replacementHref = '#'): string
 {
-    $tc = phpAwareTagContent();
+    // HTML-escape for safe attribute interpolation, then escape for preg_replace replacement context
+    $safeHref = htmlspecialchars($replacementHref, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $safeHref = str_replace(['\\', '$'], ['\\\\', '\\$'], $safeHref);
 
-    // Replace <a href="/slug"...>CONTENT</a> with just CONTENT
-    $pattern = '/<a\s' . $tc . '?\bhref\s*=\s*["\']' . $hrefPattern . '["\']' . $tc . '>'
-        . '((?:(?!<\/a>).)*?)'
-        . '<\/a>/si';
-
-    return preg_replace($pattern, '$1', $content) ?? $content;
+    // Replace href="/slug" with href="#" — preserves the <a> element and all attributes
+    $pattern = '/(\bhref\s*=\s*)["\']' . $hrefPattern . '["\']/i';
+    return preg_replace($pattern, '$1"' . $safeHref . '"', $content) ?? $content;
 }
 
 /**

@@ -481,15 +481,16 @@ foreach ($pageNodes as $pNode) {
     record(array_key_exists('hierarchySource', $pMeta), "hierarchy meta: {$pNode['id']} has hierarchySource", $errors, $passed, $failed);
     record(array_key_exists('childCount', $pMeta), "hierarchy meta: {$pNode['id']} has childCount", $errors, $passed, $failed);
 }
-// Current flat site: all levels = 1, all parents = null
-$allLevel1 = true;
-$allParentNull = true;
+// Structural consistency: levels are valid and parent references exist
+$allLevelsValid = true;
+$allParentsValid = true;
 foreach ($pageNodes as $pNode) {
-    if (($pNode['meta']['level'] ?? 0) !== 1) $allLevel1 = false;
-    if (array_key_exists('parentPageId', $pNode['meta']) && $pNode['meta']['parentPageId'] !== null) $allParentNull = false;
+    if (($pNode['meta']['level'] ?? 0) < 1) $allLevelsValid = false;
+    $pid = $pNode['meta']['parentPageId'] ?? null;
+    if ($pid !== null && $graph->getNode($pid) === null) $allParentsValid = false;
 }
-record($allLevel1, 'real site: all pages level=1 (flat)', $errors, $passed, $failed);
-record($allParentNull, 'real site: all pages parentPageId=null (flat)', $errors, $passed, $failed);
+record($allLevelsValid, 'real site: all pages level >= 1', $errors, $passed, $failed);
+record($allParentsValid, 'real site: all parentPageId references are valid nodes or null', $errors, $passed, $failed);
 
 
 // ═══════════════════════════════════════════

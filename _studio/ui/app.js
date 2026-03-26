@@ -622,7 +622,7 @@ function renderTopBar() {
 
         <!-- Center: Route tabs (contextual mode) -->
         <div class="vs-topbar-center">
-          ${routeTabsHtml ? `<nav class="vs-nav-routes" aria-label="Section navigation">${routeTabsHtml}</nav>` : ''}
+          ${routeTabsHtml ? `<nav class="vs-nav-routes" aria-label="Section navigation"><div class="vs-nav-pill"></div>${routeTabsHtml}</nav>` : ''}
         </div>
 
         <!-- Right: Search hint + Theme + User -->
@@ -856,10 +856,14 @@ function renderDashboardLayout() {
 // ═══════════════════════════════════════════
 
 function renderDesktopOnlyNotice(route) {
-  const featureName = route === 'editor' ? 'Code Editor' : 'AI Chat';
-  const description = route === 'editor'
-    ? 'The code editor needs a wider screen for the file tree, editor pane, and preview.'
-    : 'The AI conversation and live preview work side-by-side. That needs a wider screen.';
+  const features = {
+    editor: { name: 'Code Editor', desc: 'The code editor needs a wider screen for the file tree, editor pane, and preview.' },
+    chat:   { name: 'AI Chat', desc: 'The AI conversation and live preview work side-by-side. That needs a wider screen.' },
+    'site-map': { name: 'Site Control', desc: 'The site graph and inspector panels need a wider screen to display properly.' },
+  };
+  const feature = features[route] || features.chat;
+  const featureName = feature.name;
+  const description = feature.desc;
 
   return `
     <div class="h-full overflow-y-auto">
@@ -869,11 +873,7 @@ function renderDesktopOnlyNotice(route) {
         </div>
         <h1 style="font-size: 18px; font-weight: 600; color: var(--vs-text-primary); letter-spacing: -0.02em; margin: 0 0 10px;">${featureName}</h1>
         <p style="font-size: 13px; color: var(--vs-text-tertiary); margin: 0 0 6px; max-width: 280px; line-height: 1.6;">${description}</p>
-        <p style="font-size: 13px; color: var(--vs-text-tertiary); margin: 0 0 28px; max-width: 280px; line-height: 1.6;">Open Studio on a desktop or tablet to use this feature.</p>
-        <a href="#/assets" style="font-size: 13px; font-weight: 500; color: var(--vs-accent); text-decoration: none; padding: 8px 16px; border: 1px solid var(--vs-border-subtle); border-radius: var(--radius-lg); transition: all 150ms ease;"
-           onmouseover="this.style.borderColor='var(--vs-accent)'" onmouseout="this.style.borderColor='var(--vs-border-subtle)'">
-          Browse Assets
-        </a>
+        <p style="font-size: 13px; color: var(--vs-text-tertiary); margin: 0; max-width: 280px; line-height: 1.6;">Open Studio on a desktop or tablet to use this feature.</p>
       </div>
     </div>
   `;
@@ -964,15 +964,17 @@ function renderAccessDenied() {
 function renderPlaceholderPage(title, description) {
   return `
     <div class="vs-empty-state" style="min-height: 300px;">
-      <div class="vs-empty-icon" style="animation: none;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24">
-          <path style="opacity:1" fill="currentColor" d="M12 3L20 7.5L12 12L4 7.5Z"/>
-          <path style="opacity:0.7" fill="currentColor" d="M4 7.5L12 12L12 21L4 16.5Z"/>
-          <path style="opacity:0.4" fill="currentColor" d="M20 7.5L12 12L12 21L20 16.5Z"/>
-        </svg>
+      <div class="vs-empty-state-inner">
+        <div class="vs-empty-state-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24">
+            <path style="opacity:1" fill="currentColor" d="M12 3L20 7.5L12 12L4 7.5Z"/>
+            <path style="opacity:0.7" fill="currentColor" d="M4 7.5L12 12L12 21L4 16.5Z"/>
+            <path style="opacity:0.4" fill="currentColor" d="M20 7.5L12 12L12 21L20 16.5Z"/>
+          </svg>
+        </div>
+        <p class="vs-empty-state-title">${title}</p>
+        <p class="vs-empty-state-desc" style="margin-bottom: 0;">${description}</p>
       </div>
-      <h1 class="vs-empty-title">${title}</h1>
-      <p class="vs-empty-description" style="margin-bottom: 0;">${description}</p>
     </div>
   `;
 }
@@ -1002,6 +1004,61 @@ function getPageIcon(slug) {
 // ═══════════════════════════════════════════
 //  Navigation Helpers
 // ═══════════════════════════════════════════
+
+/**
+ * Position the sliding pill indicator behind the active nav tab.
+ * Uses transform: translateX() for GPU-accelerated animation.
+ * The CSS transition (spring-curve cubic-bezier) handles the kinetic feel.
+ *
+ * Since renderApp() rebuilds the entire topbar DOM on each route change,
+ * we cache the pill's last position to create a smooth cross-render slide.
+ */
+let lastPillX = null;
+let lastPillW = null;
+let lastPillGroup = null;
+
+function positionNavPill() {
+  requestAnimationFrame(() => {
+    const container = document.querySelector('.vs-nav-routes');
+    const pill = container?.querySelector('.vs-nav-pill');
+    const activeTab = container?.querySelector('.vs-nav-item-active');
+    if (!container || !pill || !activeTab) return;
+
+    // Detect group changes (Create → Studio → Manage)
+    const currentGroup = document.querySelector('.vs-nav-group-active')?.dataset?.group || '';
+
+    const containerRect = container.getBoundingClientRect();
+    const tabRect = activeTab.getBoundingClientRect();
+
+    const newX = tabRect.left - containerRect.left;
+    const newW = tabRect.width;
+
+    const sameGroup = lastPillGroup === currentGroup;
+
+    if (lastPillX === null || !sameGroup) {
+      // First render or group switch — snap instantly, no animation
+      pill.style.transition = 'none';
+      pill.style.transform = `translateX(${newX}px)`;
+      pill.style.width = `${newW}px`;
+      pill.offsetHeight; // force reflow
+      pill.style.transition = '';
+    } else {
+      // Same group, different tab — animate the slide
+      pill.style.transition = 'none';
+      pill.style.transform = `translateX(${lastPillX}px)`;
+      pill.style.width = `${lastPillW}px`;
+      pill.offsetHeight; // force reflow
+
+      pill.style.transition = '';
+      pill.style.transform = `translateX(${newX}px)`;
+      pill.style.width = `${newW}px`;
+    }
+
+    lastPillX = newX;
+    lastPillW = newW;
+    lastPillGroup = currentGroup;
+  });
+}
 
 /**
  * Navigate to Chat tab and pre-fill the prompt input with a message.
@@ -3054,6 +3111,9 @@ function bindAppEvents() {
       if (target) router.navigate(target);
     });
   });
+
+  // Position the sliding pill indicator on the active tab
+  positionNavPill();
 
   // Command palette
   const commandBtn = document.getElementById('btn-command-palette');

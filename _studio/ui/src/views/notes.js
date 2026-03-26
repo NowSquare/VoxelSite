@@ -161,13 +161,12 @@ function renderMarkdown(text) {
  */
 function renderEditorPlaceholder() {
   return `
-    <div class="vs-empty-state" style="border: none; background: transparent; min-height: auto; height: 100%;">
-      <div class="vs-empty-state-inner" style="max-width: 280px;">
+    <div class="vs-empty-state vs-empty-state--panel">
+      <div class="vs-empty-state-inner">
         <div class="vs-empty-state-icon">
           <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         </div>
         <p class="vs-empty-state-title">Select a note</p>
-        <p class="vs-empty-state-desc">Choose a note from the list or create a new one to start writing.</p>
       </div>
     </div>
   `;
@@ -194,8 +193,8 @@ export function renderNotesView() {
     <div id="vs-notes-root" class="vs-notes">
       <!-- Empty state (shown if no notes exist) -->
       <div id="vs-notes-empty" class="vs-notes-empty" style="display: none;">
-        <div class="vs-empty-state" style="border: none; background: transparent; min-height: auto;">
-          <div class="vs-empty-state-inner" style="max-width: 280px;">
+        <div class="vs-empty-state vs-empty-state--inline">
+          <div class="vs-empty-state-inner">
             <div class="vs-empty-state-icon">
               <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
             </div>

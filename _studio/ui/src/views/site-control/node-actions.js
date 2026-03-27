@@ -2,8 +2,9 @@
  * VoxelSite Studio — Site Control: Contextual Action Bar
  *
  * Renders a compact action toolbar below a selected page card.
- * Phase 1: all actions are stubs except "Change URL" (enters proposal mode).
- * Phase 2 wires Rename, Move, Delete to real operations.
+ * Actions:
+ *   Primary: ✎ Rename
+ *   Overflow: Open in Editor, Open in Chat, Change URL, Move, Delete
  */
 
 import { escapeHtml } from '../../helpers.js';
@@ -42,6 +43,9 @@ export function renderNodeActions(nodeId) {
       <div class="vs-sc-action-overflow">
         <button class="vs-sc-action" data-action="overflow" title="More actions">⋯ More</button>
         <div class="vs-sc-action-dropdown">
+          <button class="vs-sc-action-drop-item" data-action="open-in-editor">Open in Editor</button>
+          <button class="vs-sc-action-drop-item" data-action="open-in-chat">Open in Chat</button>
+          <div class="vs-sc-action-drop-divider"></div>
           <button class="vs-sc-action-drop-item" data-action="change-url">Change URL</button>
           ${moveButton}
           ${deleteButton}

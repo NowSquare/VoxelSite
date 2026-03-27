@@ -340,6 +340,7 @@ export async function apiStream(endpoint, body, callbacks = {}) {
           onWarning(parsed.message || '');
           break;
         case 'error':
+          receivedDone = true; // error is also a terminal event
           onError(parsed);
           break;
       }
@@ -390,6 +391,10 @@ export async function apiStream(endpoint, body, callbacks = {}) {
       onDone({ cancelled: true, message: 'Generation stopped.' });
       return;
     }
+
+    // If the stream already delivered a terminal event (done/error),
+    // the connection close is expected — don't override with an error.
+    if (receivedDone) return;
 
     // Connection dropped. The server has ignore_user_abort(true), so it
     // continues processing even after disconnect. Poll for completion

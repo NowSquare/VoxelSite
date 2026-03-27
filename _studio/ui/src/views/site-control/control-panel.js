@@ -91,6 +91,8 @@ import {
   saveCardPreferences,
   isCardCollapsed,
 } from './state.js';
+import { orchState, orchPlan, orchResult } from './orchestration-console.js';
+import { renderActionLog } from './action-log.js';
 
 // ═══════════════════════════════════════════
 //  Right Panel — Entry Point
@@ -103,6 +105,31 @@ import {
  * - Footer: contextual prompt placeholder (non-functional in Phase 1).
  */
 export function renderControlPanel() {
+  // Orchestration mode: right panel becomes the structured review surface
+  const isOrchestrating = orchState !== 'idle';
+
+  if (isOrchestrating) {
+    return `
+      <div class="vs-sc-right-inner">
+        <div class="vs-sc-right-header">
+          <span class="vs-sc-right-title">Review</span>
+          <span class="vs-sc-right-mode-badge is-${orchState}">
+            ${orchState === 'running' ? 'Analyzing' :
+              orchState === 'plan' ? 'Plan Ready' :
+              orchState === 'plan_failed' ? 'Plan Failed' :
+              orchState === 'applying' ? 'Applying' :
+              orchState === 'applied' ? 'Applied' :
+              orchState === 'apply_failed' ? 'Apply Failed' :
+              orchState === 'complete' ? 'Complete' : orchState}
+          </span>
+        </div>
+        <div class="vs-sc-right-body" id="vs-sc-right-body">
+          ${renderOrchReview()}
+        </div>
+      </div>
+    `;
+  }
+
   const hasSelection = selectedNodeId && graphModel && graphModel.nodes.get(selectedNodeId);
   const node = hasSelection ? graphModel.nodes.get(selectedNodeId) : null;
 
@@ -123,6 +150,325 @@ export function renderControlPanel() {
       </div>
     </div>
   `;
+}
+
+/**
+ * Render the orchestration review panel body.
+ * Shows structured plan data: affected files, regions, rationale.
+ * Placeholder for B-3 plan review; currently shows waiting state.
+ */
+function renderOrchReview() {
+  // Plan review mode — show discovery + edit plan
+  if (orchState === 'plan' && orchPlan) {
+    const files = orchPlan.files || [];
+    const affected = orchPlan.affected_pages || [];
+    const skipped = orchPlan.skipped || [];
+    const intent = orchPlan.intent || null;
+    const edits = orchPlan.edits || [];
+    const riskLevel = orchPlan.risk_level || 'medium';
+    const planSummary = orchPlan.plan_summary || '';
+
+    const anchoredEdits = edits.filter(e => e.anchored !== false);
+    const unanchoredEdits = edits.filter(e => e.anchored === false);
+    const hasAnchoredEdits = anchoredEdits.length > 0;
+
+    return `
+      <div class="vs-sc-orch-review">
+        ${intent ? `
+          <div class="vs-sc-review-section">
+            <h4 class="vs-sc-review-heading">Intent</h4>
+            <div class="vs-sc-review-intent">
+              <span class="vs-impact-type-badge vs-impact-type-${intent.category || 'content'}">${escapeHtml(intent.category || 'content')}</span>
+              <span class="vs-sc-review-scope">${escapeHtml(intent.scope || 'site-wide')}</span>
+            </div>
+            <p class="vs-sc-review-summary">${escapeHtml(intent.summary || '')}</p>
+            ${intent.keywords && intent.keywords.length > 0 ? `
+              <div class="vs-sc-review-keywords">
+                ${intent.keywords.map(k => `<span class="vs-sc-review-keyword">${escapeHtml(k)}</span>`).join('')}
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
+        ${hasAnchoredEdits ? `
+          <div class="vs-sc-review-section">
+            <h4 class="vs-sc-review-heading">
+              Edit Plan
+              <span class="vs-sc-review-count">${anchoredEdits.length}</span>
+              <span class="vs-sc-review-risk is-${riskLevel}">${riskLevel}</span>
+            </h4>
+            ${planSummary ? `<p class="vs-sc-review-plan-summary">${escapeHtml(planSummary)}</p>` : ''}
+            ${anchoredEdits.map((edit, i) => `
+              <div class="vs-sc-review-edit">
+                <div class="vs-sc-review-edit-header">
+                  <span class="vs-sc-review-edit-num">${i + 1}</span>
+                  <span class="vs-sc-review-edit-strategy">${escapeHtml(edit.strategy || 'edit')}</span>
+                  <span class="vs-sc-review-file-path">${escapeHtml(edit.file || '')}</span>
+                </div>
+                <p class="vs-sc-review-edit-desc">${escapeHtml(edit.description || '')}</p>
+                ${edit.before_snippet || edit.after_snippet ? `
+                  <div class="vs-sc-review-diff">
+                    ${edit.before_snippet ? `<div class="vs-sc-review-diff-before"><span class="vs-sc-diff-label">−</span><code>${escapeHtml(edit.before_snippet)}</code></div>` : ''}
+                    ${edit.after_snippet ? `<div class="vs-sc-review-diff-after"><span class="vs-sc-diff-label">+</span><code>${escapeHtml(edit.after_snippet)}</code></div>` : ''}
+                  </div>
+                ` : ''}
+                ${edit.verification ? `<p class="vs-sc-review-edit-verify">✓ ${escapeHtml(edit.verification)}</p>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        ` : `
+          <div class="vs-sc-review-section">
+            <h4 class="vs-sc-review-heading">Candidate Files <span class="vs-sc-review-count">${files.length}</span></h4>
+            ${files.length === 0 ? '<p class="vs-sc-review-empty">No files affected</p>' :
+              files.map(f => `
+                <div class="vs-sc-review-file">
+                  <div class="vs-sc-review-file-header">
+                    <span class="vs-impact-type-badge vs-impact-type-${f.type || 'page'}">${escapeHtml(f.type || 'file')}</span>
+                    <span class="vs-sc-review-file-path">${escapeHtml(f.path)}</span>
+                  </div>
+                  ${f.reason ? `<span class="vs-sc-review-file-reason">${escapeHtml(f.reason)}</span>` : ''}
+                </div>
+              `).join('')}
+          </div>
+        `}
+        ${unanchoredEdits.length > 0 ? `
+          <div class="vs-sc-review-section">
+            <h4 class="vs-sc-review-heading">Unverified Edits <span class="vs-sc-review-count">${unanchoredEdits.length}</span></h4>
+            <p class="vs-sc-review-plan-summary">These edits could not be anchored to source text and will not be applied.</p>
+            ${unanchoredEdits.map(e => `
+              <div class="vs-sc-review-issue">
+                <span class="vs-sc-review-file-path">${escapeHtml(e.file || '')}</span>
+                <span class="vs-sc-review-skip-reason">${escapeHtml(e.anchor_issue || 'Not anchored to source')}</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+        ${affected.length > 0 ? `
+          <div class="vs-sc-review-section">
+            <h4 class="vs-sc-review-heading">Affected Pages <span class="vs-sc-review-count">${affected.length}</span></h4>
+            <div class="vs-sc-review-pages">
+              ${affected.map(p => `
+                <div class="vs-sc-review-page">
+                  <span class="vs-sc-review-page-label">${escapeHtml(p.label)}</span>
+                  ${p.slug ? `<span class="vs-sc-review-page-slug">${escapeHtml(p.slug)}</span>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+        ${skipped.length > 0 ? `
+          <div class="vs-sc-review-section">
+            <h4 class="vs-sc-review-heading">Skipped</h4>
+            ${skipped.map(s => `
+              <div class="vs-sc-review-skip">
+                <span class="vs-sc-review-file-path">${escapeHtml(s.path)}</span>
+                <span class="vs-sc-review-skip-reason">${escapeHtml(s.reason)}</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+        <div class="vs-sc-review-actions">
+          ${hasAnchoredEdits ? `<button class="vs-sc-review-approve" id="vs-sc-orch-apply">Approve &amp; Apply</button>` : ''}
+          <button class="vs-sc-review-cancel" id="vs-sc-orch-dismiss">Dismiss</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // Plan failed: discovery found files but edits didn't anchor
+  if (orchState === 'plan_failed' && orchPlan) {
+    const files = orchPlan.files || [];
+    const affected = orchPlan.affected_pages || [];
+    const edits = orchPlan.edits || [];
+    const planSummary = orchPlan.plan_summary || '';
+    const unanchoredEdits = edits.filter(e => !e.anchored);
+
+    return `
+      <div class="vs-sc-orch-review">
+        <div class="vs-sc-review-section">
+          <h4 class="vs-sc-review-heading">Plan Could Not Be Anchored</h4>
+          <p class="vs-sc-review-plan-summary">${escapeHtml(planSummary || 'The edit plan could not be verified against the source files.')}</p>
+          ${unanchoredEdits.length > 0 ? `
+            <div class="vs-sc-review-issues">
+              ${unanchoredEdits.map(e => `
+                <div class="vs-sc-review-issue">
+                  <span class="vs-sc-review-file-path">${escapeHtml(e.file || '')}</span>
+                  <span class="vs-sc-review-skip-reason">${escapeHtml(e.anchor_issue || 'before_snippet not found in source')}</span>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+        <div class="vs-sc-review-section">
+          <h4 class="vs-sc-review-heading">Discovered Files <span class="vs-sc-review-count">${files.length}</span></h4>
+          ${files.map(f => `
+            <div class="vs-sc-review-file">
+              <div class="vs-sc-review-file-header">
+                <span class="vs-impact-type-badge vs-impact-type-${f.type || 'page'}">${escapeHtml(f.type || 'file')}</span>
+                <span class="vs-sc-review-file-path">${escapeHtml(f.path)}</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        ${affected.length > 0 ? `
+          <div class="vs-sc-review-section">
+            <h4 class="vs-sc-review-heading">Affected Pages <span class="vs-sc-review-count">${affected.length}</span></h4>
+            <div class="vs-sc-review-pages">
+              ${affected.map(p => `
+                <div class="vs-sc-review-page">
+                  <span class="vs-sc-review-page-label">${escapeHtml(p.label)}</span>
+                  ${p.slug ? `<span class="vs-sc-review-page-slug">${escapeHtml(p.slug)}</span>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+        <div class="vs-sc-review-actions">
+          <button class="vs-sc-review-cancel" id="vs-sc-orch-dismiss">Dismiss</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // Applying: show progress
+  if (orchState === 'applying') {
+    return `
+      <div class="vs-sc-orch-review">
+        <div class="vs-sc-review-waiting">
+          <div class="vs-sc-command-spinner"></div>
+          <p class="vs-sc-review-waiting-text">Applying edits…</p>
+          <p class="vs-sc-review-waiting-hint">Each file is read, anchored, patched, and verified.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  // Applied: show verification report
+  if (orchState === 'applied') {
+    const filesChanged = orchResult?.filesChanged || 0;
+    const verification = orchResult?.verification || [];
+    const duration = orchResult?.duration_ms;
+
+    // Count total checks passed
+    let totalChecks = 0;
+    let passedChecks = 0;
+    verification.forEach(v => {
+      v.checks.forEach(c => {
+        totalChecks++;
+        if (c.passed) passedChecks++;
+      });
+    });
+
+    const verifyRows = verification.map(v => {
+      const checks = v.checks.map(c => {
+        const icon = c.passed ? '✔' : '✗';
+        const cls = c.passed ? 'is-passed' : 'is-failed';
+        return `<div class="vs-sc-verify-check ${cls}">
+          <span class="vs-sc-verify-icon">${icon}</span>
+          <span class="vs-sc-verify-name">${escapeHtml(c.check)}</span>
+          <span class="vs-sc-verify-detail">${escapeHtml(c.detail)}</span>
+        </div>`;
+      }).join('');
+      return `<div class="vs-sc-verify-file">
+        <div class="vs-sc-verify-file-name">${escapeHtml(v.file)}</div>
+        ${checks}
+      </div>`;
+    }).join('');
+
+    return `
+      <div class="vs-sc-orch-review">
+        <div class="vs-sc-review-section">
+          <h4 class="vs-sc-review-heading">Verification Report</h4>
+          <div class="vs-sc-verify-summary">
+            <span class="vs-sc-verify-stat">${filesChanged} file(s) patched</span>
+            <span class="vs-sc-verify-stat">${passedChecks}/${totalChecks} checks passed</span>
+            ${duration ? `<span class="vs-sc-verify-stat">${duration}ms</span>` : ''}
+          </div>
+          ${verifyRows}
+        </div>
+        <div class="vs-sc-review-actions">
+          <button class="vs-sc-review-cancel" id="vs-sc-orch-dismiss">Done</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // Apply failed: show error with verification context and rollback status
+  if (orchState === 'apply_failed') {
+    const summary = orchResult?.summary || 'Patch execution failed.';
+    const rollbackClean = orchResult?.rollback_clean !== false;
+    const verification = orchResult?.verification || [];
+    const duration = orchResult?.duration_ms;
+
+    const rollbackNote = rollbackClean
+      ? 'All changes have been rolled back. No files were modified.'
+      : 'Rollback was attempted but may not have fully succeeded. Check the console log.';
+    const rollbackClass = rollbackClean ? 'is-clean' : 'is-dirty';
+
+    const verifyRows = verification.map(v => {
+      const checks = v.checks.map(c => {
+        const icon = c.passed ? '✔' : '✗';
+        const cls = c.passed ? 'is-passed' : 'is-failed';
+        return `<div class="vs-sc-verify-check ${cls}">
+          <span class="vs-sc-verify-icon">${icon}</span>
+          <span class="vs-sc-verify-name">${escapeHtml(c.check)}</span>
+          <span class="vs-sc-verify-detail">${escapeHtml(c.detail)}</span>
+        </div>`;
+      }).join('');
+      return `<div class="vs-sc-verify-file">
+        <div class="vs-sc-verify-file-name">${escapeHtml(v.file)}</div>
+        ${checks}
+      </div>`;
+    }).join('');
+
+    return `
+      <div class="vs-sc-orch-review">
+        <div class="vs-sc-review-section">
+          <h4 class="vs-sc-review-heading">Apply Failed</h4>
+          <p class="vs-sc-review-plan-summary">${escapeHtml(summary)}</p>
+          <div class="vs-sc-verify-rollback ${rollbackClass}">
+            <span class="vs-sc-verify-icon">${rollbackClean ? '↺' : '⚠'}</span>
+            ${rollbackNote}
+          </div>
+          ${duration ? `<p class="vs-sc-verify-timing">${duration}ms elapsed</p>` : ''}
+          ${verifyRows}
+        </div>
+        <div class="vs-sc-review-actions">
+          <button class="vs-sc-review-cancel" id="vs-sc-orch-dismiss">Dismiss</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // Running: show progress
+  if (orchState === 'running') {
+    return `
+      <div class="vs-sc-orch-review">
+        <div class="vs-sc-review-waiting">
+          <div class="vs-sc-command-spinner"></div>
+          <p class="vs-sc-review-waiting-text">Discovering affected files…</p>
+          <p class="vs-sc-review-waiting-hint">The results will appear here once analysis is complete.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  // Complete (no discovery data): show summary
+  if (orchState === 'complete') {
+    return `
+      <div class="vs-sc-orch-review">
+        <div class="vs-sc-review-section">
+          <h4 class="vs-sc-review-heading">Results</h4>
+          <p class="vs-sc-review-summary">Orchestration complete.</p>
+        </div>
+        <div class="vs-sc-review-actions">
+          <button class="vs-sc-review-cancel" id="vs-sc-orch-dismiss">Done</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // Fallback
+  return `<div class="vs-sc-orch-review"><p class="vs-sc-review-empty">No active orchestration.</p></div>`;
 }
 
 /**

@@ -1437,6 +1437,21 @@ async function initEditorPage() {
       setStatus('Ready');
     }
   }
+
+  // ── Cross-workspace file open (e.g. "Open in Editor" from Site Control) ──
+  if (window.__vsEditorPendingFile) {
+    const pendingPath = window.__vsEditorPendingFile;
+    window.__vsEditorPendingFile = null;
+    // Verify file exists in tree before opening
+    if (editorState.files.some(f => f.path === pendingPath)) {
+      await openFile(pendingPath);
+    }
+  }
+
+  // Expose openFile for same-session cross-workspace use
+  if (window.__vsEditorPage) {
+    window.__vsEditorPage.openFile = openFile;
+  }
 }
 
 function monacoThemeForCurrentUi() {

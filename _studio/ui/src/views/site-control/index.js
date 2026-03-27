@@ -23,7 +23,8 @@
  * imports or calls refreshView — it is never exported.
  */
 
-import { api } from '../../../api.js';
+import { api, apiStream } from '../../../api.js';
+import { store } from '../../../state.js';
 import { icons } from '../../icons.js';
 import { escapeHtml } from '../../helpers.js';
 
@@ -119,6 +120,23 @@ import {
   exitDeleteMode,
   validateProposalUrl,
 } from './control-panel.js';
+import {
+  renderOrchestrationConsole,
+  orchState,
+  orchPrompt,
+  orchLog,
+  setOrchState,
+  setOrchPrompt,
+  appendOrchLog,
+  clearOrchLog,
+  orchResult,
+  setOrchResult,
+  orchPlan,
+  setOrchPlan,
+  isConsoleCollapsed,
+  saveConsoleCollapsed,
+  saveConsoleHeight,
+} from './orchestration-console.js';
 
 // ── Window resize: debounced connector recompute ──
 let _resizeHandler = null;
@@ -203,12 +221,15 @@ function renderWorkspace(root) {
         <div class="vs-editor-resize" data-resize-panel="vs-sc-left"></div>
       </div>
       <div class="vs-sc-canvas" id="vs-sc-canvas">
-        <div class="vs-site-diagram" id="vs-site-diagram">
-          ${renderDiagram(hierarchyTree)}
+        <div class="vs-sc-canvas-diagram">
+          <div class="vs-site-diagram" id="vs-site-diagram">
+            ${renderDiagram(hierarchyTree)}
+          </div>
+          <div class="vs-sc-status-bar" id="vs-sc-status-bar">
+            ${renderStatusBar()}
+          </div>
         </div>
-        <div class="vs-sc-status-bar" id="vs-sc-status-bar">
-          ${renderStatusBar()}
-        </div>
+        ${renderOrchestrationConsole()}
       </div>
       <div class="vs-sc-right" id="vs-sc-right"${getSavedSidebarWidth('right')}>
         <div class="vs-editor-resize" data-resize-panel="vs-sc-right" data-resize-side="left"></div>
@@ -800,6 +821,249 @@ function refreshView() {
 }
 
 // ═══════════════════════════════════════════
+//  Orchestration — SSE Stream Handler
+// ═══════════════════════════════════════════
+
+/**
+ * Start an orchestration stream.
+ * Sends the prompt to POST /site-control/orchestrate, then
+ * processes orch:* SSE events into the action log.
+ *
+ * @param {string} prompt
+ */
+async function startOrchestration(prompt) {
+  setOrchState('running');
+  setOrchPrompt(prompt);
+  clearOrchLog();
+  setOrchResult(null);
+  setOrchPlan(null);
+  refreshView();
+
+  // Focus the composer back (now disabled, but keeps cursor visible)
+  setTimeout(() => document.getElementById('vs-sc-composer-input')?.focus(), 0);
+
+  try {
+    await apiStream('/site-control/orchestrate', { prompt }, {
+      onStatus(data) {
+        // Generic status events — append to log
+        appendOrchLog({ type: 'info', message: data.message || 'Processing…', time: Date.now() });
+        refreshOrchPanel();
+      },
+      onDone(data) {
+        if (orchState === 'running') {
+          appendOrchLog({ type: 'done', message: data.summary || data.message || 'Done.', time: Date.now() });
+
+          // Extract payloads from the backend
+          const discovery = data.discovery || null;
+          const intent = data.intent || null;
+          const plan = data.plan || null;
+
+          const hasCandidates = discovery && Array.isArray(discovery.candidates) && discovery.candidates.length > 0;
+          const edits = (plan && Array.isArray(plan.edits)) ? plan.edits : [];
+          const anchoredEdits = edits.filter(e => e.anchored !== false);
+          const hasAnchoredPlan = anchoredEdits.length > 0;
+
+          if (hasCandidates) {
+            // Hydrate orchPlan with discovery + plan results
+            setOrchPlan({
+              intent,
+              files: discovery.candidates.map(c => ({
+                type: c.type || 'file',
+                path: c.file || c.node_id,
+                label: c.label || '',
+                reason: c.reason || '',
+              })),
+              affected_pages: (discovery.affected_pages || []).map(p => ({
+                label: p.label || '',
+                slug: p.slug || '',
+              })),
+              skipped: (discovery.skipped || []).map(s => ({
+                path: s.path || '',
+                reason: s.reason || '',
+              })),
+              // Plan edits from B5
+              edits,
+              risk_level: plan?.risk_level || 'medium',
+              plan_summary: plan?.summary || '',
+              anchored_count: plan?.anchored_count || 0,
+              unanchored_count: plan?.unanchored_count || 0,
+            });
+
+            // Honest state: 'plan' only when we have anchored edits
+            if (hasAnchoredPlan) {
+              setOrchState('plan');
+            } else {
+              setOrchState('plan_failed');
+            }
+          } else {
+            setOrchState('complete');
+          }
+
+          setOrchResult({
+            filesChanged: data.filesChanged || 0,
+            summary: data.summary || data.message || 'Orchestration complete.',
+          });
+          refreshView();
+        }
+      },
+      onError(err) {
+        setOrchState('complete');
+        setOrchResult({ filesChanged: 0, summary: err.message || 'Orchestration failed.' });
+        appendOrchLog({ type: 'error', message: err.message || 'Error during orchestration.', time: Date.now() });
+        refreshView();
+      },
+    });
+  } catch (err) {
+    setOrchState('complete');
+    setOrchResult({ filesChanged: 0, summary: 'Connection error.' });
+    appendOrchLog({ type: 'error', message: 'Connection lost during orchestration.', time: Date.now() });
+    refreshView();
+  }
+}
+
+/**
+ * Apply approved edits via POST /site-control/apply.
+ * Only called after user clicks "Approve & Apply".
+ * Sends only the anchored edits from orchPlan.
+ */
+async function applyPlan() {
+  if (!orchPlan || !orchPlan.edits) return;
+
+  const anchoredEdits = orchPlan.edits.filter(e => e.anchored !== false);
+  if (anchoredEdits.length === 0) return;
+
+  setOrchState('applying');
+  refreshView();
+
+  try {
+    await apiStream('/site-control/apply', { edits: anchoredEdits }, {
+      onStatus(data) {
+        appendOrchLog({
+          phase: data.phase || 'status',
+          status: data.status || 'ok',
+          file: data.file || '',
+          message: data.message || '',
+          bytes: data.bytes || null,
+          ms: data.ms || null,
+          time: Date.now(),
+        });
+        refreshOrchPanel();
+      },
+      onDone(data) {
+        const filesChanged = data.filesChanged || 0;
+        setOrchState('applied');
+        setOrchResult({
+          filesChanged,
+          summary: data.message || 'Done.',
+          verification: data.verification || [],
+          duration_ms: data.duration_ms || null,
+        });
+        // Server already streamed the done phase — no client duplicate
+        refreshView();
+
+        // Refresh the site graph from disk so the UI reflects filesystem truth
+        loadSiteMap();
+      },
+      onError(err) {
+        setOrchState('apply_failed');
+        setOrchResult({
+          filesChanged: 0,
+          summary: err.message || 'Patch execution failed.',
+          rollback_clean: err.rollback_clean !== false,
+          verification: err.verification || [],
+          duration_ms: err.duration_ms || null,
+        });
+        // Server already streamed the error/rollback phases — no client duplicate
+        refreshView();
+      },
+    });
+  } catch (err) {
+    setOrchState('apply_failed');
+    setOrchResult({ filesChanged: 0, summary: 'Connection error during apply.' });
+    appendOrchLog({ phase: 'failed', status: 'error', message: 'Connection lost during apply.', time: Date.now() });
+    refreshView();
+  }
+}
+
+/**
+ * Phase icon map for the operations-console transcript.
+ */
+const PHASE_ICONS = {
+  start:    '▶',
+  snapshot: '◎',
+  read:     '↓',
+  anchor:   '⚓',
+  patch:    '✎',
+  lint:     '⌘',
+  verify:   '✔',
+  reject:   '⊘',
+  rollback: '↺',
+  done:     '✓',
+  failed:   '✗',
+  abort:    '⊘',
+};
+
+/**
+ * Status → CSS class map.
+ */
+const STATUS_CLASS = {
+  ok:      'is-ok',
+  failed:  'is-failed',
+  error:   'is-failed',
+  skip:    'is-skip',
+  refused: 'is-refused',
+  start:   'is-info',
+  partial: 'is-warning',
+};
+
+/**
+ * Refresh the console log during orchestration.
+ * Renders a real operations-console transcript, not a spinner with text.
+ */
+function refreshOrchPanel() {
+  const logEl = document.getElementById('vs-sc-console-log');
+  if (!logEl) return;
+
+  const entries = orchLog.map(entry => {
+    // B8 structured phase events
+    if (entry.phase) {
+      const icon = PHASE_ICONS[entry.phase] || '·';
+      const cls = STATUS_CLASS[entry.status] || '';
+      const file = entry.file ? `<span class="vs-sc-log-file">${entry.file.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span> ` : '';
+      const meta = entry.ms != null ? `<span class="vs-sc-log-meta">${entry.ms}ms</span>` :
+                   entry.bytes != null ? `<span class="vs-sc-log-meta">${entry.bytes}b</span>` : '';
+      const msg = (entry.message || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+
+      return `<div class="vs-sc-log-entry vs-sc-log-phase ${cls}">
+        <span class="vs-sc-log-icon">${icon}</span>
+        <span class="vs-sc-log-phase-name">${entry.phase}</span>
+        ${file}<span class="vs-sc-log-text">${msg}</span>
+        ${meta}
+      </div>`;
+    }
+
+    // Legacy log entries (from orchestrate pipeline)
+    const cls = entry.type === 'running' ? 'is-running' :
+                entry.type === 'done' ? 'is-done' :
+                entry.type === 'error' ? 'is-error' :
+                entry.type === 'skipped' ? 'is-skipped' :
+                entry.type === 'plan' ? 'is-plan' : '';
+    const icon = entry.type === 'running' ? '→' :
+                 entry.type === 'done' ? '✓' :
+                 entry.type === 'error' ? '✗' :
+                 entry.type === 'skipped' ? '⊘' :
+                 entry.type === 'plan' ? '◆' :
+                 entry.type === 'info' ? '→' : '·';
+    return `<div class="vs-sc-log-entry ${cls}">
+      <span class="vs-sc-log-icon">${icon}</span>
+      <span class="vs-sc-log-text">${entry.message.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>
+    </div>`;
+  }).join('');
+  logEl.innerHTML = entries;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ═══════════════════════════════════════════
 //  Event Binding
 // ═══════════════════════════════════════════
 
@@ -958,11 +1222,12 @@ function bindWorkspaceEvents(root) {
     });
   });
 
-  // ── Action bar: stub actions (Phase 1) ──
+  // ── Action bar: catch-all for any remaining stub actions ──
   root.querySelectorAll('.vs-sc-action-bar [data-action]').forEach(btn => {
     const action = btn.dataset.action;
-    // Skip actions with dedicated handlers (change-url, move, reorder, rename, delete, overflow)
-    if (action === 'change-url' || action === 'move' || action === 'reorder' || action === 'rename' || action === 'delete' || action === 'overflow') return;
+    // Skip all actions that have dedicated handlers
+    if (['change-url', 'move', 'reorder', 'rename', 'delete', 'overflow',
+         'open-in-editor', 'open-in-chat'].includes(action)) return;
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const bar = btn.closest('.vs-sc-action-bar');
@@ -970,6 +1235,147 @@ function bindWorkspaceEvents(root) {
       console.log('Action stub:', action, nodeId);
     });
   });
+
+  // ── "Open in Editor" — navigate to Editor with this page's file open ──
+  root.querySelectorAll('[data-action="open-in-editor"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const bar = btn.closest('.vs-sc-action-bar');
+      const nodeId = bar?.dataset.forNode || selectedNodeId;
+      if (!nodeId) return;
+
+      // Derive file path from page node ID ("page:about.php" → "about.php")
+      const filePath = nodeId.startsWith('page:') ? nodeId.slice(5) : nodeId;
+      window.__vsEditorPendingFile = filePath;
+      window.location.hash = '#/editor';
+    });
+  });
+
+  // ── "Open in Chat" — navigate to Chat scoped to this page ──
+  root.querySelectorAll('[data-action="open-in-chat"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const bar = btn.closest('.vs-sc-action-bar');
+      const nodeId = bar?.dataset.forNode || selectedNodeId;
+      if (!nodeId) return;
+
+      // Derive slug from graph node metadata
+      const node = graphModel?.nodes.get(nodeId);
+      const slug = node?.meta?.slug || nodeId.replace(/^page:/, '').replace(/\.php$/, '');
+      store.set('activePageScope', slug);
+      window.location.hash = '#/chat';
+    });
+  });
+
+  // ── Orchestration Console: composer input ──
+  const composerInput = root.querySelector('#vs-sc-composer-input');
+  const composerSubmit = root.querySelector('#vs-sc-composer-submit');
+
+  if (composerInput) {
+    // Auto-resize textarea height
+    const autoResize = () => {
+      composerInput.style.height = 'auto';
+      composerInput.style.height = Math.min(composerInput.scrollHeight, 120) + 'px';
+    };
+
+    composerInput.addEventListener('input', () => {
+      setOrchPrompt(composerInput.value);
+      autoResize();
+      if (composerSubmit) composerSubmit.disabled = !composerInput.value.trim() || orchState === 'running';
+    });
+
+    composerInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        // Enter = submit (unless Shift is held for newline)
+        if (composerInput.value.trim() && orchState !== 'running') {
+          e.preventDefault();
+          startOrchestration(composerInput.value.trim());
+        } else {
+          e.preventDefault(); // prevent empty submit
+        }
+      }
+      // Shift+Enter = natural newline (default textarea behavior)
+    });
+  }
+
+  if (composerSubmit) {
+    composerSubmit.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const prompt = orchPrompt.trim();
+      if (prompt && orchState !== 'running') {
+        startOrchestration(prompt);
+      }
+    });
+  }
+
+  // ── Orchestration Console: toggle (collapse / expand) ──
+  const consoleToggle = root.querySelector('#vs-sc-console-toggle');
+  if (consoleToggle) {
+    consoleToggle.addEventListener('click', () => {
+      const collapsed = isConsoleCollapsed();
+      saveConsoleCollapsed(!collapsed);
+      refreshView();
+    });
+  }
+
+  // ── Orchestration Console: clear log ──
+  const consoleClear = root.querySelector('#vs-sc-console-clear');
+  if (consoleClear) {
+    consoleClear.addEventListener('click', () => {
+      clearOrchLog();
+      setOrchState('idle');
+      setOrchResult(null);
+      setOrchPlan(null);
+      setOrchPrompt('');
+      refreshView();
+    });
+  }
+
+  // ── Orchestration Console: vertical resize ──
+  const consoleResize = root.querySelector('#vs-sc-console-resize');
+  const consoleEl = root.querySelector('#vs-sc-console');
+  if (consoleResize && consoleEl) {
+    consoleResize.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startHeight = consoleEl.offsetHeight;
+
+      const onMove = (e2) => {
+        const delta = startY - e2.clientY; // drag up = taller
+        const newHeight = Math.min(500, Math.max(120, startHeight + delta));
+        consoleEl.style.height = newHeight + 'px';
+      };
+
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        saveConsoleHeight(consoleEl.offsetHeight);
+        requestAnimationFrame(() => computeConnectors(hierarchyTree));
+      };
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
+
+  // ── Orchestration: Dismiss button (right panel) ──
+  const dismissBtn = root.querySelector('#vs-sc-orch-dismiss');
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', () => {
+      setOrchState('idle');
+      setOrchResult(null);
+      setOrchPlan(null);
+      refreshView();
+    });
+  }
+
+  // ── Orchestration: Approve & Apply button (right panel) ──
+  const applyBtn = root.querySelector('#vs-sc-orch-apply');
+  if (applyBtn) {
+    applyBtn.addEventListener('click', () => {
+      applyPlan();
+    });
+  }
 
   // ── Rename mode: "✎ Rename" button ──
   root.querySelectorAll('[data-action="rename"]').forEach(btn => {

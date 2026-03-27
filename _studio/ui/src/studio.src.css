@@ -12283,6 +12283,872 @@ select.vx-form-input {
   background: var(--vs-error-dim);
 }
 
+.vs-sc-action-drop-divider {
+  height: 1px;
+  background: var(--vs-border-subtle);
+  margin: 3px 4px;
+}
+/* ── Canvas Diagram Wrapper (flex child for vertical split) ── */
+
+.vs-sc-canvas-diagram {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+
+/* ── Orchestration Console (bottom of center panel) ── */
+
+.vs-sc-console {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--vs-border);
+  background: var(--vs-bg-base);
+  position: relative;
+  min-height: 36px;
+}
+
+.vs-sc-console.is-collapsed {
+  height: 36px !important;
+  overflow: hidden;
+}
+
+/* ── Console Resize Grip ── */
+
+.vs-sc-console-resize {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vs-sc-console-resize-grip {
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.vs-sc-console-resize:hover .vs-sc-console-resize-grip {
+  background: var(--vs-accent);
+}
+
+.vs-sc-console.is-collapsed .vs-sc-console-resize {
+  display: none;
+}
+
+/* ── Console Header ── */
+
+.vs-sc-console-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 36px;
+  min-height: 36px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--vs-border-subtle);
+}
+
+.vs-sc-console-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--vs-text-muted);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.vs-sc-console-toggle:hover {
+  color: var(--vs-text);
+  background: var(--vs-surface);
+}
+
+.vs-sc-console-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--vs-text-ghost);
+  flex: 1;
+}
+
+.vs-sc-console-status {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+}
+
+.vs-sc-console-status.is-running {
+  color: var(--vs-accent);
+  background: var(--vs-accent-dim);
+}
+
+.vs-sc-console-status.is-plan {
+  color: var(--vs-warning, #f59e0b);
+  background: color-mix(in srgb, var(--vs-warning, #f59e0b) 12%, transparent);
+}
+
+.vs-sc-console-status.is-complete {
+  color: var(--vs-success);
+  background: color-mix(in srgb, var(--vs-success) 12%, transparent);
+}
+
+.vs-sc-console-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--vs-text-ghost);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.vs-sc-console-clear:hover {
+  color: var(--vs-text);
+}
+
+/* ── Console Body ── */
+
+.vs-sc-console-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Console Step Log ── */
+
+.vs-sc-console-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+  min-height: 0;
+}
+
+.vs-sc-console-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 16px;
+}
+
+.vs-sc-console-empty-text {
+  font-size: 12px;
+  color: var(--vs-text-ghost);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.vs-sc-log-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--vs-text-secondary);
+}
+
+.vs-sc-log-icon {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 18px;
+}
+
+.vs-sc-log-text {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+  font-family: var(--vs-font-mono, 'SF Mono', 'Fira Code', monospace);
+  font-size: 11.5px;
+}
+
+.vs-sc-log-entry.is-running .vs-sc-log-icon {
+  color: var(--vs-accent);
+  animation: vs-pulse 1.2s ease-in-out infinite;
+}
+
+.vs-sc-log-entry.is-done .vs-sc-log-icon {
+  color: var(--vs-success);
+}
+
+.vs-sc-log-entry.is-error .vs-sc-log-icon {
+  color: var(--vs-error);
+}
+
+.vs-sc-log-entry.is-skipped .vs-sc-log-icon {
+  color: var(--vs-text-muted);
+}
+
+.vs-sc-log-entry.is-plan .vs-sc-log-icon {
+  color: var(--vs-warning, #f59e0b);
+}
+
+/* ── B8: Ops Console Phase Entries ── */
+
+.vs-sc-log-phase {
+  font-family: var(--vs-font-mono, 'SF Mono', 'Fira Code', monospace);
+  font-size: 11.5px;
+}
+
+.vs-sc-log-phase-name {
+  flex-shrink: 0;
+  min-width: 56px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vs-text-muted);
+  opacity: 0.7;
+}
+
+.vs-sc-log-file {
+  flex-shrink: 0;
+  color: var(--vs-accent);
+  font-weight: 500;
+}
+
+.vs-sc-log-meta {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--vs-text-ghost);
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+.vs-sc-log-phase.is-ok .vs-sc-log-icon { color: var(--vs-success); }
+.vs-sc-log-phase.is-failed .vs-sc-log-icon { color: var(--vs-error); }
+.vs-sc-log-phase.is-failed .vs-sc-log-text { color: var(--vs-error); }
+.vs-sc-log-phase.is-skip .vs-sc-log-icon { color: var(--vs-text-muted); }
+.vs-sc-log-phase.is-refused .vs-sc-log-icon { color: var(--vs-warning, #f59e0b); }
+.vs-sc-log-phase.is-info .vs-sc-log-icon { color: var(--vs-accent); }
+.vs-sc-log-phase.is-warning .vs-sc-log-icon { color: var(--vs-warning, #f59e0b); }
+
+/* ── B9: Verification Report ── */
+
+.vs-sc-verify-summary {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0 12px;
+  flex-wrap: wrap;
+}
+
+.vs-sc-verify-stat {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vs-text-secondary);
+  padding: 3px 8px;
+  background: var(--vs-bg-elevated);
+  border-radius: 4px;
+  border: 1px solid var(--vs-border-subtle);
+}
+
+.vs-sc-verify-file {
+  margin-bottom: 10px;
+}
+
+.vs-sc-verify-file-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: var(--vs-font-mono, 'SF Mono', 'Fira Code', monospace);
+  color: var(--vs-accent);
+  padding: 4px 0 2px;
+}
+
+.vs-sc-verify-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 11.5px;
+  font-family: var(--vs-font-mono, 'SF Mono', 'Fira Code', monospace);
+  color: var(--vs-text-secondary);
+}
+
+.vs-sc-verify-icon {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 11px;
+}
+
+.vs-sc-verify-check.is-passed .vs-sc-verify-icon { color: var(--vs-success); }
+.vs-sc-verify-check.is-failed .vs-sc-verify-icon { color: var(--vs-error); }
+.vs-sc-verify-check.is-failed .vs-sc-verify-detail { color: var(--vs-error); }
+
+.vs-sc-verify-name {
+  flex-shrink: 0;
+  min-width: 80px;
+  font-weight: 500;
+  color: var(--vs-text-muted);
+}
+
+.vs-sc-verify-detail {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.vs-sc-verify-rollback {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  margin: 8px 0;
+  font-size: 12px;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+
+.vs-sc-verify-rollback.is-clean {
+  background: rgba(var(--vs-success-rgb, 34, 197, 94), 0.08);
+  border: 1px solid rgba(var(--vs-success-rgb, 34, 197, 94), 0.2);
+  color: var(--vs-success);
+}
+
+.vs-sc-verify-rollback.is-dirty {
+  background: rgba(var(--vs-error-rgb, 239, 68, 68), 0.08);
+  border: 1px solid rgba(var(--vs-error-rgb, 239, 68, 68), 0.2);
+  color: var(--vs-error);
+}
+
+.vs-sc-verify-timing {
+  font-size: 11px;
+  color: var(--vs-text-ghost);
+  margin: 4px 0;
+}
+
+/* ── Console Composer ── */
+
+.vs-sc-console-composer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--vs-border-subtle);
+  padding: 8px 12px;
+}
+
+.vs-sc-composer-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vs-sc-composer-input {
+  width: 100%;
+  border: 1px solid var(--vs-border);
+  background: var(--vs-input-bg, var(--vs-surface));
+  color: var(--vs-text);
+  font-size: 13px;
+  font-family: inherit;
+  padding: 8px 10px;
+  border-radius: 6px;
+  resize: none;
+  outline: none;
+  min-height: 36px;
+  max-height: 120px;
+  line-height: 1.4;
+  transition: border-color 0.15s;
+}
+
+.vs-sc-composer-input:focus {
+  border-color: var(--vs-accent);
+}
+
+.vs-sc-composer-input::placeholder {
+  color: var(--vs-text-muted);
+}
+
+.vs-sc-composer-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.vs-sc-composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vs-sc-composer-hint {
+  font-size: 11px;
+  color: var(--vs-text-ghost);
+}
+
+.vs-sc-composer-hint kbd {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 1px 4px;
+  border: 1px solid var(--vs-border-subtle);
+  border-radius: 3px;
+  background: var(--vs-surface);
+  color: var(--vs-text-muted);
+}
+
+.vs-sc-composer-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: var(--vs-accent);
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.vs-sc-composer-submit:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: scale(1.04);
+}
+
+.vs-sc-composer-submit:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: var(--vs-text-muted);
+}
+
+.vs-sc-command-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: vs-spin 0.6s linear infinite;
+}
+
+/* ── Right Panel: Orchestration Review ── */
+
+.vs-sc-right-mode-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.vs-sc-right-mode-badge.is-running {
+  color: var(--vs-accent);
+  background: var(--vs-accent-dim);
+}
+
+.vs-sc-right-mode-badge.is-plan {
+  color: var(--vs-warning, #f59e0b);
+  background: color-mix(in srgb, var(--vs-warning, #f59e0b) 12%, transparent);
+}
+
+.vs-sc-right-mode-badge.is-complete {
+  color: var(--vs-success);
+  background: color-mix(in srgb, var(--vs-success) 12%, transparent);
+}
+
+.vs-sc-right-mode-badge.is-plan_failed {
+  color: #e74c3c;
+  background: rgba(231, 76, 60, 0.12);
+}
+
+.vs-sc-console-status.is-plan_failed {
+  color: #e74c3c;
+}
+
+.vs-sc-review-issue {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--vs-border);
+}
+.vs-sc-review-issue:last-child {
+  border-bottom: none;
+}
+
+.vs-sc-review-issues {
+  margin-top: 8px;
+}
+
+.vs-sc-orch-review {
+  padding: 12px;
+}
+
+.vs-sc-review-section {
+  margin-bottom: 16px;
+}
+
+.vs-sc-review-heading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--vs-text-ghost);
+  margin: 0 0 8px 0;
+}
+
+.vs-sc-review-empty {
+  font-size: 12px;
+  color: var(--vs-text-muted);
+  font-style: italic;
+  margin: 0;
+}
+
+.vs-sc-review-file {
+  padding: 6px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--vs-border);
+}
+
+.vs-sc-review-file:last-child {
+  border-bottom: none;
+}
+
+.vs-sc-review-file-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vs-sc-review-file-path {
+  flex: 1;
+  color: var(--vs-text);
+  font-family: var(--vs-font-mono, monospace);
+  font-size: 11.5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vs-sc-review-file-reason {
+  display: block;
+  font-size: 11px;
+  color: var(--vs-text-muted);
+  margin-top: 3px;
+  padding-left: 2px;
+}
+
+.vs-sc-review-intent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.vs-sc-review-scope {
+  font-size: 12px;
+  color: var(--vs-text-secondary);
+  font-family: var(--vs-font-mono, monospace);
+}
+
+.vs-sc-review-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.vs-sc-review-keyword {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--vs-text-secondary);
+  background: var(--vs-surface-raised);
+  border-radius: 3px;
+  border: 1px solid var(--vs-border);
+}
+
+.vs-sc-review-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--vs-accent);
+  background: var(--vs-accent-dim);
+  border-radius: 9px;
+  margin-left: 6px;
+}
+
+/* ── Plan Review: Risk Badge ── */
+
+.vs-sc-review-risk {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 3px;
+  margin-left: 6px;
+}
+.vs-sc-review-risk.is-low {
+  color: #2ecc71;
+  background: rgba(46, 204, 113, 0.12);
+}
+.vs-sc-review-risk.is-medium {
+  color: #f39c12;
+  background: rgba(243, 156, 18, 0.12);
+}
+.vs-sc-review-risk.is-high {
+  color: #e74c3c;
+  background: rgba(231, 76, 60, 0.12);
+}
+
+.vs-sc-review-plan-summary {
+  font-size: 12px;
+  color: var(--vs-text-secondary);
+  margin: 0 0 10px 0;
+}
+
+/* ── Plan Review: Edit Cards ── */
+
+.vs-sc-review-edit {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--vs-border);
+}
+.vs-sc-review-edit:last-child {
+  border-bottom: none;
+}
+
+.vs-sc-review-edit-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.vs-sc-review-edit-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--vs-text-ghost);
+  background: var(--vs-surface-raised);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.vs-sc-review-edit-strategy {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--vs-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.vs-sc-review-edit-desc {
+  font-size: 12px;
+  color: var(--vs-text);
+  margin: 0 0 6px 0;
+  line-height: 1.4;
+}
+
+/* ── Plan Review: Diff Blocks ── */
+
+.vs-sc-review-diff {
+  border-radius: 4px;
+  overflow: hidden;
+  font-family: var(--vs-font-mono, monospace);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.vs-sc-review-diff-before,
+.vs-sc-review-diff-after {
+  display: flex;
+  gap: 6px;
+  padding: 4px 8px;
+}
+
+.vs-sc-review-diff-before {
+  background: rgba(231, 76, 60, 0.08);
+  color: #e74c3c;
+}
+
+.vs-sc-review-diff-after {
+  background: rgba(46, 204, 113, 0.08);
+  color: #2ecc71;
+}
+
+.vs-sc-diff-label {
+  font-weight: 700;
+  flex-shrink: 0;
+  width: 12px;
+}
+
+.vs-sc-review-diff code {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.vs-sc-review-edit-verify {
+  font-size: 11px;
+  color: var(--vs-text-muted);
+  margin: 4px 0 0 0;
+  font-style: italic;
+}
+
+.vs-sc-review-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vs-sc-review-page {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.vs-sc-review-page-label {
+  color: var(--vs-text);
+  font-weight: 500;
+}
+
+.vs-sc-review-page-slug {
+  color: var(--vs-text-ghost);
+  font-family: var(--vs-font-mono, monospace);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.vs-sc-review-skip {
+  padding: 4px 0;
+}
+
+.vs-sc-review-skip-reason {
+  display: block;
+  font-size: 11px;
+  color: var(--vs-text-muted);
+  margin-top: 2px;
+}
+
+.vs-sc-review-waiting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.vs-sc-review-waiting-text {
+  font-size: 13px;
+  color: var(--vs-text-secondary);
+  margin: 0;
+}
+
+.vs-sc-review-waiting-hint {
+  font-size: 11px;
+  color: var(--vs-text-ghost);
+  margin: 0;
+}
+
+.vs-sc-review-summary {
+  font-size: 13px;
+  color: var(--vs-text);
+  margin: 0;
+}
+
+.vs-sc-review-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.vs-sc-review-cancel {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vs-text);
+  background: var(--vs-surface);
+  border: 1px solid var(--vs-border);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.vs-sc-review-cancel:hover {
+  background: var(--vs-accent-dim);
+  border-color: var(--vs-accent);
+}
+
+.vs-sc-review-approve {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--vs-success, #22c55e);
+  border: 1px solid var(--vs-success, #22c55e);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.15s, filter 0.15s;
+}
+.vs-sc-review-approve:hover {
+  filter: brightness(1.1);
+}
+
+.vs-sc-review-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.vs-sc-right-mode-badge.is-applying {
+  color: var(--vs-accent);
+  background: var(--vs-accent-dim);
+  animation: vs-pulse 1.5s infinite;
+}
+.vs-sc-right-mode-badge.is-applied {
+  color: var(--vs-success, #22c55e);
+  background: color-mix(in srgb, var(--vs-success, #22c55e) 12%, transparent);
+}
+.vs-sc-right-mode-badge.is-apply_failed {
+  color: #e74c3c;
+  background: rgba(231, 76, 60, 0.12);
+}
+
+@keyframes vs-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 /* ── Tiered Layout ── */
 
 .vs-site-tiers {

@@ -244,6 +244,8 @@ $routes = [
     ['POST',   '/site-control/page-rename',      'site-control.php',  true],
     ['POST',   '/site-control/page-delete',      'site-control.php',  true],
     ['POST',   '/site-control/structural-move',  'site-control.php',  true],
+    ['POST',   '/site-control/orchestrate',      'site-orchestrate.php', true],
+    ['POST',   '/site-control/apply',             'site-orchestrate.php', true],
 
     // Team
     ['GET',    '/team',                  'team.php',           true],

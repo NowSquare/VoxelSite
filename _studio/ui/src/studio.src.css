@@ -13088,46 +13088,47 @@ select.vx-form-input {
 
 .vs-sc-review-actions {
   display: flex;
+  flex-direction: column;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 16px;
 }
 
 .vs-sc-review-cancel {
-  padding: 6px 14px;
+  width: 100%;
+  padding: 8px 16px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--vs-text);
-  background: var(--vs-surface);
-  border: 1px solid var(--vs-border);
-  border-radius: 5px;
+  font-family: inherit;
+  color: var(--vs-text-secondary);
+  background: color-mix(in srgb, var(--vs-text-ghost) 8%, var(--vs-surface));
+  border: 1px solid color-mix(in srgb, var(--vs-text-ghost) 25%, transparent);
+  border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  text-align: center;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
 .vs-sc-review-cancel:hover {
+  color: var(--vs-text);
   background: var(--vs-accent-dim);
   border-color: var(--vs-accent);
 }
 
 .vs-sc-review-approve {
-  padding: 6px 14px;
+  width: 100%;
+  padding: 8px 16px;
   font-size: 12px;
   font-weight: 600;
   color: #fff;
   background: var(--vs-success, #22c55e);
   border: 1px solid var(--vs-success, #22c55e);
-  border-radius: 5px;
+  border-radius: 6px;
   cursor: pointer;
+  text-align: center;
   transition: background 0.15s, filter 0.15s;
 }
 .vs-sc-review-approve:hover {
   filter: brightness(1.1);
-}
-
-.vs-sc-review-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 16px;
 }
 
 .vs-sc-right-mode-badge.is-applying {

@@ -91,7 +91,7 @@ import {
   saveCardPreferences,
   isCardCollapsed,
 } from './state.js';
-import { orchState, orchPlan, orchResult } from './orchestration-console.js';
+import { orchState, orchPlan, orchResult, setOrchState, setOrchResult, setOrchPlan } from './orchestration-console.js';
 import { renderActionLog } from './action-log.js';
 
 // ═══════════════════════════════════════════
@@ -612,6 +612,7 @@ export function enterProposalMode(nodeId, refreshCallback) {
   resetRenameState();
   resetMoveState();
   resetDeleteState();
+  if (orchState !== 'idle') { setOrchState('idle'); setOrchResult(null); setOrchPlan(null); }
 
 
   // Resolve to serving route if node is a page
@@ -672,6 +673,7 @@ export function enterMoveProposalMode(nodeId) {
   resetRenameState();
   exitProposalMode();
   resetDeleteState();
+  if (orchState !== 'idle') { setOrchState('idle'); setOrchResult(null); setOrchPlan(null); }
 
 
   resetMoveState();
@@ -709,6 +711,7 @@ export function enterRenameMode(nodeId) {
   exitProposalMode();
   resetMoveState();
   resetDeleteState();
+  if (orchState !== 'idle') { setOrchState('idle'); setOrchResult(null); setOrchPlan(null); }
 
 
   resetRenameState();
@@ -743,6 +746,7 @@ export function enterDeleteMode(nodeId) {
   exitProposalMode();
   resetMoveState();
   resetRenameState();
+  if (orchState !== 'idle') { setOrchState('idle'); setOrchResult(null); setOrchPlan(null); }
 
 
   resetDeleteState();

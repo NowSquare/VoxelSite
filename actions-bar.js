@@ -212,6 +212,10 @@
 
   // ── Render Bar ──
   function renderBar(manifest) {
+    // Always clean up body padding class from any previous render.
+    // Covers: hot-reload, visibility change to 'hidden', variant switch away from bottom-bar.
+    document.body.classList.remove('vs-actions-has-bar');
+
     var barSettings = manifest.bar_settings || {};
     var visibility = barSettings.visibility || 'all-pages';
 
@@ -298,9 +302,11 @@
 
     document.body.appendChild(bar);
 
-    // Add body padding — only for full-width bottom-bar
+    // Add body padding class — only for full-width bottom-bar.
+    // Uses a CSS class instead of inline style so AI-generated Tailwind
+    // utilities can cooperate (class vs class, not class vs inline).
     if (variant === 'bottom-bar') {
-      document.body.style.paddingBottom = 'calc(72px + env(safe-area-inset-bottom, 0px))';
+      document.body.classList.add('vs-actions-has-bar');
     }
   }
 
@@ -1110,6 +1116,7 @@
     if (e.data === 'voxelsite:reload') {
       var existing = document.getElementById(BAR_ID);
       if (existing) existing.parentNode.removeChild(existing);
+      document.body.classList.remove('vs-actions-has-bar');
       closePanel();
       init();
     }

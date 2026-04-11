@@ -1357,8 +1357,19 @@ class SiteContext
             return null;
         }
 
+        // ── Read bar settings to provide accurate coexistence guidance ──
+        $barSettings = [];
+        $siteJsonPath = dirname(__DIR__) . '/assets/data/site.json';
+        if (file_exists($siteJsonPath)) {
+            $siteData = json_decode((string) @file_get_contents($siteJsonPath), true);
+            $barSettings = $siteData['actions_bar'] ?? [];
+        }
+        // Mirror the runtime order: theme || position || 'bottom-bar' (actions-bar.js:225)
+        $variant    = $barSettings['theme'] ?? $barSettings['position'] ?? 'bottom-bar';
+        $visibility = $barSettings['visibility'] ?? 'all-pages';
+
         $section = "=== ACTIVE AGENT ACTIONS ===\n";
-        $section .= "The site has " . count($actions) . " live agent action(s) accessible via the Actions Bar at the bottom of every page.\n";
+        $section .= "The site has " . count($actions) . " live agent action(s) accessible via the Actions Bar.\n";
         $section .= "The Actions Bar handles the form UI. Do NOT generate HTML forms for these actions.\n\n";
 
         foreach ($actions as $a) {
@@ -1370,7 +1381,28 @@ class SiteContext
 
         $section .= "\nWhen generating or editing pages, add CTA buttons or sections that encourage visitors to use these actions. ";
         $section .= "Example: '<a href=\"#\" class=\"btn\" onclick=\"return false\">Book a Table</a>' or a prominent section highlighting the capability. ";
-        $section .= "The Actions Bar appears on every page and provides the interactive form.\n";
+        $section .= "The Actions Bar provides the interactive form.\n";
+
+        // ── Dynamic coexistence guidance based on actual bar config ──
+        $section .= "\nActions Bar runtime details:\n";
+        $section .= "- Variant: {$variant} | Visibility: {$visibility}\n";
+
+        if ($visibility === 'hidden') {
+            $section .= "- The Actions Bar is currently hidden and will not render on any page. No layout offsets needed.\n";
+        } elseif ($variant === 'bottom-bar') {
+            $section .= "- The bottom-bar is fixed at the page bottom (z-index: 40) and adds ~72px body padding via `body.vs-actions-has-bar`.\n";
+            $section .= "- Any fixed-position bottom elements (back-to-top, cookie banners, floating CTAs) should use `z-50` and `bottom: 80px` or higher to clear the bar.\n";
+            if ($visibility === 'homepage-only') {
+                $section .= "- The bar only appears on the homepage. On other pages, no bottom offset is needed.\n";
+            }
+        } elseif ($variant === 'floating-fab') {
+            $section .= "- The floating FAB sits at bottom-right (z-index: 40). Avoid placing fixed elements at the exact bottom-right corner.\n";
+        } else {
+            $section .= "- The minimal-pill sits at bottom-center (z-index: 40). Avoid placing fixed elements at the exact bottom-center.\n";
+        }
+
+        $section .= "- The bar's modal overlay uses z-index: 10000 — never place UI above this.\n";
+        $section .= "- Do NOT generate actions-bar.js or actions-bar.css — they are shipped infrastructure.\n";
 
         return $section;
     }

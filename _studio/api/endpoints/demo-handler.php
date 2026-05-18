@@ -1923,6 +1923,7 @@ if ($path === '/settings') {
                     'id' => 'openai',
                     'name' => 'OpenAI',
                     'models' => [
+                        ['id' => 'gpt-5',       'name' => 'GPT-5',       'tier' => 'premium'],
                         ['id' => 'gpt-4o',      'name' => 'GPT-4o',      'tier' => 'balanced'],
                         ['id' => 'gpt-4o-mini', 'name' => 'GPT-4o Mini', 'tier' => 'fast'],
                         ['id' => 'o3-mini',      'name' => 'o3 Mini',     'tier' => 'fast'],

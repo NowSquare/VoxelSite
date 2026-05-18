@@ -47,7 +47,8 @@ class OpenAIProvider implements AIProviderInterface
     public function getModels(): array
     {
         return [
-            ['id' => 'gpt-4o',     'name' => 'GPT-4o',      'tier' => 'balanced'],
+            ['id' => 'gpt-5',       'name' => 'GPT-5',       'tier' => 'premium'],
+            ['id' => 'gpt-4o',      'name' => 'GPT-4o',      'tier' => 'balanced'],
             ['id' => 'gpt-4o-mini', 'name' => 'GPT-4o Mini', 'tier' => 'fast'],
             ['id' => 'o3-mini',     'name' => 'o3 Mini',     'tier' => 'fast'],
         ];
@@ -443,6 +444,15 @@ class OpenAIProvider implements AIProviderInterface
         $requested = max(1, $requested);
         $id = strtolower($model);
 
+        if ($this->isGpt5Family($id)) {
+            // All GPT-5 models support 128K max output via max_completion_tokens,
+            // except -chat-latest variants which are capped at 16K.
+            if (str_contains($id, '-chat-latest')) {
+                return min($requested, 16384);
+            }
+            return min($requested, 128000);
+        }
+
         // Reasoning models often allow large outputs, but cap conservatively.
         if (preg_match('/^o\d/i', $id) === 1) {
             return min($requested, 32000);
@@ -465,13 +475,24 @@ class OpenAIProvider implements AIProviderInterface
      */
     public function getContextWindow(string $model): int
     {
+        // Ordered most-specific first so prefix matching picks the right entry.
+        // '-mini' and '-nano' variants must appear before their parent prefix.
         $windows = [
-            'gpt-4o'      => 128_000,
-            'gpt-4o-mini' => 128_000,
-            'gpt-4-turbo' => 128_000,
-            'o1'          => 200_000,
-            'o1-mini'     => 128_000,
-            'o3-mini'     => 200_000,
+            'gpt-5.4-mini' => 400_000,
+            'gpt-5.4-nano' => 400_000,
+            'gpt-5.4'      => 1_050_000,
+            'gpt-5.5'      => 1_050_000,
+            'gpt-5-chat'   => 128_000,
+            'gpt-5.1-chat' => 128_000,
+            'gpt-5-mini'   => 400_000,
+            'gpt-5-nano'   => 400_000,
+            'gpt-5'        => 400_000,
+            'gpt-4o-mini'  => 128_000,
+            'gpt-4o'       => 128_000,
+            'gpt-4-turbo'  => 128_000,
+            'o1-mini'      => 128_000,
+            'o1'           => 200_000,
+            'o3-mini'      => 200_000,
         ];
 
         // Exact match first
@@ -479,7 +500,7 @@ class OpenAIProvider implements AIProviderInterface
             return $windows[$model];
         }
 
-        // Prefix match for versioned model IDs (e.g. gpt-4o-2024-08-06)
+        // Longest prefix match for versioned model IDs
         foreach ($windows as $prefix => $size) {
             if (str_starts_with($model, $prefix)) {
                 return $size;
@@ -491,13 +512,34 @@ class OpenAIProvider implements AIProviderInterface
 
     public function estimateCost(int $inputTokens, int $outputTokens, string $model): array
     {
+        // Ordered most-specific first for correct prefix matching.
         $pricing = [
-            'gpt-4o'      => ['input' => 2.50, 'output' => 10.00],
-            'gpt-4o-mini' => ['input' => 0.15, 'output' => 0.60],
-            'o3-mini'     => ['input' => 1.10, 'output' => 4.40],
+            'gpt-5.5'      => ['input' => 5.00, 'output' => 30.00],
+            'gpt-5.4-mini' => ['input' => 0.75, 'output' => 4.50],
+            'gpt-5.4-nano' => ['input' => 0.20, 'output' => 1.25],
+            'gpt-5.4'      => ['input' => 2.50, 'output' => 15.00],
+            'gpt-5.2'      => ['input' => 1.75, 'output' => 14.00],
+            'gpt-5-mini'   => ['input' => 0.25, 'output' => 2.00],
+            'gpt-5-nano'   => ['input' => 0.05, 'output' => 0.40],
+            'gpt-5'        => ['input' => 1.25, 'output' => 10.00],
+            'gpt-4o-mini'  => ['input' => 0.15, 'output' => 0.60],
+            'gpt-4o'       => ['input' => 2.50, 'output' => 10.00],
+            'o3-mini'      => ['input' => 1.10, 'output' => 4.40],
         ];
 
-        $rates = $pricing[$model] ?? $pricing['gpt-4o'];
+        // Exact match first, then longest prefix match
+        $rates = null;
+        if (isset($pricing[$model])) {
+            $rates = $pricing[$model];
+        } else {
+            foreach ($pricing as $prefix => $r) {
+                if (str_starts_with($model, $prefix)) {
+                    $rates = $r;
+                    break;
+                }
+            }
+        }
+        $rates ??= $pricing['gpt-4o'];
 
         $inputCost = ($inputTokens / 1_000_000) * $rates['input'];
         $outputCost = ($outputTokens / 1_000_000) * $rates['output'];
@@ -616,13 +658,24 @@ class OpenAIProvider implements AIProviderInterface
     private function usesDeveloperRole(string $model): bool
     {
         $id = strtolower($model);
-        return preg_match('/^o\d/', $id) === 1;
+        return preg_match('/^o\d/', $id) === 1 || $this->isGpt5Family($id);
     }
 
     private function usesMaxCompletionTokens(string $model): bool
     {
         $id = strtolower($model);
-        return preg_match('/^o\d/', $id) === 1;
+        return preg_match('/^o\d/', $id) === 1 || $this->isGpt5Family($id);
+    }
+
+    /**
+     * Detect GPT-5 family models (gpt-5, gpt-5.2, gpt-5.5-cyber, etc.).
+     *
+     * GPT-5 models require max_completion_tokens (not max_tokens) and
+     * the developer role (not system), same as reasoning models.
+     */
+    private function isGpt5Family(string $idLower): bool
+    {
+        return str_starts_with($idLower, 'gpt-5');
     }
 
     private function extractApiErrorMessage(string $raw): string
@@ -712,6 +765,7 @@ class OpenAIProvider implements AIProviderInterface
     private function formatModelName(string $id): string
     {
         $map = [
+            'gpt-5' => 'GPT-5',
             'gpt-4o' => 'GPT-4o',
             'gpt-4o-mini' => 'GPT-4o Mini',
             'gpt-4-turbo' => 'GPT-4 Turbo',
@@ -723,7 +777,28 @@ class OpenAIProvider implements AIProviderInterface
             'chatgpt-4o-latest' => 'ChatGPT-4o Latest',
         ];
 
-        return $map[$id] ?? $id;
+        if (isset($map[$id])) {
+            return $map[$id];
+        }
+
+        // Format versioned GPT-5 variants (gpt-5.2 → GPT-5.2, gpt-5.5-cyber → GPT-5.5 Cyber)
+        if (str_starts_with(strtolower($id), 'gpt-5')) {
+            $suffix = substr($id, 5); // after 'gpt-5'
+            $parts = explode('-', $suffix);
+            $formatted = 'GPT-5';
+            foreach ($parts as $part) {
+                $part = trim($part);
+                if ($part === '') continue;
+                if (str_starts_with($part, '.')) {
+                    $formatted .= $part; // version dot (e.g. .2, .5)
+                } else {
+                    $formatted .= ' ' . ucfirst($part); // variant name
+                }
+            }
+            return $formatted;
+        }
+
+        return $id;
     }
 
     /**

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "VoxelSite Studio — development tooling (not shipped to buyers)",
   "scripts": {
     "build:css": "npx @tailwindcss/cli -i ./_studio/ui/src/studio.src.css -o ./_studio/ui/dist/studio.css --minify",

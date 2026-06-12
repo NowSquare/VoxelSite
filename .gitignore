@@ -134,6 +134,12 @@ assets/fonts/*
 !/vendor/
 !/i18n/
 
+# ── Internal AI / agent workspaces ──
+/.agent/
+/.agents/
+/.superpowers/
+/.ai/
+
 # Generated stylesheets, scripts, and data
 assets/css/*
 assets/js/*
@@ -147,7 +153,6 @@ assets/forms/*
 
 # ── Build artifacts ──
 *.zip
-.ai
 .docs
 /docs
 CLAUDE.md

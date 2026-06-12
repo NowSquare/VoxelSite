@@ -1,6 +1,6 @@
 # VoxelSite
 
-AI-powered website builder. Describe your business, get a beautifully designed website. Self-hosted, single upload, no coding required.
+Open-source AI-powered website builder. Describe your business, get a beautifully designed website. Self-hosted, single upload, no coding required.
 
 ## Quick Start
 
@@ -109,11 +109,11 @@ Demo mode does not modify your live workspace. It reads from shipped fixture dat
 
 Full documentation at **[voxelsite.com/docs](https://voxelsite.com/docs)**
 
-For help, use the support channel provided with your purchase. Include:
+For help, use the project issue tracker or the public support channel. Include:
 - PHP version
 - Hosting type
 - Exact error message or screenshot
 
 ## License
 
-Proprietary commercial script. See LICENSE file for terms.
+VoxelSite is open source software licensed under the GNU Affero General Public License v3.0. See [LICENSE](LICENSE) for the full terms.

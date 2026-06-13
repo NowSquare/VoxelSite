@@ -5755,6 +5755,12 @@ select.vs-input {
   border: 1px solid var(--vs-border-subtle);
 }
 
+.vs-pill-success {
+  background: var(--vs-success-dim);
+  color: var(--vs-success);
+  border: 1px solid var(--vs-success-dim);
+}
+
 /* ═══════════════════════════════════════════ */
 /*  DIST PACKAGES (FTP update workaround)     */
 /* ═══════════════════════════════════════════ */

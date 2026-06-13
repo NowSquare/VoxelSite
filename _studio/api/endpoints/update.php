@@ -262,6 +262,70 @@ if ($method === 'POST' && $path === '/update/upload') {
     return;
 }
 
+// ═══════════════════════════════════════════
+//  GET /update/git-status — Git checkout status
+// ═══════════════════════════════════════════
+//  Only meaningful when this install is a Git checkout (the ZIP flow above is
+//  the fallback for shared hosting). Returns repo/branch/upstream, behind/ahead
+//  counts, dirty-tree state, and a fetch result. Read-only; auth required.
+
+if ($method === 'GET' && $path === '/update/git-status') {
+    $projectRoot = dirname(__DIR__, 3);
+    $updater = new \VoxelSite\GitUpdater($projectRoot, $projectRoot . '/_studio/logs/.git-update.lock');
+
+    // available() is local-only and cheap; skip the network fetch for non-repos.
+    $isRepo = $updater->available()['ok'];
+    jsonResponse(['ok' => true, 'data' => $updater->status($isRepo)]);
+    return;
+}
+
+// ═══════════════════════════════════════════
+//  POST /update/git-update — Pull latest via Git
+// ═══════════════════════════════════════════
+//  Fetches, hard-resets to the upstream (tracked files only), then runs schema
+//  migrations. Refuses to run on a dirty/ahead tree. CSRF + auth enforced by the
+//  router; demo mode is blocked by the router's DemoMode gate.
+
+if ($method === 'POST' && $path === '/update/git-update') {
+    $projectRoot = dirname(__DIR__, 3);
+    $updater = new \VoxelSite\GitUpdater($projectRoot, $projectRoot . '/_studio/logs/.git-update.lock');
+
+    $currentVersion = file_exists($projectRoot . '/VERSION')
+        ? trim(file_get_contents($projectRoot . '/VERSION'))
+        : '0.0.0';
+
+    Logger::info('update', 'Starting Git update', ['from_version' => $currentVersion]);
+
+    $result = $updater->update(static function () {
+        // Run schema migrations against the freshly-updated code.
+        return (new \VoxelSite\Migrator())->run();
+    });
+
+    Logger::info('update', 'Git update finished', [
+        'ok'       => $result['ok'],
+        'state'    => $result['state'],
+        'from'     => $result['from_version'],
+        'to'       => $result['to_version'],
+        'from_sha' => $result['from_sha'],
+        'to_sha'   => $result['to_sha'],
+    ]);
+
+    if ($result['ok']) {
+        jsonResponse(['ok' => true, 'data' => $result]);
+    } else {
+        $status = match ($result['state']) {
+            'locked'           => 409,
+            'migration_failed' => 500,
+            default            => 422,
+        };
+        jsonResponse(['ok' => false, 'error' => [
+            'code'    => $result['state'] ?? 'git_update_failed',
+            'message' => $result['message'] ?: 'Git update failed.',
+        ], 'data' => $result], $status);
+    }
+    return;
+}
+
 jsonResponse(['ok' => false, 'error' => [
     'code'    => 'not_found',
     'message' => 'Update endpoint not found.',
@@ -428,15 +492,42 @@ function applyUpdate(
         ];
     }
 
+    // ── Run schema migrations against the freshly-extracted code ──
+    // The Git update path does this too; keep ZIP in parity so the database
+    // never lags the new code. A migration failure is a FAILED update — never
+    // report success when the schema step throws.
+    try {
+        $migResult = (new \VoxelSite\Migrator())->run();
+        $migrationsRun = count($migResult['applied'] ?? []);
+        Logger::info('update', 'Migrations run after ZIP update', ['applied' => $migrationsRun]);
+    } catch (\Throwable $e) {
+        Logger::error('update', 'Migrations failed after ZIP update', [
+            'version' => $newVersion,
+            'error'   => $e->getMessage(),
+        ]);
+        return [
+            'ok'     => false,
+            'status' => 500,
+            'error'  => [
+                'code'    => 'migration_failed',
+                'message' => "Files updated to v{$newVersion}, but database migrations failed: "
+                    . $e->getMessage()
+                    . '. The site may be in an inconsistent state — restore your database backup'
+                    . ' or resolve the migration, then retry.',
+            ],
+        ];
+    }
+
     return [
         'ok'   => true,
         'data' => [
-            'message'       => "Updated to v{$newVersion} successfully.",
-            'from_version'  => $currentVersion,
-            'to_version'    => $newVersion,
-            'files_updated' => $extracted,
-            'files_skipped' => $skipped,
-            'errors'        => $errors,
+            'message'        => "Updated to v{$newVersion} successfully.",
+            'from_version'   => $currentVersion,
+            'to_version'     => $newVersion,
+            'files_updated'  => $extracted,
+            'files_skipped'  => $skipped,
+            'errors'         => $errors,
+            'migrations_run' => $migrationsRun,
         ],
     ];
 }

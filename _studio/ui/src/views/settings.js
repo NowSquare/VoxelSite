@@ -448,6 +448,9 @@ async function loadSettings() {
       </div>
     </div>
 
+    <!-- Card: Git Updates (renders only when this install is a Git checkout) -->
+    <div id="vs-git-update-card"></div>
+
     <!-- Card: Update -->
     <div class="vs-settings-card">
       <div class="flex items-center justify-between mb-1">
@@ -692,6 +695,9 @@ async function loadSettings() {
   // Bind update upload
   bindUpdateUpload();
 
+  // Bind Git update card (renders only when this install is a Git checkout)
+  bindGitUpdate();
+
   // Bind favicon upload
   bindFaviconUpload();
 
@@ -718,6 +724,98 @@ function versionCompare(a, b) {
     if (na < nb) return -1;
   }
   return 0;
+}
+
+/**
+ * Render the Git update card into #vs-git-update-card.
+ *
+ * Only shows when the install is a Git checkout. Mirrors a status-card UX —
+ * "Up to date", "N updates available", "Local changes detected", "Setup needed"
+ * — rather than dumping raw git output. The repo details sit in a small footnote.
+ */
+async function bindGitUpdate() {
+  const host = document.getElementById('vs-git-update-card');
+  if (!host) return;
+
+  try {
+    const { ok, data } = await api.get('/update/git-status');
+    if (!ok || !data || !data.is_repo) { host.innerHTML = ''; return; } // not a Git checkout → ZIP card is the path
+    renderGitCard(host, data);
+  } catch (_) {
+    host.innerHTML = ''; // non-critical — fall back to the ZIP card silently
+  }
+}
+
+function renderGitCard(host, st) {
+  const canUpdate = st.state === 'update_available';
+  const pill = canUpdate
+    ? '<span class="vs-pill vs-pill-success">' + st.behind + ' available</span>'
+    : st.state === 'up_to_date'
+      ? '<span class="vs-pill vs-pill-subtle">Up to date</span>'
+      : '<span class="vs-pill vs-pill-subtle">Action needed</span>';
+
+  const footnote = [
+    st.branch ? `branch <code>${escapeHtml(st.branch)}</code>` : '',
+    st.short_sha ? `at <code>${escapeHtml(st.short_sha)}</code>` : '',
+    st.upstream ? `tracking <code>${escapeHtml(st.upstream)}</code>` : '',
+  ].filter(Boolean).join(' · ');
+
+  host.innerHTML = `
+    <div class="vs-settings-card" id="vs-git-card">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="vs-settings-card-title mb-0">Git Updates</h2>
+        ${pill}
+      </div>
+      <p class="vs-settings-card-subtitle">${escapeHtml(st.message || '')}</p>
+      <div id="vs-git-body">
+        ${canUpdate ? `
+          <button id="btn-git-update" class="vs-btn vs-btn-primary vs-btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+            Update now
+          </button>` : ''}
+        ${footnote ? `<p style="font-size: 11px; color: var(--vs-text-ghost); margin: 12px 0 0;">${footnote}</p>` : ''}
+      </div>
+    </div>
+  `;
+
+  const btn = document.getElementById('btn-git-update');
+  if (btn) btn.addEventListener('click', runGitUpdate);
+}
+
+async function runGitUpdate() {
+  if (window.demoGuard?.()) return;
+  const body = document.getElementById('vs-git-body');
+  if (!body) return;
+
+  const confirmOk = confirm(
+    `Pull the latest changes from Git?\n\n` +
+    `The app resets to match the repository (system files only). Your pages, ` +
+    `database, settings, and uploaded files are preserved. A reload is required after.`
+  );
+  if (!confirmOk) return;
+
+  body.innerHTML = `<div style="display: flex; align-items: center; gap: 10px;"><div class="vs-update-spinner"></div><span>Updating…</span></div>`;
+
+  try {
+    const { ok, data, error } = await api.post('/update/git-update', {});
+    if (ok) {
+      const migs = data.migrations?.result?.applied?.length || 0;
+      body.innerHTML = `
+        <div class="vs-update-result-title" style="color: var(--vs-success);">Updated to v${escapeHtml(data.to_version || '')}.</div>
+        <div class="vs-update-result-meta">
+          ${escapeHtml(data.from_sha || '?')} → ${escapeHtml(data.to_sha || '?')}${migs ? ` · ${migs} migration${migs === 1 ? '' : 's'} applied` : ' · no migrations needed'}
+        </div>
+        <button class="vs-btn vs-btn-primary vs-btn-sm mt-3" onclick="location.reload()">Reload Studio</button>
+      `;
+    } else {
+      body.innerHTML = `
+        <div class="vs-update-result-title" style="color: var(--vs-error);">${escapeHtml(error?.message || 'Update failed.')}</div>
+        <button class="vs-btn vs-btn-ghost vs-btn-sm mt-3" onclick="location.reload()">Close</button>
+      `;
+    }
+  } catch (err) {
+    body.innerHTML = `<div class="vs-update-result-title" style="color: var(--vs-error);">${escapeHtml(err.message || 'Network error.')}</div>`;
+  }
 }
 
 /**
@@ -826,6 +924,7 @@ function bindUpdateUpload() {
           <div class="vs-update-result-title">${escapeHtml(d.message)}</div>
           <div class="vs-update-result-meta">
             ${d.files_updated} files updated · ${d.files_skipped} preserved
+            ${d.migrations_run ? ` · ${d.migrations_run} migration${d.migrations_run === 1 ? '' : 's'}` : ''}
             ${d.errors?.length ? ` · ${d.errors.length} errors` : ''}
           </div>
           <button class="vs-btn vs-btn-primary vs-btn-sm mt-3" onclick="location.reload()">
@@ -955,6 +1054,7 @@ function bindUpdateUpload() {
           <div class="vs-update-result-title">${escapeHtml(d.message)}</div>
           <div class="vs-update-result-meta">
             ${d.files_updated} files updated · ${d.files_skipped} preserved
+            ${d.migrations_run ? ` · ${d.migrations_run} migration${d.migrations_run === 1 ? '' : 's'}` : ''}
             ${d.errors?.length ? ` · ${d.errors.length} errors` : ''}
           </div>
           <button class="vs-btn vs-btn-primary vs-btn-sm mt-3" onclick="location.reload()">

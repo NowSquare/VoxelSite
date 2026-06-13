@@ -258,6 +258,8 @@ $routes = [
     ['GET',    '/update/dist-packages',  'update.php',         true],
     ['POST',   '/update/apply-local',    'update.php',         true],
     ['POST',   '/update/upload',         'update.php',         true],
+    ['GET',    '/update/git-status',     'update.php',         true],
+    ['POST',   '/update/git-update',     'update.php',         true],
 ];
 
 // ── Load middleware (defines getJsonBody, authenticateRequest, validateCsrf) ──

@@ -158,6 +158,55 @@ class StructuredSchemas
         ];
     }
 
+    /**
+     * Schema for the design critic (DesignCriticEngine).
+     *
+     * Matches the output contract in _studio/prompts/critic.md: a score
+     * out of 10, a one-sentence verdict, at most three gaps (each with an
+     * area, an observation and a fix), and at most six AI tells.
+     *
+     * Numeric bounds are not expressed in the schema on purpose — not every
+     * provider honors them — so normalizeResult() clamps the score.
+     */
+    public static function designCritic(): array
+    {
+        return [
+            'tool_name'   => 'voxelsite_design_review_result',
+            'description' => 'Return the design review as structured JSON: a score out of 10, a one-sentence verdict, the biggest gaps, and any AI tells.',
+            'schema'      => [
+                'type'                 => 'object',
+                'additionalProperties' => false,
+                'required'             => ['score', 'verdict', 'gaps', 'tells'],
+                'properties'           => [
+                    'score'   => ['type' => 'integer'],
+                    'verdict' => ['type' => 'string'],
+                    'gaps'    => [
+                        'type'     => 'array',
+                        'maxItems' => 3,
+                        'items'    => [
+                            'type'                 => 'object',
+                            'additionalProperties' => false,
+                            'required'             => ['area', 'observation', 'fix'],
+                            'properties'           => [
+                                'area' => [
+                                    'type' => 'string',
+                                    'enum' => ['hierarchy', 'typography', 'color', 'spacing', 'distinctiveness', 'copy', 'ai_tells', 'responsiveness'],
+                                ],
+                                'observation' => ['type' => 'string'],
+                                'fix'         => ['type' => 'string'],
+                            ],
+                        ],
+                    ],
+                    'tells' => [
+                        'type'     => 'array',
+                        'maxItems' => 6,
+                        'items'    => ['type' => 'string'],
+                    ],
+                ],
+            ],
+        ];
+    }
+
     // ─── Post-decode normalization ────────────────────────────────────
 
     /** Maximum issues for evaluator results (matches prompt: "10 issues maximum"). */
@@ -165,6 +214,10 @@ class StructuredSchemas
 
     /** Maximum issues for brand-voice results (matches prompt: "maximum 5 issues"). */
     private const BRAND_VOICE_MAX_ISSUES = 5;
+
+    /** Caps for design critic results (match critic.md: three gaps, six tells). */
+    private const CRITIC_MAX_GAPS  = 3;
+    private const CRITIC_MAX_TELLS = 6;
 
     /**
      * Normalize a decoded structured result.
@@ -179,13 +232,17 @@ class StructuredSchemas
      *   $raw    = json_decode($provider->complete(...), true);
      *   $result = StructuredSchemas::normalizeResult('evaluator', $raw);
      *
-     * @param string     $schemaName  'evaluator', 'brandVoice', or 'brand_voice'
+     * @param string     $schemaName  'evaluator', 'brandVoice' / 'brand_voice', or 'designCritic' / 'design_critic'
      * @param array|null $decoded     The json_decode'd response
      * @return array Normalized result with `issues` truncated to cap
      * @throws \InvalidArgumentException If $schemaName is not a recognized schema
      */
     public static function normalizeResult(string $schemaName, ?array $decoded): array
     {
+        if ($schemaName === 'designCritic' || $schemaName === 'design_critic') {
+            return self::normalizeDesignCritic($decoded);
+        }
+
         $result = is_array($decoded) ? $decoded : ['issues' => []];
 
         if (!isset($result['issues']) || !is_array($result['issues'])) {
@@ -196,7 +253,7 @@ class StructuredSchemas
             'evaluator'                => self::EVALUATOR_MAX_ISSUES,
             'brandVoice', 'brand_voice' => self::BRAND_VOICE_MAX_ISSUES,
             default => throw new \InvalidArgumentException(
-                "Unknown schema name '{$schemaName}'. Expected 'evaluator' or 'brandVoice'."
+                "Unknown schema name '{$schemaName}'. Expected 'evaluator', 'brandVoice' or 'designCritic'."
             ),
         };
 
@@ -205,5 +262,64 @@ class StructuredSchemas
         }
 
         return $result;
+    }
+    /**
+     * Normalize a decoded design critic result to a fixed shape.
+     *
+     * Score clamped to 1..10 (null when absent or non-numeric), gaps capped
+     * at three with string fields, tells capped at six non-empty strings.
+     *
+     * @return array{score: ?int, verdict: string, gaps: list<array{area: string, observation: string, fix: string}>, tells: list<string>}
+     */
+    private static function normalizeDesignCritic(?array $decoded): array
+    {
+        $decoded = is_array($decoded) ? $decoded : [];
+
+        $score = null;
+        if (isset($decoded['score']) && is_numeric($decoded['score'])) {
+            $score = (int) max(1, min(10, (int) round((float) $decoded['score'])));
+        }
+
+        $gaps = [];
+        foreach ((array) ($decoded['gaps'] ?? []) as $gap) {
+            if (!is_array($gap)) {
+                continue;
+            }
+            $observation = trim((string) ($gap['observation'] ?? ''));
+            $fix         = trim((string) ($gap['fix'] ?? ''));
+            if ($observation === '' && $fix === '') {
+                continue;
+            }
+            $gaps[] = [
+                'area'        => trim((string) ($gap['area'] ?? 'design')) ?: 'design',
+                'observation' => $observation,
+                'fix'         => $fix,
+            ];
+            if (count($gaps) >= self::CRITIC_MAX_GAPS) {
+                break;
+            }
+        }
+
+        $tells = [];
+        foreach ((array) ($decoded['tells'] ?? []) as $tell) {
+            if (!is_scalar($tell)) {
+                continue;
+            }
+            $tell = trim((string) $tell);
+            if ($tell === '') {
+                continue;
+            }
+            $tells[] = $tell;
+            if (count($tells) >= self::CRITIC_MAX_TELLS) {
+                break;
+            }
+        }
+
+        return [
+            'score'   => $score,
+            'verdict' => trim((string) ($decoded['verdict'] ?? '')),
+            'gaps'    => $gaps,
+            'tells'   => $tells,
+        ];
     }
 }

@@ -19,7 +19,7 @@ VoxelSite is open source under the GNU Affero General Public License v3.0 — se
 
 ## What's included
 
-- **AI Studio** — a chat-driven interface to create and edit multi-page websites in plain language
+- **AI Studio** — a chat-driven interface to create and edit multi-page websites in plain language; every new site starts from a drawn design direction so no two sites come out the same, and an optional design review scores each generation the way a studio would
 - **Code Editor** — built-in Monaco editor with file explorer, multi-tab editing, and create/delete
 - **Site** — a structural graph of pages, partials, routes, tokens, and assets, with impact analysis, blast-radius queries, page management (rename, change URL, move, delete with automatic reference cleanup), and an AI orchestration console for site-wide changes you review and apply transactionally
 - **Visual Editor** — click-to-edit text, swap images, adjust styles, reorder sections, add sections from a picker, and describe changes with AI — all on the live preview

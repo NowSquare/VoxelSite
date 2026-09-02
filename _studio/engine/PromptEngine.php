@@ -822,6 +822,8 @@ class PromptEngine
                 // Results are emitted via SSE so the frontend can surface them.
                 // The evaluator is advisory — exceptions return empty issues and
                 // never block the pipeline.
+                $reviewIssues = [];
+
                 if ($this->settings->get('evaluator_enabled', false)) {
                     try {
                         $this->emitSSE('status', ['message' => 'Reviewing quality...']);
@@ -865,12 +867,7 @@ class PromptEngine
                                     'severities' => array_count_values(array_column($evalIssues, 'severity')),
                                 ]);
 
-                                $this->emitSSE('evaluation', [
-                                    'issues' => $evalIssues,
-                                ]);
-
-                                // Persist for history reload
-                                $storedEvalIssues = json_encode($evalIssues);
+                                $reviewIssues = array_merge($reviewIssues, $evalIssues);
                             }
                         }
                     } catch (\Throwable $evalError) {
@@ -879,6 +876,52 @@ class PromptEngine
                             'error' => $evalError->getMessage(),
                         ]);
                     }
+                }
+
+                // ── Design review (opt-in) ──
+                // A second, isolated opinion on the design itself: no user
+                // prompt, no conversation, no builder rationale — only the
+                // page as written, the tokens, the partials and the direction
+                // brief. One critique, no revision loop. Advisory, like the
+                // evaluator, and shown in the same Expert Review panel.
+                if ($this->settings->get('design_review_enabled', false)
+                    && DesignCriticEngine::appliesTo($actionType, $parsed['operations'])
+                ) {
+                    try {
+                        $this->emitSSE('status', ['message' => 'Reviewing design...']);
+
+                        $reviewPage = $this->resolveReviewPage($pageScope, $parsed['operations']);
+                        $pageSource = $reviewPage !== null ? $this->fileManager->readFile($reviewPage) : null;
+
+                        if ($reviewPage !== null && $pageSource !== null && trim($pageSource) !== '') {
+                            $critic = new DesignCriticEngine($this->provider);
+                            $review = $critic->review(
+                                [$reviewPage => $pageSource],
+                                $this->fileManager->readFile('assets/css/style.css') ?? '',
+                                $this->fileManager->readFile('_partials/nav.php'),
+                                $this->fileManager->readFile('_partials/footer.php'),
+                                $designDirection['rendered'] ?? null,
+                                ['model' => $configuredModel]
+                            );
+                            $reviewIssues = array_merge(
+                                $reviewIssues,
+                                DesignCriticEngine::toIssues($review, $reviewPage)
+                            );
+                        }
+                    } catch (\Throwable $criticError) {
+                        Logger::warning('critic', 'Design review failed (non-blocking)', [
+                            'error' => $criticError->getMessage(),
+                        ]);
+                    }
+                }
+
+                if (!empty($reviewIssues)) {
+                    $this->emitSSE('evaluation', [
+                        'issues' => $reviewIssues,
+                    ]);
+
+                    // Persist for history reload
+                    $storedEvalIssues = json_encode($reviewIssues);
                 }
             }
 
@@ -2418,6 +2461,7 @@ class PromptEngine
             $message === 'Compiling styles...'        => 'compiling_css',
             $message === 'Finalizing...'              => 'finalizing',
             $message === 'Reviewing quality...'       => 'evaluating',
+            $message === 'Reviewing design...'        => 'evaluating',
             $message === 'Syncing AI discovery files...' => 'finalizing',
             str_starts_with($message, 'Repaired ')    => 'writing_files',
             str_starts_with($message, 'Fixed ')       => 'writing_files',
@@ -2805,6 +2849,53 @@ PROMPT;
         }
         $decoded = json_decode($raw, true);
         return is_array($decoded) ? $decoded : [];
+    }
+
+    /**
+     * Which page the design critic should read: the page the user was
+     * working on, else the homepage when it was written in this response,
+     * else the first root page written, else the homepage on disk.
+     *
+     * @param array<int, array{path?: string, action?: string}> $operations
+     */
+    private function resolveReviewPage(?string $pageScope, array $operations): ?string
+    {
+        $candidates = [];
+
+        if ($pageScope !== null && $pageScope !== '' && $pageScope !== '__all__') {
+            $scoped = preg_replace('/\.php$/', '', $pageScope) . '.php';
+            if (preg_match('#^[a-zA-Z0-9_/-]+\.php$#', $scoped)) {
+                $candidates[] = $scoped;
+            }
+        }
+
+        $written = [];
+        foreach ($operations as $op) {
+            if (($op['action'] ?? '') === 'delete') {
+                continue;
+            }
+            $path = (string) ($op['path'] ?? '');
+            if (preg_match('/^[a-zA-Z0-9_-]+\.php$/', $path)) {
+                $written[] = $path;
+            }
+        }
+        if (in_array('index.php', $written, true)) {
+            $candidates[] = 'index.php';
+        }
+        $candidates = array_merge($candidates, $written, ['index.php']);
+
+        foreach (array_unique($candidates) as $candidate) {
+            try {
+                $content = $this->fileManager->readFile($candidate);
+            } catch (\Throwable $e) {
+                continue;
+            }
+            if ($content !== null && trim($content) !== '') {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     /**

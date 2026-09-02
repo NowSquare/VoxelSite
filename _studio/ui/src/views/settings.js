@@ -225,6 +225,33 @@ async function loadSettings() {
             </label>
           </div>
         </div>
+
+        <div style="border-top: 1px solid var(--vs-border-subtle); padding-top: 16px; margin-top: 4px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1; min-width: 0;">
+              <span style="position: relative; display: inline-flex; align-items: center; width: 36px; height: 20px; flex-shrink: 0;">
+                <input type="checkbox" id="set-design-review-enabled" ${s.design_review_enabled ? 'checked' : ''} style="position: absolute; opacity: 0; width: 0; height: 0;" />
+                <span class="vs-toggle-track" style="
+                  position: absolute; inset: 0; border-radius: 10px;
+                  background: ${s.design_review_enabled ? 'var(--vs-accent)' : 'var(--vs-border-medium, #ccc)'};
+                  transition: background 0.2s ease;
+                "></span>
+                <span class="vs-toggle-thumb" style="
+                  position: absolute; left: ${s.design_review_enabled ? '18px' : '2px'}; top: 2px;
+                  width: 16px; height: 16px; border-radius: 50%;
+                  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                  transition: left 0.2s ease;
+                "></span>
+              </span>
+              <div style="display: flex; flex-direction: column; gap: 1px;">
+                <span style="font-size: 13px; font-weight: 500; color: var(--vs-text-secondary);">
+                  Design review after generation
+                </span>
+                <span style="font-size: 11px; color: var(--vs-text-ghost); line-height: 1.4;">A second AI pass judges the page the way a design studio would: hierarchy, typography, color, spacing, distinctiveness and copy. Scored out of 10 with the three biggest gaps, shown in the Expert Review panel. Advisory only. Adds one extra AI call per generation.</span>
+              </div>
+            </label>
+          </div>
+        </div>
       </div>
       <div class="vs-settings-card-footer">
         <span id="save-status" class="text-xs text-vs-text-ghost hidden"></span>
@@ -1928,6 +1955,7 @@ function bindSettingsEvents(currentSettings, providers) {
         [`ai_${selectedProvider}_model`]: document.getElementById('set-ai-model')?.value || '',
         ai_max_tokens: parseInt(document.getElementById('set-max-tokens')?.value || '32000', 10),
         evaluator_enabled: document.getElementById('set-evaluator-enabled')?.checked ? 1 : 0,
+        design_review_enabled: document.getElementById('set-design-review-enabled')?.checked ? 1 : 0,
       };
 
       // Base URL for OpenAI Compatible
@@ -1961,17 +1989,18 @@ function bindSettingsEvents(currentSettings, providers) {
     });
   }
 
-  // Evaluator toggle switch animation
-  const evalToggle = document.getElementById('set-evaluator-enabled');
-  if (evalToggle) {
-    const evalLabel = evalToggle.closest('label') || evalToggle.parentElement;
-    const evalTrack = evalLabel?.querySelector('.vs-toggle-track');
-    const evalThumb = evalLabel?.querySelector('.vs-toggle-thumb');
-    evalToggle.addEventListener('change', () => {
-      if (evalTrack) evalTrack.style.background = evalToggle.checked ? 'var(--vs-accent)' : 'var(--vs-border-medium, #ccc)';
-      if (evalThumb) evalThumb.style.left = evalToggle.checked ? '18px' : '2px';
+  // Toggle switch animation (expert review, design review)
+  ['set-evaluator-enabled', 'set-design-review-enabled'].forEach((id) => {
+    const toggle = document.getElementById(id);
+    if (!toggle) return;
+    const label = toggle.closest('label') || toggle.parentElement;
+    const track = label?.querySelector('.vs-toggle-track');
+    const thumb = label?.querySelector('.vs-toggle-thumb');
+    toggle.addEventListener('change', () => {
+      if (track) track.style.background = toggle.checked ? 'var(--vs-accent)' : 'var(--vs-border-medium, #ccc)';
+      if (thumb) thumb.style.left = toggle.checked ? '18px' : '2px';
     });
-  }
+  });
 }
 
 // ─── Email Settings Events ────────────────────

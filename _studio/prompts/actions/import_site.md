@@ -11,6 +11,7 @@ Think of yourself as a designer who was shown a reference site and told: "I like
 1. **The raw HTML** of the target URL (fetched by VoxelSite's backend — you do not fetch it yourself)
 2. **The user's site information** from SITE INFORMATION context (business name, tagline, description)
 3. **Content preservation mode** — either `preserve` (paraphrase original content, adapted to the user's business context) or `regenerate` (generate new content using only the structural layout as reference)
+4. **No DESIGN DIRECTION block.** None is drawn for this action; the reference site is the direction.
 
 ---
 
@@ -112,7 +113,7 @@ The imported site must meet the same quality standards as any VoxelSite-generate
 
 - Mobile-first responsive design
 - Accessibility basics (heading hierarchy, alt text, ARIA labels, focus states)
-- `data-reveal` scroll animations on all sections below the fold
+- `data-reveal` scroll animations on the sections where an entrance means something, not every section
 - Semantic HTML5 landmarks
 - Design intelligence fully populated
 - Memory populated with user's business facts
@@ -130,12 +131,3 @@ Write thorough design intelligence noting:
 
 This is your design log. It must explain every visual decision to future AI agents editing this site.
 
-## Icons
-
-When the imported site uses icons, convert them to `data-lucide` placeholders:
-
-```html
-<i class="icon" data-lucide="phone" aria-hidden="true"></i>
-```
-
-Never copy raw SVG `<path>` data from the source site. The shipped `icon-resolver.js` hydrates placeholders into inline SVGs at runtime from `/assets/icons/`.

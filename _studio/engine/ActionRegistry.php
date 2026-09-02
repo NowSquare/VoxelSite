@@ -393,9 +393,10 @@ class ActionRegistry
      * a detailed instruction that contains all the structured info
      * the AI needs.
      *
-     * When wizard steps are skipped (quick-prompt button), sensible
-     * defaults are injected so the AI can generate immediately
-     * without asking clarifying questions.
+     * When wizard steps are skipped (quick-prompt button), the prompt
+     * says what was left open so the AI decides without asking. No
+     * hidden defaults: a fixed page list contradicted "Start Lean" and a
+     * default "Modern Minimal" style made every quick-prompt site alike.
      */
     private function buildCreateSitePrompt(string $userPrompt, array $data): string
     {
@@ -404,19 +405,19 @@ class ActionRegistry
         // User's primary description
         $parts[] = "\n## Business Description\n{$userPrompt}";
 
-        // Pages — default to standard set if not specified
+        // Pages — say explicitly when the user left this open. A fixed
+        // default list here used to contradict "Start Lean" in the same request.
         if (!empty($data['pages'])) {
             $parts[] = "\n## Requested Pages\n{$data['pages']}";
         } else {
-            $parts[] = "\n## Requested Pages\nHome, About, Services, Contact";
+            $parts[] = "\n## Requested Pages\nNot specified. Decide from the business description. Start lean: one excellent homepage, extra pages only when the business clearly needs them.";
         }
 
-        // Style — default to Modern Minimal
+        // Style — only when the user picked one. The DESIGN DIRECTION block in
+        // the context supplies the creative brief when style was left open.
         if (!empty($data['style'])) {
             $styleLabel = $this->getOptionLabel('create_site', 'style', $data['style']);
             $parts[] = "\n## Style Preference\n{$styleLabel}";
-        } else {
-            $parts[] = "\n## Style Preference\nModern Minimal — Clean lines, whitespace, one accent color";
         }
 
         // Content mode — default to AI-written

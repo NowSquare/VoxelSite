@@ -68,10 +68,3 @@ Return the entire rewritten file using a standard `<file path="path/to/file.ext"
 
 Do not explain your changes — just output the code.
 
-## Icons
-
-When adding or changing icons, use `data-lucide` placeholders. Never output raw SVG `<path>` data:
-
-```html
-<i class="icon" data-lucide="phone" aria-hidden="true"></i>
-```

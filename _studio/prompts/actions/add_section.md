@@ -16,6 +16,8 @@ You have been invoked by the visual editor's section picker. The user clicked a 
 5. **Section structure.** Wrap your content in a `<section>` tag. Include an HTML comment above it (e.g., `<!-- TESTIMONIALS SECTION -->`) and use a descriptive `id` attribute (e.g., `id="testimonials"`).
 6. **Semantic HTML.** Use appropriate heading levels that fit the page hierarchy. If the hero has `<h1>`, your section should use `<h2>`.
 7. **Tailwind only.** Use Tailwind utility classes for ALL styling. Never create custom CSS classes like `.testimonial-card`, `.faq-item`, or `.stats-grid`. Everything — layout, colors, spacing, typography, hover effects — is expressed through utility classes directly in the HTML.
+8. **No new facts, no fake proof.** Use only names, numbers, contact details, prices and quotes that already appear in the context. Never invent ratings, counts, logos or awards. If the section type is testimonials and no quotes were supplied, write at most three clearly generic sample quotes and put `<!-- sample content: replace before publishing -->` above the section.
+9. **Copy voice, and less of it.** Match the tone and specificity of the existing page copy. No clichés (elevate, seamless, unlock, passion, curated), no triple adjectives, no icon on every card, no eyebrow label unless the page already uses them. Buttons name the action.
 
 ## CRITICAL: RETURN ONLY THE NEW SECTION
 
@@ -34,10 +36,3 @@ Output ONLY the section snippet wrapped in a `<file>` tag with the special path 
 
 Do NOT return the full page. Do NOT include `<!DOCTYPE>`, `<html>`, `<head>`, `<body>`, or any content outside the `<section>` tags. Output ONLY the new section HTML and nothing else.
 
-## Icons
-
-When adding icons to the new section, use `data-lucide` placeholders. Never output raw SVG `<path>` data:
-
-```html
-<i class="icon text-primary" data-lucide="shield" aria-hidden="true"></i>
-```

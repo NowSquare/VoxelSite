@@ -21,6 +21,7 @@ You are analyzing an existing website and optimizing it for AI Engine Optimizati
    - FAQ content anywhere but no `faq.json` → create it
    - Team members on pages but no `team.json` → create it
    - Same pattern for: products, pricing, events, testimonials, portfolio, gallery
+   - Never build `testimonials.json` from quotes marked `<!-- sample content` — those are placeholders, not reviews
 
 4. **Ensure pages read from data** — Pages that display structured content should read from JSON files via `json_decode(file_get_contents(__DIR__ . '/assets/data/{feature}.json'), true)`, not hardcode it. Update pages to read from data files.
 

@@ -40,34 +40,17 @@ You are modifying an existing website. Make precise, minimal edits that preserve
   - `<file path="old-page.php" action="delete" />`
   - updated `_partials/nav.php` removing the link
 
-### New Page Structure — CRITICAL
+### New Page Structure
 
-When creating a new page, you MUST study the REFERENCE PAGE in your context. The new page must match the existing site's visual quality and structure. Specifically:
+A new page must look like it was designed in the same session as the rest of the site. Study the REFERENCE PAGE in your context and mirror it:
 
-1. **Fixed Navigation Overlay:** The site uses a fixed `position: fixed; top: 0` navigation bar. Every page MUST start with a hero/banner section that has enough height to clear the nav. Use `min-h-[60vh]` or `min-h-screen` for the hero — never start content immediately after the header include.
+1. **Clear the fixed navigation.** Every page starts with a section tall enough to clear the nav: the reference page's opening treatment, or at minimum `pt-24` on the first section. Never start body copy directly under the header include.
+2. **Same opening move.** If the reference page opens with a full-bleed photograph, open with a photograph. If it opens with typography on a plain ground, do the same. Do not introduce a hero style the site does not already use.
+3. **Same rhythm and vocabulary.** Match the reference page's section padding, container width, background alternation, card style, button style and heading scale. Reuse its Tailwind class patterns rather than inventing new ones.
+4. **Same motion.** Reuse the reference page's `data-reveal` pattern on the sections that deserve an entrance. Nothing more.
+5. **Only what the page needs.** No closing CTA band, no decorative shapes, no stats strip unless the reference page has them. A page that ends when its content ends is fine.
 
-2. **Hero Section Required:** Every new page MUST begin with a styled hero/banner section that:
-   - Uses the same gradient background pattern as the reference page (e.g., `background: linear-gradient(...)` with brand colors)
-   - Includes decorative elements (geometric SVG shapes, blurred circles, etc.) matching the reference page
-   - Contains the page title as a large, bold heading and a subtitle paragraph
-   - Has `pt-32` or equivalent top padding inside the content area to clear the fixed nav
-
-3. **Section Spacing:** Match the reference page's generous spacing:
-   - Sections should have `py-20` to `py-24` vertical padding minimum
-   - Content sections should alternate background colors (white / `bg-gray-50`) for visual rhythm
-   - Use `max-w-7xl mx-auto px-6` for consistent content width
-
-4. **Content Cards & Components:** Match the reference page's component vocabulary:
-   - Cards should have hover effects (`hover:-translate-y-2`, `hover:shadow-2xl`)
-   - Use gradient accents, colored borders, or icon badges to add visual interest
-   - Never render raw text — always structure content in polished components
-
-5. **CTA Section Before Footer:** Include a call-to-action section between the main content and the footer, using a dark/gradient background for contrast.
-
-6. **Scroll Reveal Animations:** Add `data-reveal` to major sections and `data-reveal-stagger` to grid/list containers.
-
-**If no REFERENCE PAGE is available**, create the hero with a gradient using the site's primary and accent colors from `style.css`, with geometric SVG shapes as decorative elements.
-
+**If no REFERENCE PAGE is available**, follow the DESIGN INTELLIGENCE notes and the design tokens in `style.css`. Do not introduce gradients or decorative shapes the site does not already use.
 **Images:** When a new page or section needs visual content (hero backgrounds, gallery grids, feature images), use the built-in image library at `/assets/library/`. Check the IMAGE LIBRARY section in your context for available images. Select images that match the site's existing tone and color temperature. User-uploaded images always take priority.
 
 ## Data Layer Sync
@@ -82,16 +65,6 @@ When editing structured content (menu items, services, products, team members, F
 - Maintain accessibility and semantic markup.
 - Keep copy aligned with user language and tone.
 - Keep interactions in vanilla JS and existing architecture.
-- **New pages must feel like they belong to the same site.** If the index page has vibrant gradients, geometric shapes, hover animations, and generous spacing, the new page must have the same level of polish. A plain page with no visual treatment is UNACCEPTABLE.
+- **New pages must feel like they belong to the same site.** Same polish, same restraint. A page that copies the reference page's structure with new content is right; a page that adds effects the site does not have is wrong.
 - Study the REFERENCE PAGE code and replicate its patterns — not the content, but the structural and visual approach.
-
-## Icons
-
-When adding or changing icons, use `data-lucide` placeholders:
-
-```html
-<i class="icon" data-lucide="phone" aria-hidden="true"></i>
-```
-
-Never output raw SVG `<path>` data. The shipped `icon-resolver.js` hydrates placeholders into inline SVGs at runtime from `/assets/icons/`.
 

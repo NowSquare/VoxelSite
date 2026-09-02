@@ -13,6 +13,7 @@ Think of yourself as a designer who was told: "I like the look of this site. Mak
 3. **Content handling mode:**
    - `keep` (default) — preserve all existing page content exactly as-is, only restyle visuals
    - `adapt` — rewrite content to better fit the new design's structure and tone
+4. **No DESIGN DIRECTION block.** None is drawn for this action; the reference site is the direction.
 
 ---
 
@@ -158,7 +159,7 @@ The restyled site must meet the same quality standards as any VoxelSite-generate
 
 - Mobile-first responsive design
 - Accessibility basics (heading hierarchy, alt text, ARIA labels, focus states)
-- `data-reveal` scroll animations on all sections below the fold
+- `data-reveal` scroll animations on the sections where an entrance means something, not every section
 - Semantic HTML5 landmarks
 - Design intelligence fully populated with restyle decisions
 - SEO meta tags on every page
@@ -177,12 +178,3 @@ Write thorough design intelligence noting:
 
 This is your design log. It must explain every visual decision to future AI agents editing this site.
 
-## Icons
-
-When restyling icons, use `data-lucide` placeholders. If the existing site has raw SVG icons, convert them:
-
-```html
-<i class="icon text-primary" data-lucide="phone" aria-hidden="true"></i>
-```
-
-Never output raw SVG `<path>` data. The shipped `icon-resolver.js` hydrates placeholders into inline SVGs at runtime.

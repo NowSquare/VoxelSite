@@ -9,7 +9,8 @@
   When the context budget is tight, optional sections are dropped first,
   then important sections (in reverse order).
   
-  Last synced with SiteContext.php: 2026-03-11 (after adding DATA DEPENDENCIES)
+  Last synced with SiteContext.php: 2026-09-02 (DESIGN DIRECTION documented; conversation history
+  is no longer a context section — it travels as real user/assistant message pairs)
 -->
 
 # Context Sections — Priority Order
@@ -57,9 +58,6 @@ Section-level structure of each page (excluding focus page).
 === REFERENCE PAGE: {{slug}} ({{slug}}.php) ===
 {{reference_page_html_with_instructions}}
 
-=== CONVERSATION HISTORY ===
-{{last_5_exchanges}}
-
 === AVAILABLE ASSETS ===
 path | type | size
 {{asset_rows}}
@@ -78,6 +76,11 @@ path | type | size
 
 === ACTIVE AGENT ACTIONS ===
 {{active_action_names_and_fields}}
+
+=== DESIGN DIRECTION (drawn for this build, seed {{seed}}) ===
+{{direction_block}}
+(Appended by PromptEngine after SiteContext::build(), for create_site and for free_prompt on a
+site with no pages. Rendered by DesignDirection::render(). Never trimmed by the budget.)
 
 ## Priority 3: Optional (dropped first when over budget)
 

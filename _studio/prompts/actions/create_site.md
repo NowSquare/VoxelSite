@@ -10,6 +10,10 @@ Read the **SITE INFORMATION** section in your context — the site name and tagl
 
 **Never default to an agency/portfolio site.** Most users are building for a specific local business, product, or service — not a generic development agency.
 
+## Design Direction
+
+The context ends with a `=== DESIGN DIRECTION ===` block drawn for this build. It is the creative brief for everything below: hero archetype, type, palette, accent hue, layout, corner radius, motion, and the one signature move. Follow it unless the user's own words or their chosen style say otherwise, commit to it rather than hedging between directions, and record how you applied it in `design-intelligence.json` (a `direction` note that includes the seed is enough).
+
 ## Start Lean
 
 Most businesses just want a great landing page. **Prioritize one incredible homepage over multiple mediocre pages.**
@@ -79,6 +83,7 @@ Write a merge operation for `design-intelligence.json` covering at minimum:
 - `animation_approach` — reveal style, hover behavior, speed
 - `image_direction` — which library images were selected and why they match the tone
 - `anti_patterns` — what this site deliberately does NOT do
+- `direction` — the DESIGN DIRECTION seed and how you applied it
 
 Be specific and opinionated. "Warm earth tones with terracotta accent, generous spacing, serif headings for editorial elegance" is useful. "Nice colors and good spacing" is worthless.
 
@@ -130,7 +135,7 @@ Prefer design token colors (via `style.css` `:root`) for theme colors that shoul
 **Example — a hero section done RIGHT:**
 ```php
 <section class="relative min-h-[80vh] flex items-center justify-center overflow-hidden pt-24"
-         style="background-image: url('/assets/images/backgrounds/...);">
+         style="background-image: url('/assets/library/backgrounds/vs-bg_golden-clouds_atmosphere_warm_light_dark-text.jpeg'); background-size: cover; background-position: center;">
   <div class="absolute inset-0 bg-black opacity-50"></div>
   <div class="relative z-10 text-center px-4 max-w-4xl mx-auto">
     <p class="text-sm uppercase tracking-widest text-white/70 mb-4">Lyon, France</p>
@@ -163,15 +168,15 @@ Every new site should use images from the built-in library. The IMAGE LIBRARY se
 4. **Always use an overlay `<div>` over background images.** Use `style="background-image: url(...); background-size: cover; background-position: center;"` on the container, then `<div class="absolute inset-0 bg-black opacity-50"></div>` (or `bg-white`, or a brand color), and `<div class="relative z-10">` for content. Users can easily adjust `opacity-*` in the visual editor. Add `text-shadow` on hero text. **Do NOT use gradient classes** for overlays — use simple `bg-color` + `opacity-*`.
 5. The design intelligence should note which library images were selected and why.
 
-## Animations
+## Motion
 
-Every site must feel alive. Include these animation patterns from the start:
+Motion is seasoning, not the meal. Include from the start:
 
-1. **Scroll reveals:** Add `data-reveal` to every section below the fold. Include the reveal CSS in `style.css` and the IntersectionObserver trigger in `main.js`.
-2. **Staggered card entrances:** When a grid of cards or features scrolls into view, stagger their appearance with incremental `transition-delay`.
-3. **Hover micro-interactions:** Cards lift with shadow, buttons scale subtly, images zoom gently inside `overflow: hidden` containers, links animate their underline.
-4. **Hero motion:** Use a pulsing scroll indicator, gentle floating accents, or an animated gradient background (`background-size: 200% 200%` with a shifting `background-position` keyframe).
-5. **Respect `prefers-reduced-motion`:** Disable all animations when the user prefers reduced motion.
+1. **Scroll reveals where they mean something:** the first section after the hero, the main grid, the closing call to action. The reveal CSS (`[data-reveal]` with `.is-visible`) lives in `style.css`; the IntersectionObserver lives in `main.js`. The hero is visible on load.
+2. **One staggered entrance** for the most important grid, with incremental `transition-delay`.
+3. **Hover feedback** on interactive elements: cards lift slightly, buttons respond, images zoom gently inside `overflow: hidden` containers.
+4. **At most one ambient motion** on the whole page, and only when the DESIGN DIRECTION calls for it. No floating shapes, no animated gradients, no pulsing indicators by default.
+5. **Respect `prefers-reduced-motion`:** disable all of it when the visitor asks.
 
 ## Fonts
 
@@ -200,16 +205,6 @@ If the site includes a contact page, booking system, order form, or any kind of 
 
 Form AJAX handling is **shipped code** — the engine automatically injects `form-handler.js` into the footer partial when any page has `action="/submit.php"`. You do NOT generate any form JavaScript.
 
-## Icons
-
-When adding icons (feature cards, contact info, navigation, social links), use the `data-lucide` placeholder pattern:
-
-```html
-<i class="icon text-primary" data-lucide="phone" aria-hidden="true"></i>
-```
-
-Never output raw SVG `<path>` data. The shipped `icon-resolver.js` hydrates placeholders into inline SVGs at runtime from `/assets/icons/`. Do NOT generate `icon-resolver.js` — it is auto-deployed by the engine.
-
 Field names in the HTML `name` attributes must **exactly match** the `name` properties in the schema JSON. The `submit.php` handler reads the schema to validate submissions.
 
 For notification recipients, use `"{{site.contact.email}}"` to pull the email from `site.json` — never hardcode emails in the schema.
@@ -224,4 +219,6 @@ For notification recipients, use `"{{site.contact.email}}"` to pull the email fr
 - Interactive forms: any contact/booking/order page has both a schema JSON and matching HTML form.
 - Site memory populated with every business fact from the user's prompt.
 - Design intelligence populated with every visual decision you made.
+- One signature move, visible in the first viewport or the first scroll.
+- A subtraction pass done: nothing decorative without a job, no sample content without its label.
 

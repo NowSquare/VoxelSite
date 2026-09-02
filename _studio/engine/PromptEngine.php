@@ -93,6 +93,9 @@ class PromptEngine
         $this->headless = !empty($request['headless']);
         $this->headlessJobId = (int) ($request['prompt_log_id'] ?? 0);
 
+        // Drawn for new sites only (see DesignDirection). Also handed to the design critic.
+        $designDirection = null;
+
         // ── Set up SSE (skipped in headless mode) ──
         if (!$this->headless) {
             $this->beginSSE();
@@ -397,6 +400,39 @@ class PromptEngine
             $contextResult = $this->siteContext->build($effectivePageScope, $conversationId, $userId, $contextBudget, $actionType);
             $context = $contextResult['context'];
             $contextMetrics = $contextResult['metrics'];
+
+            // ── Design direction (new sites only) ──
+            // Variety has to come from outside the model. Draw a direction
+            // brief and append it to the context so it sits directly before
+            // the user's request. Edits, imports and restyles never get one:
+            // the existing site or the reference is their direction.
+            if ($this->shouldDrawDesignDirection($actionType)) {
+                $designDirection = DesignDirection::draw([
+                    'style'  => (string) ($actionData['style'] ?? ''),
+                    'memory' => $this->readMemoryForDirection(),
+                ]);
+                $context = rtrim($context) . "\n\n" . $designDirection['rendered'];
+
+                Logger::info('ai', 'Design direction drawn', [
+                    'seed'    => $designDirection['seed'],
+                    'choices' => $designDirection['ids'],
+                    'style'   => (string) ($actionData['style'] ?? ''),
+                ]);
+
+                // Persist the draw with the prompt so a result can be traced
+                // back to its brief.
+                if ($promptLogId !== null) {
+                    try {
+                        $persisted = $actionData;
+                        $persisted['design_direction'] = ['seed' => $designDirection['seed']] + $designDirection['ids'];
+                        $this->db->update('prompt_log', [
+                            'action_data' => json_encode($persisted),
+                        ], 'id = ?', [$promptLogId]);
+                    } catch (\Throwable $e) {
+                        Logger::warning('ai', 'Could not persist design direction', ['error' => $e->getMessage()]);
+                    }
+                }
+            }
 
             Logger::debug('ai', 'Context built', [
                 'context_length'    => strlen($context),
@@ -1109,13 +1145,9 @@ class PromptEngine
         }
 
         if ($actionPath !== null) {
-            $actionPrompt = trim(file_get_contents($actionPath));
+            $actionPrompt = trim((string) file_get_contents($actionPath));
             if ($actionPrompt !== '') {
-                if (str_contains($actionPrompt, '<request>')) {
-                    $systemPrompt = $actionPrompt;
-                } else {
-                    $systemPrompt .= "\n\n" . $actionPrompt;
-                }
+                $systemPrompt .= "\n\n" . $actionPrompt;
             }
         }
 
@@ -1129,8 +1161,9 @@ class PromptEngine
             'prompt_length' => strlen($systemPrompt),
         ]);
 
-        // Provider-agnostic contract: require a deterministic JSON envelope.
-        // ResponseParser still accepts legacy <file>/<message> output as fallback.
+        // Provider-agnostic output contract: <message> plus <file> tags, appended
+        // last so it is the most recent instruction the model reads. It must
+        // agree with system.md — never state a rule here that system.md contradicts.
         $systemPrompt .= "\n\n" . $this->getStructuredOutputContract();
 
         return $systemPrompt;
@@ -2549,6 +2582,12 @@ Always match the user's language. If they write in French, all content is in Fre
 ## Bias to Action
 Build immediately using your best judgment. Never ask more than one question. Make design choices yourself — the user can refine afterward. When pages already exist, treat requests as incremental changes to the existing site.
 
+## Facts and Sample Content
+Never invent contact details, addresses, phone numbers, emails, opening hours, prices, statistics, ratings, review counts, client logos or awards. If the user or the context did not supply a fact, leave it out. No placeholders like `#`, `example.com` or `555` numbers. Data files feed llms.txt, Schema.org and MCP, so invented values become false public claims. If a layout needs testimonials and none were supplied, write at most three clearly generic sample quotes in the page HTML only, put `<!-- sample content: replace before publishing -->` above them, and say in your message that they are placeholders.
+
+## Copy
+Match the tone and specificity of the existing page copy. Specific beats vague; one strong word beats three weak ones; buttons name the action. No clichés (elevate, seamless, unlock, passion, curated), no triple adjectives, no invented numbers, no icon on every card.
+
 ## Architecture
 
 Pages use PHP includes for shared partials. Styling uses **Tailwind utility classes** — the TailwindCompiler reads your HTML and compiles a static `assets/css/tailwind.css` automatically. You never write that file.
@@ -2612,7 +2651,7 @@ The AI creates `_partials/nav.php` and `_partials/footer.php` from scratch using
 - Include a styled CTA button (colored background, rounded, hover effects)
 - Use backdrop-blur or background color for sticky/fixed navs
 - First content section must have `pt-24` or `pt-32` to clear the fixed nav
-- Mobile menus must use `fixed inset-0 z-[60]` to sit above all content, with close button always reachable
+- Mobile menus are `position: fixed; inset: 0; z-index: 9999` via the `.mobile-menu` class in `style.css`, below `.site-header` at 10000 so the toggle stays clickable, with the close button always reachable
 
 **Footer must always:**
 - Include copyright with year
@@ -2657,7 +2696,7 @@ Preflight resets (box-sizing, link underlines, list bullets, img block display, 
 6. JavaScript in `assets/js/main.js` + `assets/js/navigation.js` (shipped) + `assets/js/icon-resolver.js` (shipped). Vanilla ES6 only.
 7. Responsive design from 320px to 2560px. Mobile-first approach.
 8. No external scripts or CDN assets. Google Fonts `<link>` tags are allowed in header.php.
-9. Use Tailwind-styled `<div>` placeholders with descriptive text instead of missing images.
+9. When no user-uploaded image fits, use images from the built-in library at `/assets/library/` listed in the IMAGE LIBRARY context section when present. Never use external image URLs or placeholder services.
 10. Two-space indentation. Commented sections.
 11. Forms use the schema-driven system: create `assets/forms/{form_id}.json` with the schema AND the HTML form with `action="/submit.php"` and `<input type="hidden" name="form_id" value="{form_id}">`. Form AJAX handling is shipped code (auto-injected by the engine) — never generate form JavaScript. Never use PHP mail() or $_POST handling.
 12. CRITICAL: Never put raw HTML directly after `<?php` without closing the PHP block first with `?>`. Partials that start with HTML should NOT open with `<?php`.
@@ -2714,11 +2753,7 @@ Rules:
 - When REMOVING a page, you MUST emit a <file path="page.php" action="delete" /> tag for each page AND update _partials/nav.php. Both are required — the delete tag removes the file from disk.
 - NEVER put inline <script> tags in PHP files. JavaScript MUST go in separate "assets/js/*.js" files. Use <script src="/assets/js/filename.js"></script> to include them. This prevents syntax conflicts between PHP and JavaScript parsers.
 - NEVER put inline <style> tags in PHP files. CSS MUST go in "assets/css/*.css" files.
-- In PHP: ALWAYS use double-quoted strings for ANY text that contains apostrophes — in array values, echo statements, variable assignments, or any other PHP string context:
-  WRONG: 'description' => 'We're here to help'
-  RIGHT: 'description' => "We're here to help"
-  WRONG: echo 'It's easy';
-  RIGHT: echo "It's easy";
+- PHP strings use single quotes. Escape apostrophes inside them as \' (e.g. 'don\'t', 'We\'re here to help'). Do not switch to double quotes to avoid escaping: they interpolate $ and a price like "$49" breaks the page.
 - Allowed paths:
   - root PHP pages: "*.php"
   - partials: "_partials/*.php"
@@ -2727,6 +2762,49 @@ Rules:
   - data files: "assets/data/*.json"
   - form schemas: "assets/forms/*.json"
 PROMPT;
+    }
+
+    /**
+     * Draw a design direction for new sites only.
+     *
+     * create_site always gets one. free_prompt gets one when the site has
+     * no pages yet (the first prompt on an empty Studio). Everything else
+     * edits or references an existing design and must not introduce a new
+     * direction.
+     */
+    private function shouldDrawDesignDirection(string $actionType): bool
+    {
+        if ($actionType === 'create_site') {
+            return true;
+        }
+        if ($actionType === 'free_prompt') {
+            try {
+                return $this->db->count('pages') === 0;
+            } catch (\Throwable $e) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Site Memory as constraints for the direction draw (rejected
+     * directions, stated preferences, brand color). Empty when absent.
+     *
+     * @return array<string, mixed>
+     */
+    private function readMemoryForDirection(): array
+    {
+        try {
+            $raw = $this->fileManager->readFile('assets/data/memory.json');
+        } catch (\Throwable $e) {
+            return [];
+        }
+        if ($raw === null || trim($raw) === '') {
+            return [];
+        }
+        $decoded = json_decode($raw, true);
+        return is_array($decoded) ? $decoded : [];
     }
 
     /**

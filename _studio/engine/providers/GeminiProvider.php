@@ -226,6 +226,7 @@ class GeminiProvider implements AIProviderInterface
                 'maxOutputTokens' => $maxTokens,
             ],
         ];
+        $this->applyTemperature($payload, $options);
         if ($isStructured) {
             $payload['generationConfig']['responseMimeType'] = 'application/json';
             if (is_array($structuredOption)) {
@@ -349,6 +350,7 @@ class GeminiProvider implements AIProviderInterface
                 'maxOutputTokens' => $maxTokens,
             ],
         ];
+        $this->applyTemperature($payload, $options);
         if ($isStructured) {
             $payload['generationConfig']['responseMimeType'] = 'application/json';
             if (is_array($structuredOption)) {
@@ -629,5 +631,15 @@ class GeminiProvider implements AIProviderInterface
         }
 
         return $result;
+    }
+
+    /**
+     * Forward a caller-supplied temperature (0–2 for Gemini) into generationConfig.
+     */
+    private function applyTemperature(array &$payload, array $options): void
+    {
+        if (isset($options['temperature']) && is_numeric($options['temperature'])) {
+            $payload['generationConfig']['temperature'] = max(0.0, min(2.0, (float) $options['temperature']));
+        }
     }
 }

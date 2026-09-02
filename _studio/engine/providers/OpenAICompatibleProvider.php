@@ -250,6 +250,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
             'messages'   => $requestMessages,
             'stream'     => true,
         ];
+        $this->applyTemperature($payload, $options);
         if ($isStructured && $toolDef !== null) {
             $payload['tools'] = [$toolDef];
             $payload['tool_choice'] = [
@@ -499,6 +500,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
             'max_tokens' => $maxTokens,
             'messages'   => $messages,
         ];
+        $this->applyTemperature($payloadArray, $options);
         if ($isStructured && $toolDef !== null) {
             $payloadArray['tools'] = [$toolDef];
             $payloadArray['tool_choice'] = [
@@ -769,5 +771,16 @@ class OpenAICompatibleProvider implements AIProviderInterface
         }
 
         return trim($raw);
+    }
+
+    /**
+     * Forward a caller-supplied temperature (0–2). Most OpenAI-compatible
+     * servers accept it; ones that do not return a 400 the caller sees.
+     */
+    private function applyTemperature(array &$payload, array $options): void
+    {
+        if (isset($options['temperature']) && is_numeric($options['temperature'])) {
+            $payload['temperature'] = max(0.0, min(2.0, (float) $options['temperature']));
+        }
     }
 }

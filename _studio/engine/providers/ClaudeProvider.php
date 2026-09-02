@@ -256,10 +256,11 @@ class ClaudeProvider implements AIProviderInterface
         $payload = [
             'model'      => $model,
             'max_tokens' => $maxTokens,
-            'system'     => $systemPrompt,
+            'system'     => $this->buildSystemBlocks($systemPrompt),
             'messages'   => $messages,
             'stream'     => true,
         ];
+        $this->applyTemperature($payload, $options);
         if ($isStructured && $toolDef !== null) {
             $payload['tools'] = [$toolDef];
             $payload['tool_choice'] = [
@@ -420,7 +421,15 @@ class ClaudeProvider implements AIProviderInterface
                         }
 
                         if (($event['type'] ?? '') === 'message_start' && isset($event['message']['usage'])) {
-                            $usage['input_tokens'] = $event['message']['usage']['input_tokens'] ?? 0;
+                            $u = $event['message']['usage'];
+                            // Cached prompt tokens are reported separately by the API.
+                            // Fold them back in so the logged input count reflects the
+                            // real prompt size, and keep the split for diagnostics.
+                            $usage['cache_read_input_tokens']     = (int) ($u['cache_read_input_tokens'] ?? 0);
+                            $usage['cache_creation_input_tokens'] = (int) ($u['cache_creation_input_tokens'] ?? 0);
+                            $usage['input_tokens'] = (int) ($u['input_tokens'] ?? 0)
+                                + $usage['cache_read_input_tokens']
+                                + $usage['cache_creation_input_tokens'];
                             
                         }
                     }
@@ -525,11 +534,21 @@ class ClaudeProvider implements AIProviderInterface
         }
 
         // Call completion handler
+        if (($usage['cache_read_input_tokens'] ?? 0) > 0 || ($usage['cache_creation_input_tokens'] ?? 0) > 0) {
+            \VoxelSite\Logger::debug('ai', 'Prompt cache usage', [
+                'cache_read'     => $usage['cache_read_input_tokens'] ?? 0,
+                'cache_creation' => $usage['cache_creation_input_tokens'] ?? 0,
+                'input_total'    => $usage['input_tokens'],
+            ]);
+        }
+
         $onComplete($fullResponse, [
-            'input_tokens'  => $usage['input_tokens'],
-            'output_tokens' => $usage['output_tokens'],
-            'duration_ms'   => $durationMs,
-            'model'         => $model,
+            'input_tokens'                => $usage['input_tokens'],
+            'output_tokens'               => $usage['output_tokens'],
+            'cache_read_input_tokens'     => $usage['cache_read_input_tokens'] ?? 0,
+            'cache_creation_input_tokens' => $usage['cache_creation_input_tokens'] ?? 0,
+            'duration_ms'                 => $durationMs,
+            'model'                       => $model,
         ]);
     }
 
@@ -561,9 +580,10 @@ class ClaudeProvider implements AIProviderInterface
         $payload = [
             'model'      => $model,
             'max_tokens' => $maxTokens,
-            'system'     => $systemPrompt,
+            'system'     => $this->buildSystemBlocks($systemPrompt),
             'messages'   => $messages,
         ];
+        $this->applyTemperature($payload, $options);
 
         if ($isStructured && $toolDef !== null) {
             $payload['tools'] = [$toolDef];
@@ -857,5 +877,36 @@ class ClaudeProvider implements AIProviderInterface
         }
 
         return trim($raw);
+    }
+
+    /**
+     * System prompt as a content block with a cache breakpoint.
+     *
+     * The system prompt is byte-identical across every call in a session
+     * (about 20K tokens for site generation), which is exactly what prompt
+     * caching is for: cached input is billed at a fraction of fresh input
+     * and the time to first token drops. Prompts shorter than the model's
+     * minimum cacheable length are simply not cached — no error.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildSystemBlocks(string $systemPrompt): array
+    {
+        return [[
+            'type'          => 'text',
+            'text'          => $systemPrompt,
+            'cache_control' => ['type' => 'ephemeral'],
+        ]];
+    }
+
+    /**
+     * Forward a caller-supplied temperature (0–1 for Claude). Callers that
+     * need deterministic classification pass 0; generation leaves it unset.
+     */
+    private function applyTemperature(array &$payload, array $options): void
+    {
+        if (isset($options['temperature']) && is_numeric($options['temperature'])) {
+            $payload['temperature'] = max(0.0, min(1.0, (float) $options['temperature']));
+        }
     }
 }

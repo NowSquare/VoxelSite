@@ -221,6 +221,7 @@ class OpenAIProvider implements AIProviderInterface
             'stream'   => true,
         ];
         $this->setOutputTokenLimit($payload, $maxTokens, $model);
+        $this->applyTemperature($payload, $options, $model);
         if ($isStructured && $toolDef !== null) {
             $payload['tools'] = [$toolDef];
             $payload['tool_choice'] = [
@@ -387,6 +388,7 @@ class OpenAIProvider implements AIProviderInterface
             'messages' => $this->prependSystemMessage($messages, $systemPrompt, $model),
         ];
         $this->setOutputTokenLimit($payload, $maxTokens, $model);
+        $this->applyTemperature($payload, $options, $model);
         if ($isStructured && $toolDef !== null) {
             $payload['tools'] = [$toolDef];
             $payload['tool_choice'] = [
@@ -871,5 +873,21 @@ class OpenAIProvider implements AIProviderInterface
         }
 
         return trim($raw);
+    }
+
+    /**
+     * Forward a caller-supplied temperature. Reasoning models (o-series,
+     * GPT-5 family) reject the parameter outright, so it is only sent to
+     * models that accept it.
+     */
+    private function applyTemperature(array &$payload, array $options, string $model): void
+    {
+        if (!isset($options['temperature']) || !is_numeric($options['temperature'])) {
+            return;
+        }
+        if ($this->usesMaxCompletionTokens($model)) {
+            return;
+        }
+        $payload['temperature'] = max(0.0, min(2.0, (float) $options['temperature']));
     }
 }

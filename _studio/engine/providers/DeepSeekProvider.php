@@ -208,6 +208,7 @@ class DeepSeekProvider implements AIProviderInterface
             'messages'   => $requestMessages,
             'stream'     => true,
         ];
+        $this->applyTemperature($payload, $options);
         if ($isStructured && $toolDef !== null) {
             $payload['tools'] = [$toolDef];
             $payload['tool_choice'] = [
@@ -371,6 +372,7 @@ class DeepSeekProvider implements AIProviderInterface
             'max_tokens' => $maxTokens,
             'messages'   => $requestMessages,
         ];
+        $this->applyTemperature($payload, $options);
         if ($isStructured && $toolDef !== null) {
             $payload['tools'] = [$toolDef];
             $payload['tool_choice'] = [
@@ -666,5 +668,16 @@ class DeepSeekProvider implements AIProviderInterface
         }
 
         return trim($raw);
+    }
+
+    /**
+     * Forward a caller-supplied temperature (0–2). deepseek-reasoner ignores
+     * it without error, per the vendor's documentation.
+     */
+    private function applyTemperature(array &$payload, array $options): void
+    {
+        if (isset($options['temperature']) && is_numeric($options['temperature'])) {
+            $payload['temperature'] = max(0.0, min(2.0, (float) $options['temperature']));
+        }
     }
 }

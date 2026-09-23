@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support & questions
+    url: https://voxelsite.com/support
+    about: For help with installation, usage, or your account. Issues are for bugs and feature requests only.
+  - name: Documentation
+    url: https://voxelsite.com/docs
+    about: Check the docs first. Your answer may already be there.
+  - name: Report a security vulnerability
+    url: https://github.com/NowSquare/VoxelSite/security/advisories/new
+    about: Please don't report security issues publicly.

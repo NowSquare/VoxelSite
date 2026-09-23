@@ -133,6 +133,7 @@ assets/fonts/*
 !/assets/
 !/vendor/
 !/i18n/
+!/.github/
 
 # ── Internal AI / agent workspaces ──
 /.agent/

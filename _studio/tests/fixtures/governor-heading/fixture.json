@@ -1,0 +1,90 @@
+{
+  "fixture_version": 1,
+  "release_target": "1.31.0",
+  "prompt": "Make the home hero heading shorter. Keep the layout.",
+  "target": {
+    "file_path": "index.php",
+    "source_address": "<h1 class=\"text-4xl font-bold\">Discover our freshly baked sourdough every morning</h1>",
+    "content_hash": "ce7c755c27719c795ac1283d0e728bc8c2f681b2b5f93ef639d81f09757b49a4",
+    "base_revision_id": 42
+  },
+  "trusted_facts": [
+    "Business name: Canal Bakery",
+    "Sourdough is baked each morning"
+  ],
+  "accepted_candidate": "Fresh sourdough, every morning",
+  "expected_heading": "<h1 class=\"text-4xl font-bold\">Fresh sourdough, every morning</h1>",
+  "files_sha256": {
+    "index.php": "81103ace8e46b6f9ca837c023815c878884be414a1a46eba4f40894639e62edb",
+    "bakery/index.php": "4fe9f6aa0d441ac8810dd253a16ce5288b908124157b48e65f82b543da69709d",
+    "_partials/nav.php": "5d43d376a4647b63b4dfbbeceb0a4239ba9323f70be2857917255e3d8a5e7bf8",
+    "assets/css/style.css": "17707894749ad0eed4b7f48d06696b3bb657879a836397459cf8de3b4c133b4b",
+    "assets/css/tailwind.css": "ff5dcd0bbe2a642c5f4bdf31e6b1a2372ac2948bb54f930556b687bfbb174588",
+    "assets/data/site.json": "3c4903b072d7e0580db5cd2c1d245cc83ddd9d9515ecfbd4f41f55952c80b5a9",
+    "llms.txt": "9d3abbdf41d7c07b670cb1c97b743853fdad497499af304071b4e4853e9ed1d7"
+  },
+  "cases": {
+    "shorten_selected_heading": {
+      "candidate": "Fresh sourdough, every morning",
+      "noul": 0.1,
+      "expected": "applied"
+    },
+    "forbidden_claim_blocks_apply": {
+      "candidate": "The best bakery in the country",
+      "noul": 0.9,
+      "expected": "rejected",
+      "reason": "forbidden_claims"
+    },
+    "claim_threshold_boundary": {
+      "candidate": "Award-winning sourdough",
+      "noul": 0.6,
+      "expected": "rejected",
+      "reason": "forbidden_claims"
+    },
+    "ambiguous_address": {
+      "mutation": "duplicate_heading",
+      "expected": "clarify",
+      "reason": "ambiguous_address"
+    },
+    "missing_address": {
+      "mutation": "remove_heading",
+      "expected": "clarify",
+      "reason": "missing_address"
+    },
+    "hash_changed_before_apply": {
+      "mutation": "edit_during_gate",
+      "expected": "rejected",
+      "reason": "content_changed"
+    },
+    "candidate_markup": {
+      "candidate": "<script>alert(1)</script>",
+      "expected": "rejected",
+      "reason": "invalid_candidate"
+    },
+    "candidate_php": {
+      "candidate": "<?php echo 1; ?>",
+      "expected": "rejected",
+      "reason": "invalid_candidate"
+    },
+    "candidate_empty": {
+      "candidate": "   ",
+      "expected": "rejected",
+      "reason": "invalid_candidate"
+    },
+    "gate_unavailable": {
+      "gate": "throw",
+      "expected": "rejected",
+      "reason": "gate_unavailable"
+    },
+    "gate_malformed": {
+      "gate": "missing_noul",
+      "expected": "rejected",
+      "reason": "gate_invalid"
+    },
+    "nested_page_real_path": {
+      "file_path": "bakery/index.php",
+      "expected": "applied"
+    }
+  },
+  "expected_output_sha256": "283f9801494b6b1161a03256fed65fcbcf9e949d91ede58755356c9fb2403656"
+}

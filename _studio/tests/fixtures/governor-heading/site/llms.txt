@@ -1,0 +1,2 @@
+# Canal Bakery
+Frozen public discovery sentinel.

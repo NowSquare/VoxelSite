@@ -21,12 +21,17 @@ function usageTotals(array $calls): array
 
 $fixture = Fixture::manifest();
 $rows = [];
+$legacyFault = '';
+foreach ($argv as $argument) {
+    if (str_starts_with($argument, '--legacy-fault=')) { $legacyFault = substr($argument, strlen('--legacy-fault=')); }
+}
 foreach (['inline_edit', 'section_edit'] as $action) {
-    $legacy = GovernorLegacyBenchmark::run($action);
+    $legacy = GovernorLegacyBenchmark::run($action, $legacyFault);
     $rows[] = ['fixture' => 'shorten_selected_heading', 'mode' => 'legacy_' . $action,
         'routing' => usageTotals([]), 'generation' => usageTotals($legacy['calls']), 'gate' => usageTotals([]),
-        'retries' => 0, 'repairs' => 0, 'task_completion' => $legacy['task_completion'],
-        'engine_status' => $legacy['status'], 'savings_eligible' => $legacy['task_completion'] === 'pass'];
+        'repair' => usageTotals([]), 'retries' => 0, 'repairs' => 0, 'task_completion' => $legacy['task_completion'],
+        'engine_status' => $legacy['status'], 'file_changes' => $legacy['file_changes'],
+        'savings_eligible' => $legacy['task_completion'] === 'pass'];
 }
 if (!in_array('--legacy-only', $argv, true)) {
     foreach (['shorten_selected_heading', 'forbidden_claim_blocks_apply'] as $name) {
@@ -62,7 +67,7 @@ if (!in_array('--legacy-only', $argv, true)) {
             }
             $rows[] = ['fixture' => $name, 'mode' => 'governor_heading_proof', 'routing' => usageTotals([]),
                 'generation' => usageTotals($provider->calls), 'gate' => usageTotals($gateCalls),
-                'retries' => 0, 'repairs' => 0, 'task_completion' => $completion, 'result' => $result,
+                'repair' => usageTotals([]), 'retries' => 0, 'repairs' => 0, 'task_completion' => $completion, 'result' => $result,
                 'savings_eligible' => $completion === 'pass'];
         } finally {
             putenv($previousPreview === false ? 'VS_TEST_PREVIEW_DIR' : 'VS_TEST_PREVIEW_DIR=' . $previousPreview);

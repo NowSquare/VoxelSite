@@ -9,7 +9,7 @@ if (!is_file($root . '/.governor-fixture')) {
 }
 $root = realpath($root);
 require $root . '/_studio/engine/bootstrap.php';
-require __DIR__ . '/GovernorHeadingFixture.php';
+require __DIR__ . '/GovernorLegacyBenchmark.php';
 
 // Parent processes may have test overrides; never inherit their filesystem targets.
 putenv('VS_TEST_PREVIEW_DIR=' . $root . '/_studio/preview');
@@ -26,6 +26,7 @@ use VoxelSite\FileManager;
 use VoxelSite\PromptEngine;
 use VoxelSite\Settings;
 use VoxelSite\Tests\GovernorHeadingFixture;
+use VoxelSite\Tests\GovernorLegacyBenchmark;
 use VoxelSite\Tests\HeadingFakeProvider;
 
 $db = Database::getInstance($root . '/_studio/data/studio.db');
@@ -47,15 +48,32 @@ $virtual = $action === 'inline_edit' ? '__inline_snippet__' : '__section_snippet
 $provider = new HeadingFakeProvider('<file path="' . $virtual . '">' . "\n" . $fixture['expected_heading'] . "\n</file>\n<message>Heading updated.</message>");
 $fm = new FileManager($db);
 $fm->syncPageRegistry();
+$before = GovernorLegacyBenchmark::siteSnapshot($root);
 $engine = new PromptEngine($db, $settings, $provider, fileManager: $fm);
 ob_start();
 $engine->execute(['user_id' => (int) $user, 'user_prompt' => $fixture['prompt'], 'action_type' => $action,
     'page_scope' => 'index', 'action_data' => ['path' => 'index.php', 'selection' => $fixture['target']['source_address'],
     'sectionHtml' => $fixture['target']['source_address']], 'headless' => true]);
 ob_end_clean();
+// Test-only fault injection at the completion boundary. Each mutation preserves
+// the correct heading so it cannot be caught by the old heading-only predicate.
+switch ($argv[3] ?? '') {
+    case '': break;
+    case 'preview-change': file_put_contents($root . '/_studio/preview/_partials/nav.php', '<nav>Wrong file</nav>'); break;
+    case 'preview-add': file_put_contents($root . '/_studio/preview/unrequested.php', '<p>Wrong file</p>'); break;
+    case 'preview-delete': unlink($root . '/_studio/preview/bakery/index.php'); break;
+    case 'shared-asset-change': file_put_contents($root . '/assets/data/site.json', '{"unexpected":true}'); break;
+    case 'public-add': file_put_contents($root . '/unrequested.php', '<p>Wrong file</p>'); break;
+    default: throw new RuntimeException('Unknown benchmark fault');
+}
 $content = file_get_contents($root . '/_studio/preview/index.php');
 $row = $db->queryOne('SELECT status, error_message FROM prompt_log ORDER BY id DESC LIMIT 1');
+$after = GovernorLegacyBenchmark::siteSnapshot($root);
+$changes = GovernorLegacyBenchmark::classifyChanges($before, $after);
+$completion = ($row['status'] ?? '') === 'success' && str_contains($content, $fixture['expected_heading'])
+    && !str_contains($content, $fixture['target']['source_address']) ? 'pass' : 'skip-incorrect';
+if ($changes['unexpected'] !== []) { $completion = 'wrong-file'; }
 $report = ['action' => $action, 'calls' => $provider->calls, 'status' => $row,
-    'task_completion' => str_contains($content, $fixture['expected_heading']) && !str_contains($content, $fixture['target']['source_address']) ? 'pass' : 'skip-incorrect',
-    'files' => GovernorHeadingFixture::snapshot($root . '/_studio/preview')];
+    'task_completion' => $completion, 'file_changes' => $changes,
+    'before_files' => $before, 'files' => $after];
 file_put_contents($root . '/legacy-result.json', json_encode($report, JSON_THROW_ON_ERROR));

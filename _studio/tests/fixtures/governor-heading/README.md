@@ -10,6 +10,19 @@ facts, candidate and expected apply/reject cases. `expected-index.php` is the
 exact accepted output. Fixture edits require an explicit version/change note;
 do not update expected bytes just to make an implementation pass.
 
+Git checkpoint: `246c5936ba78cb5e57f4f67cc862196f31cf2454` (parent:
+`5053182d498917de477362f83948955a3456a872`). Its 17 files contain the fixture,
+tests, harness, and freeze manifest; no production engine changes. The 16 hashes
+in `freeze.json` describe blobs **at that commit**, including the original harness.
+Subsequent benchmark corrections are separate changes. The seven starting files,
+prompt/case manifest, and accepted output remain byte-identical to the checkpoint.
+The checkpoint can be inspected without relying on the current working tree:
+
+```sh
+git show --stat 246c5936ba78cb5e57f4f67cc862196f31cf2454
+git show 246c5936ba78cb5e57f4f67cc862196f31cf2454:_studio/tests/fixtures/governor-heading/freeze.json
+```
+
 Run from the repository root:
 
 ```sh
@@ -25,13 +38,49 @@ customer database or calls a network provider. The Governor comparison uses the
 same starting files and request, a canned text candidate and a fake claim gate.
 All temporary applications/sites are removed after the run.
 
-The report separates routing/generation/gate tokens, nullable cost and local
-fake-call duration, with retry/repair counts and task completion. Tokens use
+The report separates routing/generation/gate/repair calls, tokens, nullable cost
+and local fake-call duration, with retry/repair counts and task completion. No
+repair loop runs here: its usage bucket is explicitly zero in every row. Tokens use
 `ceil(bytes / 4)` over actual fake inputs/outputs, not a provider tokenizer.
 No historical averages are substituted. Routing is not implemented in this
 proof and is reported as zero calls. Claim rejections are `reject-correct` and
 never enter savings comparisons. Canned output does not establish live quality,
 Jev accuracy, model latency, or the program's 50% production stop-rule result.
+
+## Legacy completion and derived artifacts
+
+Before and after the real legacy call, the harness hashes every preview file,
+shared asset, and public output file. Report paths use `preview/`, `assets/`, and
+`public/` prefixes to distinguish duplicate filenames. Only disposable runtime
+files (`_studio/` outside preview, the vendor loader, and the fixture marker) are
+outside this comparison. Additions and deletions count as changes too.
+
+`preview/index.php` is the selected target. Legacy success requires the expected
+heading, removal of the old heading, and a successful engine result. Legacy's
+existing target normalization (stylesheet/script injection) remains allowed;
+the staged proof separately requires byte-exact output. The following are the
+**only** allowed non-target changes, listed under `file_changes.derived` with
+before/after SHA-256 hashes and the applied rule:
+
+| Exact path | Allowed operation | Source of legacy side effect |
+| --- | --- | --- |
+| `assets/css/tailwind.css` | Create or rebuild; never delete | `TailwindCompiler` |
+| `assets/js/icon-resolver.js`, `assets/js/navigation.js` | Create only | `FileManager` shipped handlers |
+| `preview/_partials/schema.php`, `public/_partials/schema.php` | Create only | `AEOGenerator::generateAll()` |
+| `public/llms.txt`, `public/robots.txt`, `public/sitemap.xml`, `public/mcp.php` | Create only | `AEOGenerator::generateAll()` |
+
+All other changed paths, including existing source files at create-only derived
+paths, are `file_changes.unexpected`. Any such change makes completion `wrong-file`
+even with a correct heading, sets `savings_eligible` to false, excludes the baseline
+from comparisons, and makes the benchmark exit 1. No wildcard directory exemptions.
+This is a fixture-specific accounting rule, not a production authorization policy
+or validation of generated artifact contents.
+
+The benchmark test injects unrelated preview additions/edits/deletions, a shared
+data-file edit, and a public-file addition after both legacy actions. It also runs
+the report with the test-only `--legacy-fault=preview-change` option to verify that
+incorrect baselines cannot yield savings, and checks derived overwrite/deletion
+restrictions. These faults only touch disposable applications.
 
 ## Proof boundary
 

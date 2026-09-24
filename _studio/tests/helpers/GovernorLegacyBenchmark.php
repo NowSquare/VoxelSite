@@ -8,7 +8,70 @@ require_once __DIR__ . '/GovernorHeadingFixture.php';
 
 final class GovernorLegacyBenchmark
 {
-    public static function run(string $action): array
+    // Exact derived paths, never directories. Existing customer files are protected
+    // except the compiler-owned Tailwind output, which the legacy path rebuilds.
+    private const DERIVED_OUTPUTS = [
+        'preview/_partials/schema.php' => 'create',
+        'public/_partials/schema.php' => 'create',
+        'public/llms.txt' => 'create',
+        'public/robots.txt' => 'create',
+        'public/sitemap.xml' => 'create',
+        'public/mcp.php' => 'create',
+        'assets/js/icon-resolver.js' => 'create',
+        'assets/js/navigation.js' => 'create',
+        'assets/css/tailwind.css' => 'rebuild',
+    ];
+
+    public static function siteSnapshot(string $root): array
+    {
+        $files = [];
+        foreach (['preview' => '/_studio/preview', 'assets' => '/assets'] as $prefix => $directory) {
+            foreach (GovernorHeadingFixture::snapshot($root . $directory) as $path => $hash) {
+                $files[$prefix . '/' . $path] = $hash;
+            }
+        }
+        // Public output is separate from preview and shared assets. Exclude only
+        // the disposable app/runtime, dependency loader, and fixture marker.
+        foreach (scandir($root) as $name) {
+            if (in_array($name, ['.', '..', '_studio', 'vendor', 'assets', '.governor-fixture'], true)) { continue; }
+            $path = $root . '/' . $name;
+            if (is_dir($path)) {
+                foreach (GovernorHeadingFixture::snapshot($path) as $relative => $hash) {
+                    $files['public/' . $name . '/' . $relative] = $hash;
+                }
+            } else {
+                $files['public/' . $name] = hash_file('sha256', $path);
+            }
+        }
+        ksort($files);
+        return $files;
+    }
+
+    public static function classifyChanges(array $before, array $after): array
+    {
+        $changes = ['target' => [], 'derived' => [], 'unexpected' => []];
+        $paths = array_unique(array_merge(array_keys($before), array_keys($after)));
+        sort($paths);
+        foreach ($paths as $path) {
+            $old = $before[$path] ?? null;
+            $new = $after[$path] ?? null;
+            if ($old === $new) { continue; }
+            $change = $old === null ? 'created' : ($new === null ? 'deleted' : 'modified');
+            $rule = self::DERIVED_OUTPUTS[$path] ?? null;
+            $bucket = 'unexpected';
+            if ($path === 'preview/index.php') {
+                $bucket = 'target';
+            } elseif (($rule === 'create' && $old === null && $new !== null)
+                || ($rule === 'rebuild' && $new !== null)) {
+                $bucket = 'derived';
+            }
+            $changes[$bucket][$path] = ['change' => $change, 'before_sha256' => $old, 'after_sha256' => $new];
+            if ($bucket === 'derived') { $changes[$bucket][$path]['allowed_rule'] = $rule; }
+        }
+        return $changes;
+    }
+
+    public static function run(string $action, string $fault = ''): array
     {
         $repo = dirname(__DIR__, 3);
         $root = sys_get_temp_dir() . '/voxelsite-legacy-' . bin2hex(random_bytes(8));
@@ -32,7 +95,7 @@ spl_autoload_register(function ($class) {
 PHP;
             file_put_contents($root . '/vendor/autoload.php', $autoload);
             $pipes = [];
-            $process = proc_open([PHP_BINARY, __DIR__ . '/run-governor-legacy.php', $root, $action],
+            $process = proc_open([PHP_BINARY, __DIR__ . '/run-governor-legacy.php', $root, $action, $fault],
                 [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
             if (!is_resource($process)) {
                 throw new \RuntimeException('Cannot start disposable legacy benchmark');

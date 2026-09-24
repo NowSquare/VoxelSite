@@ -90,6 +90,10 @@ $routes = [
     ['GET',    '/ai/conversations/:id',   'ai.php',            true],
     ['GET',    '/ai/diagnostics',         'ai.php',            true],
 
+    // Router consent uses Studio owner sessions only, never Agent credentials.
+    ['GET',    '/governor/pending/:id',          'router.php', true],
+    ['POST',   '/governor/pending/:id/approve',  'router.php', true],
+
     // Revisions (Undo/Redo)
     ['POST',   '/revisions/undo',         'revisions.php',     true],
     ['POST',   '/revisions/redo',         'revisions.php',     true],

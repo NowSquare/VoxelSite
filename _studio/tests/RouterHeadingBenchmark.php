@@ -3,13 +3,13 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
-require_once __DIR__ . '/helpers/GovernorLegacyBenchmark.php';
+require_once __DIR__ . '/helpers/RouterLegacyBenchmark.php';
 
 use VoxelSite\Database;
 use VoxelSite\FileManager;
 use VoxelSite\StagedHeadingPatch;
-use VoxelSite\Tests\GovernorHeadingFixture as Fixture;
-use VoxelSite\Tests\GovernorLegacyBenchmark;
+use VoxelSite\Tests\RouterHeadingFixture as Fixture;
+use VoxelSite\Tests\RouterLegacyBenchmark;
 use VoxelSite\Tests\HeadingFakeProvider;
 
 function usageTotals(array $calls): array
@@ -26,7 +26,7 @@ foreach ($argv as $argument) {
     if (str_starts_with($argument, '--legacy-fault=')) { $legacyFault = substr($argument, strlen('--legacy-fault=')); }
 }
 foreach (['inline_edit', 'section_edit'] as $action) {
-    $legacy = GovernorLegacyBenchmark::run($action, $legacyFault);
+    $legacy = RouterLegacyBenchmark::run($action, $legacyFault);
     $rows[] = ['fixture' => 'shorten_selected_heading', 'mode' => 'legacy_' . $action,
         'routing' => usageTotals([]), 'generation' => usageTotals($legacy['calls']), 'gate' => usageTotals([]),
         'repair' => usageTotals([]), 'retries' => 0, 'repairs' => 0, 'task_completion' => $legacy['task_completion'],
@@ -57,7 +57,7 @@ if (!in_array('--legacy-only', $argv, true)) {
                 fn() => new FileManager(Database::getInstance(':memory:')));
             $result = $patch->execute($fixture['target'], $fixture['prompt'], $fixture['trusted_facts']);
             $after = Fixture::snapshot($root);
-            $expectedFile = file_get_contents(__DIR__ . '/fixtures/governor-heading/expected-index.php');
+            $expectedFile = file_get_contents(__DIR__ . '/fixtures/router-heading/expected-index.php');
             $completion = 'skip-incorrect';
             if ($case['expected'] === 'rejected' && $result['status'] === 'rejected' && $after === $before) {
                 $completion = 'reject-correct';

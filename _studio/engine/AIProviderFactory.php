@@ -70,10 +70,14 @@ class AIProviderFactory
         // OpenAI Compatible needs base_url
         if ($providerId === 'openai_compatible') {
             $baseUrl = $settings->get('ai_openai_compatible_base_url', '');
-            return new $providerClass($apiKey, $model, $maxTokens, $baseUrl);
+            $provider = new $providerClass($apiKey, $model, $maxTokens, $baseUrl);
+        } else {
+            $provider = new $providerClass($apiKey, $model, $maxTokens);
         }
 
-        return new $providerClass($apiKey, $model, $maxTokens);
+        // Standalone orchestration has no prompt job; PromptEngine rebinds this
+        // decorator to its job without nesting or changing provider options.
+        return new LedgeredAIProvider($provider, new AICallLedger(Database::getInstance()), $model ?: null);
     }
 
     /**

@@ -112,10 +112,20 @@ if ($method === 'POST' && $path === '/ai/prompt') {
             'count' => count($stale),
             'ids'   => array_column($stale, 'id'),
         ]);
-        // Compile Tailwind for whatever files were written before the crash
-        $fm = new \VoxelSite\FileManager();
-        $fm->ensureStyleCssExists();
-        $fm->compileTailwind();
+        // Recovery must not mutate site files before an enforced gate, including
+        // requests that will report a configuration error in PromptEngine.
+        $legacyRecovery = false;
+        try {
+            $mode = (new \VoxelSite\RouterShadow($db, new \VoxelSite\Settings($db)))->checkConfiguration();
+            $legacyRecovery = in_array($mode, ['off', 'shadow'], true);
+        } catch (\RuntimeException) {
+            // Let PromptEngine emit the normal Studio configuration error.
+        }
+        if ($legacyRecovery) {
+            $fm = new \VoxelSite\FileManager();
+            $fm->ensureStyleCssExists();
+            $fm->compileTailwind();
+        }
     }
 
     $engine = new PromptEngine();

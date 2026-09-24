@@ -24,7 +24,8 @@ VoxelSite is open source under the GNU Affero General Public License v3.0 — se
 - **Site** — a structural graph of pages, partials, routes, tokens, and assets, with impact analysis, blast-radius queries, page management (rename, change URL, move, delete with automatic reference cleanup), and an AI orchestration console for site-wide changes you review and apply transactionally
 - **Visual Editor** — click-to-edit text, swap images, adjust styles, reorder sections, add sections from a picker, and describe changes with AI — all on the live preview
 - **Live Preview** — see every change before publishing
-- **Undo/Redo** — full revision history with a safe editing workflow
+- **AI Router** — optional Jev routing selects the model, instructions and site context for each request. Small edits can use a faster model; larger changes use a stronger one
+- **Undo/Redo** — revision history for generated edits, including exact text replacements through AI Router
 - **Website References** — paste any public URL as design inspiration to create or restyle sites
 - **Snapshots** — save and restore entire site states
 - **Design Library** — save, compare, and switch between entirely different designs
@@ -40,6 +41,27 @@ VoxelSite is open source under the GNU Affero General Public License v3.0 — se
 ### Supported AI providers
 
 Anthropic Claude (recommended), OpenAI, Google Gemini, DeepSeek, or any OpenAI-compatible endpoint. You bring your own key; keys are encrypted at rest.
+
+### AI Router
+
+AI Router uses TypeSafe's Jev model to assess each request, then selects the
+writing model, prompt instructions and relevant site context. Small copy edits
+can use your **Faster model** with focused context; new pages, layouts and
+site-wide changes use your **Stronger model**. Both belong to your selected AI
+provider. Questions have a read-only answer path. Exact replacements of a
+uniquely selected text element can apply without a writing-model call and support
+normal undo.
+
+To enable it, open **Settings → AI Router**, turn **Enable AI Router** on, enter
+your TypeSafe key, choose both models and click **Save AI Router**. Off uses your
+default model and instructions with no TypeSafe calls. If the key, routing or
+model choices are unavailable, the request uses normal editing and reports the
+fallback. All editing tools remain available. The TypeSafe key is encrypted and
+never returned by settings reads.
+
+Routing applies to Studio and Agent generation requests. It does not check every
+manual edit or file sent to publish. TypeSafe remains optional. Live token and
+dollar savings have not been verified; the classification call also has a cost.
 
 ---
 

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace VoxelSite;
 
+// Logger is also loaded directly by CLI tools without Composer bootstrap.
+require_once __DIR__ . '/RouterSecrets.php';
+
 /**
  * VoxelSite Structured Logger
  *
@@ -171,12 +174,13 @@ class Logger
             return;
         }
 
+        $context = RouterSecrets::redact($context);
         $entry = [
             'ts'    => self::timestamp(),
             'level' => self::LEVEL_NAMES[$level] ?? 'UNKNOWN',
             'ch'    => $channel,
             'rid'   => self::getRequestId(),
-            'msg'   => $message,
+            'msg'   => RouterSecrets::redact($message),
         ];
 
         // Add context only if non-empty (keeps lines short for simple entries)

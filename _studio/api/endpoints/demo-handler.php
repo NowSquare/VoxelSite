@@ -1907,6 +1907,11 @@ if ($path === '/settings') {
             'ai_claude_api_key' => null,
             'ai_claude_api_key_set' => false,
             'ai_max_tokens'    => 16000,
+            'governor.mode' => 'off',
+            'governor.typesafe_configured' => false,
+            'governor.model_map' => [],
+            'governor.configuration_error' => null,
+            'governor.model_map_error' => null,
             'available_providers' => [
                 'claude' => [
                     'id' => 'claude',
@@ -1967,6 +1972,7 @@ if ($path === '/settings') {
                 ],
             ],
         ],
+        'governor_activity' => ['available' => true, 'items' => []],
     ]]);
     return;
 }
@@ -1974,6 +1980,7 @@ if ($path === '/settings') {
 if ($path === '/settings/models') {
     jsonResponse(['ok' => true, 'data' => [
         'models' => [],
+        'provider' => 'claude',
     ]]);
     return;
 }

@@ -12,6 +12,7 @@ import { showToast } from '../ui/toasts.js';
 import { escapeHtml } from '../helpers.js';
 import { closeModal, showConfirmModal, onBackdropClick } from '../ui/modals.js';
 import { router } from '../../router.js';
+import { renderRouterSettings, bindRouterSettings } from './router.js';
 
 function renderSettingsView() {
   // Load settings on render
@@ -172,7 +173,7 @@ async function loadSettings() {
     <!-- Card: AI Engine -->
     <div class="vs-settings-card">
       <h2 class="vs-settings-card-title">AI Provider</h2>
-      <p class="vs-settings-card-subtitle">Configure the AI engine that powers your website generation.</p>
+      <p class="vs-settings-card-subtitle">Choose the provider and default model for creating and editing your site.</p>
       <div class="flex flex-col gap-4">
         <div>
           <label for="set-ai-provider" class="block text-sm font-medium text-vs-text-secondary mb-1">Provider</label>
@@ -186,7 +187,7 @@ async function loadSettings() {
         </div>
 
         <div>
-          <label for="set-ai-model" class="block text-sm font-medium text-vs-text-secondary mb-1">Model</label>
+          <label for="set-ai-model" class="block text-sm font-medium text-vs-text-secondary mb-1">Default model</label>
           <select id="set-ai-model" class="vs-input">
             <option value="">Loading models…</option>
           </select>
@@ -260,6 +261,9 @@ async function loadSettings() {
         </button>
       </div>
     </div>
+
+    <!-- Card: AI Router — follows its provider and default model -->
+    ${renderRouterSettings(settingsRes.ok ? s : null, store.get('user')?.role, settingsRes.data?.governor_activity)}
 
     <!-- Card: Email & Notifications -->
     <div class="vs-settings-card">
@@ -648,6 +652,13 @@ async function loadSettings() {
 
   // Bind settings events
   bindSettingsEvents(s, providers);
+  bindRouterSettings(container, {
+    getRole: () => store.get('user')?.role,
+    getModels: () => api.get('/settings/models'),
+    put: (path, body) => api.put(path, body),
+    reload: loadSettings,
+    demoGuard: () => window.demoGuard?.(),
+  });
 
   // Bind email settings events
   bindEmailSettingsEvents(mailConfig, mailPresets);

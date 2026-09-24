@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace VoxelSite;
 
+require_once __DIR__ . '/RouterSecrets.php';
+
 /**
  * Key-value settings store backed by the `settings` table.
  *
@@ -39,7 +41,7 @@ class Settings
      */
     public function get(string $key, mixed $default = null): mixed
     {
-        $all = $this->getAll();
+        $all = $this->loadAll();
 
         if (!array_key_exists($key, $all)) {
             return $default;
@@ -84,8 +86,9 @@ class Settings
     }
 
     /**
-     * Get all settings as a flat associative array.
+     * Get settings as a flat associative array, excluding the TypeSafe secret.
      *
+     * Explicit server get() calls can still read its encrypted value.
      * Values are JSON-decoded. The full table is loaded once per
      * request and cached. With ~20 settings rows, this is a single
      * fast query that eliminates N+1 lookups.
@@ -93,6 +96,14 @@ class Settings
      * @return array<string, mixed>
      */
     public function getAll(): array
+    {
+        $all = $this->loadAll();
+        unset($all[RouterSecrets::KEY]);
+        return $all;
+    }
+
+    /** Raw settings are available only via explicit server-side get() calls. */
+    private function loadAll(): array
     {
         if ($this->cache !== null) {
             return $this->cache;
@@ -104,6 +115,7 @@ class Settings
         foreach ($rows as $row) {
             $this->cache[$row['key']] = json_decode($row['value'], true);
         }
+        RouterSecrets::remember($this->cache[RouterSecrets::KEY] ?? null);
 
         return $this->cache;
     }
@@ -113,7 +125,7 @@ class Settings
      */
     public function has(string $key): bool
     {
-        return array_key_exists($key, $this->getAll());
+        return array_key_exists($key, $this->loadAll());
     }
 
     /**

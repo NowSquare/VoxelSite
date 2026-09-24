@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
-require_once __DIR__ . '/helpers/GovernorHeadingFixture.php';
+require_once __DIR__ . '/helpers/RouterHeadingFixture.php';
 
 use VoxelSite\Database;
 use VoxelSite\FileManager;
 use VoxelSite\StagedHeadingPatch;
-use VoxelSite\Tests\GovernorHeadingFixture as Fixture;
+use VoxelSite\Tests\RouterHeadingFixture as Fixture;
 use VoxelSite\Tests\HeadingFakeProvider;
 
 $passed = 0;
@@ -148,7 +148,7 @@ foreach ($cases as $name => $case) {
         if (isset($case['reason'])) { check($result['reason'] === $case['reason'], $name . ': rejection reason'); }
         if ($case['expected'] === 'applied') {
             $expectedHeading = str_replace('Fresh sourdough, every morning', htmlspecialchars($case['candidate'] ?? $fixture['accepted_candidate'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'), $fixture['expected_heading']);
-            $original = file_get_contents(__DIR__ . '/fixtures/governor-heading/site/' . $target['file_path']);
+            $original = file_get_contents(__DIR__ . '/fixtures/router-heading/site/' . $target['file_path']);
             check(file_get_contents($file) === str_replace($anchor, $expectedHeading, $original), $name . ': only addressed heading text changed');
             $after = Fixture::snapshot($root);
             unset($after[$target['file_path']], $before[$target['file_path']]);

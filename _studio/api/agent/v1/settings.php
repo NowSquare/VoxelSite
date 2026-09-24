@@ -40,6 +40,7 @@ if ($method === 'GET') {
             $redacted[$key] = $all[$key];
         }
     }
+    $redacted = array_merge($redacted, (new \VoxelSite\RouterSettings($settings))->publicStatus());
 
     agentResponse(['data' => ['settings' => $redacted]]);
     return;

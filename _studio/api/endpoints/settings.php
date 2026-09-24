@@ -15,6 +15,7 @@ use VoxelSite\Settings;
 use VoxelSite\Encryption;
 use VoxelSite\AIProviderFactory;
 use VoxelSite\Validator;
+use VoxelSite\RouterSettings;
 
 $method = $_REQUEST['_route_method'];
 $path = $_REQUEST['_route_path'];
@@ -45,8 +46,11 @@ if ($method === 'GET' && $path === '/settings') {
 
     // Include available providers
     $masked['available_providers'] = AIProviderFactory::listProviders();
+    $masked = array_merge($masked, (new RouterSettings($settings))->publicStatus());
 
-    jsonResponse(['ok' => true, 'data' => ['settings' => $masked]]);
+    jsonResponse(['ok' => true, 'data' => ['settings' => $masked,
+        'governor_activity' => (new \VoxelSite\RouterActivity(\VoxelSite\Database::getInstance()))
+            ->recent((int) ($_REQUEST['_user']['id'] ?? 0))]]);
     return;
 }
 
@@ -56,6 +60,19 @@ if ($method === 'GET' && $path === '/settings') {
 
 if ($method === 'PUT' && $path === '/settings') {
     $body = getJsonBody();
+
+    // Reject a mixed unauthorized/invalid request before any ordinary settings
+    // are saved. Raw Router key material never enters response payloads.
+    try {
+        $governorUpdates = (new RouterSettings($settings))->prepareUpdates($body, $_REQUEST['_user']['role'] ?? '');
+    } catch (\RuntimeException $e) {
+        $status = $e->getCode();
+        jsonResponse(['ok' => false, 'error' => [
+            'code' => $status === 403 ? 'forbidden' : ($status === 409 ? 'governor_configuration' : 'validation'),
+            'message' => $e->getMessage(),
+        ]], $status);
+        return;
+    }
 
     // Whitelist of updatable settings
     $allowedKeys = [
@@ -70,7 +87,7 @@ if ($method === 'PUT' && $path === '/settings') {
         'agent_api_enabled', 'agent_api_allowed_origins',
     ];
 
-    $updates = [];
+    $updates = $governorUpdates;
     foreach ($body as $key => $value) {
         if (in_array($key, $allowedKeys, true)) {
             $updates[$key] = $value;
@@ -197,12 +214,13 @@ if ($method === 'POST' && $path === '/settings/test-api') {
 // ═══════════════════════════════════════════
 
 if ($method === 'GET' && $path === '/settings/models') {
+    $providerId = $settings->get('ai_provider', 'claude');
     try {
         $provider = AIProviderFactory::create($settings);
         $models = $provider->listModels();
-        jsonResponse(['ok' => true, 'data' => ['models' => $models]]);
+        jsonResponse(['ok' => true, 'data' => ['models' => $models, 'provider' => $providerId]]);
     } catch (\Throwable $e) {
-        jsonResponse(['ok' => true, 'data' => ['models' => []]]);
+        jsonResponse(['ok' => true, 'data' => ['models' => [], 'provider' => $providerId]]);
     }
 
     return;

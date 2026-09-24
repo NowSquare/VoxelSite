@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/helpers/GovernorLegacyBenchmark.php';
+require_once __DIR__ . '/helpers/RouterLegacyBenchmark.php';
 
-use VoxelSite\Tests\GovernorHeadingFixture as Fixture;
-use VoxelSite\Tests\GovernorLegacyBenchmark;
+use VoxelSite\Tests\RouterHeadingFixture as Fixture;
+use VoxelSite\Tests\RouterLegacyBenchmark;
 
 $passed = 0;
 $errors = [];
@@ -22,7 +22,7 @@ $oldAssets = getenv('VS_TEST_ASSETS_DIR');
 try {
     putenv('VS_TEST_PREVIEW_DIR=' . $external);
     putenv('VS_TEST_ASSETS_DIR=' . $external . '/assets');
-    $legacy = GovernorLegacyBenchmark::run('inline_edit');
+    $legacy = RouterLegacyBenchmark::run('inline_edit');
     verify(Fixture::snapshot($external) === $before, 'Legacy child must ignore inherited path overrides');
     verify($legacy['task_completion'] === 'pass', 'Legacy child must write its own disposable site');
 } finally {
@@ -31,7 +31,7 @@ try {
     Fixture::remove($external);
 }
 $pipes = [];
-$process = proc_open([PHP_BINARY, __DIR__ . '/GovernorHeadingBenchmark.php'],
+$process = proc_open([PHP_BINARY, __DIR__ . '/RouterHeadingBenchmark.php'],
     [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
 fclose($pipes[0]);
 $output = stream_get_contents($pipes[1]);
@@ -42,7 +42,7 @@ verify(proc_close($process) === 0 && $error === '', 'Benchmark runs cleanly: ' .
 $report = json_decode($output, true, 512, JSON_THROW_ON_ERROR);
 verify(str_contains($report['token_basis'], 'synthetic'), 'Counts must be labeled synthetic');
 verify(str_contains($report['routing_status'], 'not implemented'), 'No fake claim of completed router');
-verify(count($report['rows']) === 4, 'Both legacy paths and Governor accept/reject rows reported');
+verify(count($report['rows']) === 4, 'Both legacy paths and Router accept/reject rows reported');
 foreach ($report['rows'] as $row) {
     foreach (['routing', 'generation', 'gate', 'repair'] as $kind) {
         if (!isset($row[$kind])) { verify(false, $row['mode'] . ' missing ' . $kind . ' bucket'); continue; }
@@ -64,13 +64,13 @@ verify(count($report['successful_matched_comparisons']) === 2, 'Only matched suc
 // A correct heading must not hide changed, created, or deleted unrelated files.
 foreach (['inline_edit', 'section_edit'] as $action) {
     foreach (['preview-change', 'preview-add', 'preview-delete', 'shared-asset-change', 'public-add'] as $fault) {
-        $bad = GovernorLegacyBenchmark::run($action, $fault);
+        $bad = RouterLegacyBenchmark::run($action, $fault);
         verify($bad['task_completion'] === 'wrong-file', $action . ' detects ' . $fault);
         verify(count($bad['file_changes']['unexpected'] ?? []) === 1, $action . ' reports the unexpected change for ' . $fault);
     }
 }
 $pipes = [];
-$process = proc_open([PHP_BINARY, __DIR__ . '/GovernorHeadingBenchmark.php', '--legacy-fault=preview-change'],
+$process = proc_open([PHP_BINARY, __DIR__ . '/RouterHeadingBenchmark.php', '--legacy-fault=preview-change'],
     [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
 fclose($pipes[0]);
 $badOutput = stream_get_contents($pipes[1]);
@@ -84,10 +84,10 @@ foreach (array_slice($badReport['rows'], 0, 2) as $badRow) {
 }
 verify($badReport['successful_matched_comparisons'] === [], 'Wrong-file baselines produce no savings comparison');
 
-if (method_exists(GovernorLegacyBenchmark::class, 'classifyChanges')) {
+if (method_exists(RouterLegacyBenchmark::class, 'classifyChanges')) {
     $before = ['preview/_partials/schema.php' => 'original', 'assets/css/tailwind.css' => 'original'];
     $after = ['preview/_partials/schema.php' => 'changed', 'public/robots.txt' => 'generated'];
-    $changes = GovernorLegacyBenchmark::classifyChanges($before, $after);
+    $changes = RouterLegacyBenchmark::classifyChanges($before, $after);
     verify(isset($changes['unexpected']['preview/_partials/schema.php']), 'Derived creation rule cannot authorize overwriting an existing file');
     verify(isset($changes['unexpected']['assets/css/tailwind.css']), 'Derived CSS rebuild rule cannot authorize deleting CSS');
     verify(isset($changes['derived']['public/robots.txt']), 'New known derived discovery artifact is explicit');

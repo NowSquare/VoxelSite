@@ -9,11 +9,11 @@ use VoxelSite\AIProviderInterface;
 
 require_once dirname(__DIR__, 2) . '/engine/AIProviderInterface.php';
 
-final class GovernorHeadingFixture
+final class RouterHeadingFixture
 {
     public static function manifest(): array
     {
-        $root = dirname(__DIR__) . '/fixtures/governor-heading';
+        $root = dirname(__DIR__) . '/fixtures/router-heading';
         $data = json_decode(file_get_contents($root . '/fixture.json'), true, 512, JSON_THROW_ON_ERROR);
         foreach ($data['files_sha256'] as $path => $hash) {
             if (hash_file('sha256', $root . '/site/' . $path) !== $hash) {
@@ -31,7 +31,7 @@ final class GovernorHeadingFixture
         self::manifest();
         $root = sys_get_temp_dir() . '/voxelsite-governor-' . bin2hex(random_bytes(8));
         mkdir($root, 0700);
-        self::copyTree(dirname(__DIR__) . '/fixtures/governor-heading/site', $root);
+        self::copyTree(dirname(__DIR__) . '/fixtures/router-heading/site', $root);
         return $root;
     }
 

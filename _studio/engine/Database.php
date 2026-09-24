@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace VoxelSite;
 
+require_once __DIR__ . '/RouterSecrets.php';
+
 use PDO;
 use PDOException;
 use PDOStatement;
@@ -138,6 +140,7 @@ class Database
      */
     public function insert(string $table, array $data): int
     {
+        if ($table === 'prompt_log') { $data = RouterSecrets::redact($data); }
         $columns = implode(', ', array_keys($data));
         $placeholders = implode(', ', array_fill(0, count($data), '?'));
 
@@ -157,6 +160,7 @@ class Database
      */
     public function update(string $table, array $data, string $where, array $params = []): int
     {
+        if ($table === 'prompt_log') { $data = RouterSecrets::redact($data); }
         $setClauses = [];
         $values = [];
         foreach ($data as $column => $value) {

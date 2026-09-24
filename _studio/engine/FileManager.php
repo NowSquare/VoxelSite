@@ -300,6 +300,57 @@ CSS;
     }
 
     /**
+     * Apply an already validated/gated heading patch without legacy autofix side effects.
+     * The caller must authorize the target and gate the exact candidate first.
+     * Compare again here so a late edit cannot be silently overwritten.
+     * Advisory locks coordinate cooperating writers only; legacy writers do not use this lock.
+     */
+    public function writeGovernedFile(string $relativePath, string $expectedHash, string $content, string $expectedAbsolutePath): void
+    {
+        $path = GovernedFilePath::resolve($this->previewPath, $relativePath);
+        if ($path !== $expectedAbsolutePath) {
+            throw new RuntimeException('Governed writer target does not match accepted target');
+        }
+        token_get_all($content, TOKEN_PARSE);
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            throw new RuntimeException('Cannot read governed target');
+        }
+        $temporary = null;
+        try {
+            if (!flock($handle, LOCK_EX)) {
+                throw new RuntimeException('Cannot lock governed target');
+            }
+            if (!hash_equals($expectedHash, hash_file('sha256', $path))) {
+                throw new RuntimeException('content_changed');
+            }
+            $temporary = tempnam(dirname($path), '.router-');
+            if ($temporary === false) {
+                $temporary = null;
+                throw new RuntimeException('Cannot stage governed write');
+            }
+            if (file_put_contents($temporary, $content) !== strlen($content)
+                || !chmod($temporary, fileperms($path) & 0777)) {
+                throw new RuntimeException('Cannot stage governed write');
+            }
+            if (GovernedFilePath::resolve($this->previewPath, $relativePath) !== $path
+                || !hash_equals($expectedHash, hash_file('sha256', $path))) {
+                throw new RuntimeException('content_changed');
+            }
+            if (!rename($temporary, $path)) {
+                throw new RuntimeException('Cannot apply governed write');
+            }
+            $temporary = null;
+        } finally {
+            if ($temporary !== null) {
+                unlink($temporary);
+            }
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
+    }
+
+    /**
      * Fix common AI model output mistakes.
      *
      * AI models frequently produce:

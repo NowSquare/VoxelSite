@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace VoxelSite\Tests;
 
-require_once __DIR__ . '/GovernorHeadingFixture.php';
+require_once __DIR__ . '/RouterHeadingFixture.php';
 
-final class GovernorLegacyBenchmark
+final class RouterLegacyBenchmark
 {
     // Exact derived paths, never directories. Existing customer files are protected
     // except the compiler-owned Tailwind output, which the legacy path rebuilds.
@@ -26,7 +26,7 @@ final class GovernorLegacyBenchmark
     {
         $files = [];
         foreach (['preview' => '/_studio/preview', 'assets' => '/assets'] as $prefix => $directory) {
-            foreach (GovernorHeadingFixture::snapshot($root . $directory) as $path => $hash) {
+            foreach (RouterHeadingFixture::snapshot($root . $directory) as $path => $hash) {
                 $files[$prefix . '/' . $path] = $hash;
             }
         }
@@ -36,7 +36,7 @@ final class GovernorLegacyBenchmark
             if (in_array($name, ['.', '..', '_studio', 'vendor', 'assets', '.governor-fixture'], true)) { continue; }
             $path = $root . '/' . $name;
             if (is_dir($path)) {
-                foreach (GovernorHeadingFixture::snapshot($path) as $relative => $hash) {
+                foreach (RouterHeadingFixture::snapshot($path) as $relative => $hash) {
                     $files['public/' . $name . '/' . $relative] = $hash;
                 }
             } else {
@@ -71,18 +71,18 @@ final class GovernorLegacyBenchmark
         return $changes;
     }
 
-    public static function run(string $action, string $fault = ''): array
+    public static function run(string $action, string $fault = '', array $settings = [], array $scenario = []): array
     {
         $repo = dirname(__DIR__, 3);
         $root = sys_get_temp_dir() . '/voxelsite-legacy-' . bin2hex(random_bytes(8));
         mkdir($root, 0700);
         try {
             file_put_contents($root . '/.governor-fixture', 'Disposable test application');
-            GovernorHeadingFixture::copyTree($repo . '/_studio/engine', $root . '/_studio/engine');
-            GovernorHeadingFixture::copyTree($repo . '/_studio/prompts', $root . '/_studio/prompts');
-            GovernorHeadingFixture::copyTree($repo . '/_studio/static', $root . '/_studio/static');
-            GovernorHeadingFixture::copyTree($repo . '/_studio/tests/fixtures/governor-heading/site', $root . '/_studio/preview');
-            GovernorHeadingFixture::copyTree($repo . '/_studio/tests/fixtures/governor-heading/site/assets', $root . '/assets');
+            RouterHeadingFixture::copyTree($repo . '/_studio/engine', $root . '/_studio/engine');
+            RouterHeadingFixture::copyTree($repo . '/_studio/prompts', $root . '/_studio/prompts');
+            RouterHeadingFixture::copyTree($repo . '/_studio/static', $root . '/_studio/static');
+            RouterHeadingFixture::copyTree($repo . '/_studio/tests/fixtures/router-heading/site', $root . '/_studio/preview');
+            RouterHeadingFixture::copyTree($repo . '/_studio/tests/fixtures/router-heading/site/assets', $root . '/assets');
             mkdir($root . '/vendor');
             $autoload = '<?php require ' . var_export($repo . '/vendor/autoload.php', true) . ';' . <<<'PHP'
 
@@ -95,11 +95,13 @@ spl_autoload_register(function ($class) {
 PHP;
             file_put_contents($root . '/vendor/autoload.php', $autoload);
             $pipes = [];
-            $process = proc_open([PHP_BINARY, __DIR__ . '/run-governor-legacy.php', $root, $action, $fault],
+            $runner = 'run-router-legacy.php';
+            $process = proc_open([PHP_BINARY, __DIR__ . '/' . $runner, $root, $action, $fault],
                 [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
             if (!is_resource($process)) {
                 throw new \RuntimeException('Cannot start disposable legacy benchmark');
             }
+            fwrite($pipes[0], json_encode(['settings' => $settings, 'scenario' => $scenario], JSON_THROW_ON_ERROR));
             fclose($pipes[0]);
             $stdout = stream_get_contents($pipes[1]);
             $stderr = stream_get_contents($pipes[2]);
@@ -108,9 +110,11 @@ PHP;
             if (proc_close($process) !== 0 || !is_file($root . '/legacy-result.json')) {
                 throw new \RuntimeException('Legacy fixture failed: ' . $stdout . $stderr);
             }
-            return json_decode(file_get_contents($root . '/legacy-result.json'), true, 512, JSON_THROW_ON_ERROR);
+            $report = json_decode(file_get_contents($root . '/legacy-result.json'), true, 512, JSON_THROW_ON_ERROR);
+            $report['sse'] = $stdout;
+            return $report;
         } finally {
-            GovernorHeadingFixture::remove($root);
+            RouterHeadingFixture::remove($root);
         }
     }
 }

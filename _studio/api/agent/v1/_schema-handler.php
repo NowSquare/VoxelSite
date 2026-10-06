@@ -213,7 +213,7 @@ function schema_buildPaths(): array
         'post' => [
             'operationId' => 'createPage',
             'summary'     => 'Create a new page',
-            'description' => 'Creates a new page with the given slug, title, and content. The slug is auto-normalized (lowercased, special chars removed). A revision is created automatically.',
+            'description' => 'Creates a new page with the given slug, title, and content. The slug is auto-normalized (lowercased, special chars removed). A revision is created automatically under the site owner.',
             'tags'        => ['Pages'],
             'requestBody' => schema_jsonBody([
                 'slug'    => ['type' => 'string', 'description' => 'URL slug for the page (e.g. "about-us"). Auto-normalized.'],
@@ -224,6 +224,7 @@ function schema_buildPaths(): array
                 '201' => schema_jsonResponse('Page created'),
                 '409' => schema_errorRef('Page with this slug already exists'),
                 '422' => schema_errorRef('Validation error (empty slug, path traversal, etc.)'),
+                '500' => schema_errorRef('no_owner: installation has no site owner; no revision or page is changed'),
             ],
         ],
     ];
@@ -243,7 +244,7 @@ function schema_buildPaths(): array
         'put' => [
             'operationId' => 'updatePage',
             'summary'     => 'Update page content or metadata',
-            'description' => 'Updates a page\'s title, content, and/or slug. Renaming a page (changing slug) automatically updates all internal links and navigation references across the entire site. A revision is created.',
+            'description' => 'Updates a page\'s title, content, and/or slug. Renaming a page (changing slug) automatically updates all internal links and navigation references across the entire site. A revision is created under the site owner.',
             'tags'        => ['Pages'],
             'parameters'  => [schema_param('slug', 'path', 'string', 'Current page slug', true)],
             'requestBody' => schema_jsonBody([
@@ -256,6 +257,7 @@ function schema_buildPaths(): array
                 '404' => schema_errorRef('Page not found'),
                 '409' => schema_errorRef('Conflict: new slug already exists'),
                 '422' => schema_errorRef('Validation error'),
+                '500' => schema_errorRef('no_owner: installation has no site owner; no revision or page is changed'),
             ],
         ],
         'delete' => [

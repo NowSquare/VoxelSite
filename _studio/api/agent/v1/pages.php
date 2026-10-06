@@ -61,6 +61,19 @@ if ($method === 'GET' && isset($params['slug'])) {
     return;
 }
 
+// API keys are not linked to users. Attribute page revisions to the
+// installation owner, matching the Agent prompt endpoint.
+if ($method === 'POST' || ($method === 'PUT' && isset($params['slug']))) {
+    $owner = $db->queryOne(
+        "SELECT id FROM users WHERE role = 'owner' ORDER BY id ASC LIMIT 1"
+    );
+    if (!$owner) {
+        agentError(500, 'no_owner', 'No site owner found. The installation may be incomplete.');
+        return;
+    }
+    $ownerId = (int) $owner['id'];
+}
+
 // ═══════════════════════════════════════════
 //  POST /pages — Create page
 // ═══════════════════════════════════════════
@@ -80,7 +93,7 @@ if ($method === 'POST') {
         $revisionId = $revisionManager->createRevision(
             [['path' => $filePath, 'action' => 'write']],
             "Agent API: Create page '{$slug}'",
-            0 // API operations use user_id 0
+            $ownerId
         );
 
         $result = $pageService->createPage($slug, $title, $content, 'api');
@@ -144,7 +157,7 @@ if ($method === 'PUT' && isset($params['slug'])) {
         $revisionId = $revisionManager->createRevision(
             $operations,
             "Agent API: Update page '{$params['slug']}'",
-            0
+            $ownerId
         );
 
         $result = $pageService->updatePage($params['slug'], $body, 'api');

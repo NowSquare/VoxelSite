@@ -60,6 +60,7 @@ _studio/data/promptsite.db
 _studio/data/promptsite.db-wal
 _studio/data/promptsite.db-shm
 _studio/data/promptsite.db-journal
+_studio/data/site-mutation.lock
 
 # Action definitions and database (instance data)
 _studio/data/actions/*

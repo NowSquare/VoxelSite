@@ -384,6 +384,7 @@ export function normalizeGraph(data) {
     nodes,
     edges,
     summary: data.summary || {},
+    warnings: data.warnings || [],
     builtAt: data.built_at || null,
     buildTimeMs: data.build_time_ms || 0,
     edgesBySource,

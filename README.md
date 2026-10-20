@@ -38,6 +38,8 @@ VoxelSite is open source under the GNU Affero General Public License v3.0 — se
 - **Team** — invite editors and viewers with role-based access
 - **AEO** — built-in AI discoverability (`llms.txt`, schema, MCP endpoint)
 
+Site supports bounded edits to existing files. Unresolved PHP references are disclosed, and URL propagation is refused when they prevent reliable analysis. Reviewed AI plans and page mutations retain retry/recovery outcomes; incomplete recovery blocks further website writes until a verified Snapshot restore. Studio protects required recovery snapshots during cleanup and verifies file ownership, permissions and page relationships when restoring new manual and Site safety archives. Pages change in preview until Publish; shared assets can affect the published website immediately.
+
 ### Supported AI providers
 
 Anthropic Claude (recommended), OpenAI, Google Gemini, DeepSeek, or any OpenAI-compatible endpoint. You bring your own key; keys are encrypted at rest.

@@ -27,6 +27,10 @@ import { api, apiStream } from '../../../api.js';
 import { store } from '../../../state.js';
 import { icons } from '../../icons.js';
 import { escapeHtml } from '../../helpers.js';
+import { reconcileEditorPaths } from './editor-reconciliation.js';
+import { waitForPlanResult } from './plan-recovery.js';
+import { siteMutation, recoverSiteMutation, getPendingMutation } from './mutation-recovery.js';
+import { captureSelectionFocus, restoreSelectionFocus } from './selection-focus.js';
 
 // ── State ──
 import {
@@ -123,6 +127,7 @@ import {
 import {
   renderOrchestrationConsole,
   orchState,
+  isOrchBusy,
   orchPrompt,
   orchLog,
   setOrchState,
@@ -140,13 +145,18 @@ import {
 
 // ── Window resize: debounced connector recompute ──
 let _resizeHandler = null;
+let graphRefreshFailed = false;
 
 // ═══════════════════════════════════════════
 //  Entry Point
 // ═══════════════════════════════════════════
 
 export function renderSiteControlView() {
-  setTimeout(() => loadSiteMap(), 0);
+  setTimeout(async () => {
+    if (getPendingMutation()) { await recoverPendingSiteMutation(); return; }
+    await loadSiteMap();
+    if (orchState === 'recovering' && orchPlan?.plan_id) recoverApplyResult(orchPlan.plan_id);
+  }, 0);
 
   return `
     <div id="vs-site-root" style="height: 100%;">
@@ -169,6 +179,12 @@ async function loadSiteMap() {
   const { ok, data } = await api.get('/site-graph');
 
   if (!ok || !data) {
+    if (orchState !== 'idle') {
+      graphRefreshFailed = true;
+      appendOrchLog({ type: 'error', message: 'Could not refresh site structure. Reload Site before another change.', time: Date.now() });
+      refreshView();
+      return;
+    }
     root.innerHTML = `
       <div class="vs-empty-state">
         <div class="vs-empty-state-inner">
@@ -184,6 +200,7 @@ async function loadSiteMap() {
   }
 
   setGraphModel(normalizeGraph(data));
+  graphRefreshFailed = false;
   setFilterText('');
   blastRadiusCache.clear();
   setBlastRadiusLoadingFor(null);
@@ -223,7 +240,7 @@ function renderWorkspace(root) {
       <div class="vs-sc-canvas" id="vs-sc-canvas">
         <div class="vs-sc-canvas-diagram">
           <div class="vs-site-diagram" id="vs-site-diagram">
-            ${renderDiagram(hierarchyTree)}
+            ${graphModel ? renderDiagram(hierarchyTree) : '<div class="vs-site-diagram-empty">Site structure is not available yet</div>'}
           </div>
           <div class="vs-sc-status-bar" id="vs-sc-status-bar">
             ${renderStatusBar()}
@@ -259,7 +276,11 @@ function renderStatusBar() {
     else if (node.type === 'route') routeCount++;
   }
 
-  const stats = `${pageCount} page${pageCount !== 1 ? 's' : ''} · ${partialCount} partial${partialCount !== 1 ? 's' : ''} · ${routeCount} route${routeCount !== 1 ? 's' : ''}`;
+  const stats = [
+    `${pageCount} page${pageCount !== 1 ? 's' : ''}`,
+    `${partialCount} partial${partialCount !== 1 ? 's' : ''}`,
+    `${routeCount} route${routeCount !== 1 ? 's' : ''}`,
+  ];
 
   // Graph health: check for pages missing serving routes
   let unlinkedPages = 0;
@@ -269,32 +290,31 @@ function renderStatusBar() {
       if (!inbound.some(e => e.type === 'serves')) unlinkedPages++;
     }
   }
-  const isHealthy = unlinkedPages === 0;
+  const warningCount = graphModel.summary.warnings || graphModel.warnings?.length || 0;
+  const isHealthy = unlinkedPages === 0 && !graphRefreshFailed && warningCount === 0;
   const healthClass = isHealthy ? 'vs-sc-status-healthy' : 'vs-sc-status-warning';
-  const healthLabel = isHealthy ? 'Healthy' : `${unlinkedPages} unlinked`;
+  const healthLabel = graphRefreshFailed ? 'Structure refresh failed'
+    : warningCount ? `${warningCount} item${warningCount === 1 ? '' : 's'} need review`
+      : isHealthy ? 'Routes indexed' : `${unlinkedPages} unlinked`;
 
-  // Right side: selection or freshness
+  // Selection is already visible in the tree, canvas and Inspect header.
   let rightStat = '';
-  if (selectedNodeId) {
-    const node = graphModel.nodes.get(selectedNodeId);
-    if (node) {
-      rightStat = `${escapeHtml(node.label || node.id)} selected`;
-    }
-  } else if (graphModel.builtAt) {
+  if (!selectedNodeId && graphModel.builtAt) {
     const secs = Math.round((Date.now() - new Date(graphModel.builtAt).getTime()) / 1000);
     rightStat = secs < 60 ? `Graph built ${secs}s ago` : `Graph built ${Math.round(secs / 60)}m ago`;
-  } else if (graphModel.buildTimeMs) {
+  } else if (!selectedNodeId && graphModel.buildTimeMs) {
     rightStat = `Built in ${graphModel.buildTimeMs}ms`;
   }
 
   return `
+    <span class="vs-sc-status-stat vs-sc-status-counts">
+      ${stats.map(stat => `<span>${stat}</span>`).join('')}
+    </span>
     <span class="vs-sc-status-stat">
       <span class="vs-sc-status-dot ${healthClass}"></span>
-      ${stats}
-      <span class="vs-sc-status-sep">·</span>
       <span class="${healthClass}">${healthLabel}</span>
     </span>
-    <span class="vs-sc-status-stat">${rightStat}</span>
+    ${rightStat ? `<span class="vs-sc-status-stat">${rightStat}</span>` : ''}
   `;
 }
 
@@ -307,6 +327,7 @@ function renderStatusBar() {
  * Triggers blast-radius fetch.
  */
 function selectNode(nodeId) {
+  if (siteBusy()) return;
   // Clear proposal mode on any selection change
   if (proposalRouteId) {
     setProposalRouteId(null);
@@ -342,6 +363,7 @@ function selectNode(nodeId) {
 }
 
 function deselectNode() {
+  if (siteBusy()) return;
   setProposalRouteId(null);
   setProposalOriginNodeId(null);
   setProposalInputValue('');
@@ -387,6 +409,7 @@ async function fetchBlastRadius(nodeId) {
  * Called only from the armed-confirm click handler.
  */
 async function performApply() {
+  if (siteBusy()) return;
   if (window.demoGuard?.()) return;
   if (!proposalRouteId || !proposalInputValue) return;
 
@@ -407,7 +430,7 @@ async function performApply() {
   setProposalApplyError(null);
   refreshView();
 
-  const { ok, data, error } = await api.post('/site-control/url-rename', {
+  const { ok, data, error } = await performSiteMutation('/site-control/url-rename', {
     routeId: proposalRouteId,
     newPath: validation.cleanPath,
   });
@@ -441,7 +464,7 @@ async function performApply() {
     if (data.oldPath && data.newPath) {
       const oldFile = data.oldPath.replace(/^\//, '') + '.php';
       const newFile = data.newPath.replace(/^\//, '') + '.php';
-      window.__vsEditorPage?.reconcileMove?.(oldFile, newFile);
+      reconcileEditorPaths([{ oldFilePath: oldFile, newFilePath: newFile }]);
     }
 
     refreshView();
@@ -463,6 +486,7 @@ async function performApply() {
  * Enter move proposal mode — preflight fetch then populate state.
  */
 async function enterMoveMode(nodeId) {
+  if (siteBusy()) return;
   enterMoveProposalMode(nodeId);
   refreshView();
 
@@ -503,6 +527,7 @@ async function enterMoveMode(nodeId) {
  * - Same parent, different position → /site-control/nav-reorder (nav only)
  */
 async function performMoveApply() {
+  if (siteBusy()) return;
   if (window.demoGuard?.()) return;
   if (!selectedNodeId || moveTargetIndex === null) return;
 
@@ -521,9 +546,10 @@ async function performMoveApply() {
       ? moveTargetParentHref.replace(/^\//, '')
       : '';
 
-    const { ok, data, error } = await api.post('/site-control/structural-move', {
+    const { ok, data, error } = await performSiteMutation('/site-control/structural-move', {
       pageId: selectedNodeId,
       targetParent: targetParentSlug,
+      targetIndex: moveTargetIndex,
     });
 
     if (ok && data) {
@@ -531,11 +557,7 @@ async function performMoveApply() {
       setProposalApplyResult(data);
 
       // Reconcile open editor tabs: structural move changed file paths
-      if (data.movedPages?.length > 0 && window.__vsEditorPage) {
-        for (const mp of data.movedPages) {
-          window.__vsEditorPage.reconcileMove?.(mp.oldFilePath, mp.newFilePath);
-        }
-      }
+      if (data.movedPages?.length > 0) reconcileEditorPaths(data.movedPages);
 
       // Reload graph with new structure
       const graphResponse = await api.get('/site-graph');
@@ -553,42 +575,6 @@ async function performMoveApply() {
         setSelectedNodeId(newNodeId);
         setLastSelectedPageId(newNodeId);
         fetchBlastRadius(newNodeId);
-      }
-
-      // Apply user's chosen sibling position via nav-reorder.
-      // structural-move places the page via its own nav relocation logic,
-      // so we always follow up with a reorder to put it exactly where
-      // the user's pill-strip indicated.
-      const reorder = await api.post('/site-control/nav-reorder', {
-        pageId: newNodeId,
-        targetParentHref: moveTargetParentHref,
-        targetIndex: moveTargetIndex,
-      });
-
-      // no_change (already at requested position) is fine — structural move
-      // placed it where we wanted. Any other failure is a real problem.
-      const reorderFailed = !reorder.ok
-        && reorder.error?.code !== 'no_change'
-        && reorder.error?.code !== 'page_not_in_nav';
-
-      if (reorderFailed) {
-        // Structural move succeeded but position placement failed.
-        // Surface it so the user knows the file moved but nav position is off.
-        setProposalApplyState('error');
-        setProposalApplyError({
-          message: 'Page moved successfully, but could not set the requested position: '
-            + (reorder.error?.message || 'Unknown error'),
-        });
-        refreshView();
-        return;
-      }
-
-      // Reload graph one more time to reflect final position
-      const graphResponse2 = await api.get('/site-graph');
-      if (graphResponse2.ok && graphResponse2.data) {
-        setGraphModel(normalizeGraph(graphResponse2.data));
-        blastRadiusCache.clear();
-        setHierarchyTree(buildHierarchyTree());
       }
 
       refreshView();
@@ -612,7 +598,7 @@ async function performMoveApply() {
       targetIndex: moveTargetIndex,
     };
 
-    const { ok, data, error } = await api.post('/site-control/nav-reorder', body);
+    const { ok, data, error } = await performSiteMutation('/site-control/nav-reorder', body);
 
     if (ok && data) {
       setProposalApplyState('success');
@@ -654,6 +640,7 @@ async function performMoveApply() {
  * Execute page rename — POST to backend, handle success/error.
  */
 async function performRename(newTitle) {
+  if (siteBusy()) return;
   if (window.demoGuard?.()) return;
   if (!selectedNodeId || !newTitle) return;
 
@@ -666,7 +653,7 @@ async function performRename(newTitle) {
     newTitle,
   };
 
-  const { ok, data, error } = await api.post('/site-control/page-rename', body);
+  const { ok, data, error } = await performSiteMutation('/site-control/page-rename', body);
 
   if (ok && data) {
     // ── Success ──
@@ -699,7 +686,7 @@ async function performRename(newTitle) {
   } else {
     // ── Failure ──
     setRenameApplyState('error');
-    setRenameError(error?.message || 'An unknown error occurred.');
+    setRenameError(error || { message: 'An unknown error occurred.' });
     refreshView();
   }
 }
@@ -708,6 +695,7 @@ async function performRename(newTitle) {
  * Execute page delete — POST to backend, handle success/error.
  */
 async function performDelete() {
+  if (siteBusy()) return;
   if (window.demoGuard?.()) return;
   if (!selectedNodeId) return;
 
@@ -715,7 +703,7 @@ async function performDelete() {
   setDeleteError(null);
   refreshView();
 
-  const { ok, data, error } = await api.post('/site-control/page-delete', {
+  const { ok, data, error } = await performSiteMutation('/site-control/page-delete', {
     pageId: selectedNodeId,
   });
 
@@ -730,7 +718,7 @@ async function performDelete() {
       // Reconcile editor tabs — close the deleted file
       const deletedFile = data.deletedPage?.filePath;
       if (deletedFile) {
-        window.__vsEditorPage?.reconcileDelete?.(deletedFile);
+        reconcileEditorPaths([], [deletedFile]);
       }
 
       setSelectedNodeId(null);
@@ -749,7 +737,7 @@ async function performDelete() {
   } else {
     // ── Failure ──
     setDeleteApplyState('error');
-    setDeleteError(error?.message || 'An unknown error occurred.');
+    setDeleteError(error || { message: 'An unknown error occurred.' });
     refreshView();
   }
 }
@@ -763,11 +751,18 @@ function toggleExpand(pageId) {
     collapsedPages.add(pageId);
     if (group) group.classList.add('is-collapsed');
   }
+  const toggle = group?.querySelector('.vs-site-tree-toggle');
+  const expanded = !collapsedPages.has(pageId);
+  toggle?.setAttribute('aria-expanded', String(expanded));
+  const label = graphModel?.nodes.get(pageId)?.label || pageId;
+  toggle?.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} ${label}`);
 }
 
 function refreshView() {
   const root = document.getElementById('vs-site-root');
   if (!root) return;
+
+  const selectionFocus = captureSelectionFocus(root, document.activeElement);
 
   // Preserve proposal input focus/caret across re-render
   const proposalFocused = document.activeElement?.id === 'vs-proposal-url';
@@ -784,6 +779,7 @@ function refreshView() {
 
   // Full re-render workspace
   renderWorkspace(root);
+  restoreSelectionFocus(root, selectionFocus);
 
   // Restore proposal input focus/caret if it was focused before re-render
   if (proposalFocused) {
@@ -832,6 +828,11 @@ function refreshView() {
  * @param {string} prompt
  */
 async function startOrchestration(prompt) {
+  if (siteBusy() || window.demoGuard?.()) return;
+  exitProposalMode();
+  resetMoveState();
+  resetRenameState();
+  resetDeleteState();
   setOrchState('running');
   setOrchPrompt(prompt);
   clearOrchLog();
@@ -844,6 +845,7 @@ async function startOrchestration(prompt) {
 
   try {
     await apiStream('/site-control/orchestrate', { prompt }, {
+      requireTerminal: true,
       onStatus(data) {
         // Generic status events — append to log
         appendOrchLog({ type: 'info', message: data.message || 'Processing…', time: Date.now() });
@@ -860,12 +862,13 @@ async function startOrchestration(prompt) {
 
           const hasCandidates = discovery && Array.isArray(discovery.candidates) && discovery.candidates.length > 0;
           const edits = (plan && Array.isArray(plan.edits)) ? plan.edits : [];
-          const anchoredEdits = edits.filter(e => e.anchored !== false);
-          const hasAnchoredPlan = anchoredEdits.length > 0;
+          const planId = plan?.plan_id || data.plan_id;
+          const hasAnchoredPlan = edits.length > 0 && edits.every(e => e.anchored === true) && !!planId;
 
           if (hasCandidates) {
             // Hydrate orchPlan with discovery + plan results
             setOrchPlan({
+              plan_id: planId,
               intent,
               files: discovery.candidates.map(c => ({
                 type: c.type || 'file',
@@ -907,14 +910,14 @@ async function startOrchestration(prompt) {
         }
       },
       onError(err) {
-        setOrchState('complete');
+        setOrchState('plan_failed');
         setOrchResult({ filesChanged: 0, summary: err.message || 'Orchestration failed.' });
         appendOrchLog({ type: 'error', message: err.message || 'Error during orchestration.', time: Date.now() });
         refreshView();
       },
     });
   } catch (err) {
-    setOrchState('complete');
+    setOrchState('plan_failed');
     setOrchResult({ filesChanged: 0, summary: 'Connection error.' });
     appendOrchLog({ type: 'error', message: 'Connection lost during orchestration.', time: Date.now() });
     refreshView();
@@ -924,19 +927,19 @@ async function startOrchestration(prompt) {
 /**
  * Apply approved edits via POST /site-control/apply.
  * Only called after user clicks "Approve & Apply".
- * Sends only the anchored edits from orchPlan.
+ * Sends the identifier of the complete server-retained reviewed plan.
  */
 async function applyPlan() {
-  if (!orchPlan || !orchPlan.edits) return;
-
-  const anchoredEdits = orchPlan.edits.filter(e => e.anchored !== false);
-  if (anchoredEdits.length === 0) return;
+  if (siteBusy() || window.demoGuard?.()) return;
+  if (!orchPlan?.plan_id || !orchPlan.edits?.length || !orchPlan.edits.every(e => e.anchored === true)) return;
+  const planId = orchPlan.plan_id;
 
   setOrchState('applying');
   refreshView();
 
   try {
-    await apiStream('/site-control/apply', { edits: anchoredEdits }, {
+    await apiStream('/site-control/apply', { plan_id: planId }, {
+      requireTerminal: true,
       onStatus(data) {
         appendOrchLog({
           phase: data.phase || 'status',
@@ -950,39 +953,131 @@ async function applyPlan() {
         refreshOrchPanel();
       },
       onDone(data) {
-        const filesChanged = data.filesChanged || 0;
-        setOrchState('applied');
-        setOrchResult({
-          filesChanged,
-          summary: data.message || 'Done.',
-          verification: data.verification || [],
-          duration_ms: data.duration_ms || null,
-        });
-        // Server already streamed the done phase — no client duplicate
-        refreshView();
-
-        // Refresh the site graph from disk so the UI reflects filesystem truth
-        loadSiteMap();
+        finishApply(data, true);
       },
       onError(err) {
-        setOrchState('apply_failed');
-        setOrchResult({
-          filesChanged: 0,
-          summary: err.message || 'Patch execution failed.',
-          rollback_clean: err.rollback_clean !== false,
-          verification: err.verification || [],
-          duration_ms: err.duration_ms || null,
-        });
-        // Server already streamed the error/rollback phases — no client duplicate
-        refreshView();
+        if (typeof err.rollback_clean === 'boolean') finishApply(err, false);
+        else recoverApplyResult(planId, err.outcome_unknown ? null : err);
       },
     });
   } catch (err) {
-    setOrchState('apply_failed');
-    setOrchResult({ filesChanged: 0, summary: 'Connection error during apply.' });
     appendOrchLog({ phase: 'failed', status: 'error', message: 'Connection lost during apply.', time: Date.now() });
-    refreshView();
+    recoverApplyResult(planId);
   }
+}
+
+function siteBusy() {
+  return !!getPendingMutation() || isOrchBusy() || proposalApplyState === 'applying' || renameApplyState === 'applying' || deleteApplyState === 'applying';
+}
+
+async function performSiteMutation(route, body) {
+  const response = await siteMutation(route, body);
+  if (response.error?.outcome_unknown) showMutationRecoveryFailure(response.error);
+  return response;
+}
+
+function showMutationRecoveryFailure(error) {
+  setOrchPlan(null);
+  setOrchResult({
+    summary: error.message,
+    rollback_clean: typeof error.restored === 'boolean' ? error.restored : null,
+    recovery_snapshot_id: error.snapshotId || null,
+    mutation_id: error.mutation_id || null,
+    outcome_unknown: error.outcome_unknown === true,
+    changed_files: error.changed_files || error.changedFiles || [],
+    verification: [],
+  });
+  setOrchState('apply_failed');
+  refreshView();
+}
+
+let mutationRecoveryPromise = null;
+function recoverPendingSiteMutation() {
+  if (mutationRecoveryPromise) return mutationRecoveryPromise;
+  const pending = getPendingMutation();
+  if (!pending) return Promise.resolve();
+  setOrchPlan(null);
+  setOrchState('recovering');
+  refreshView();
+  mutationRecoveryPromise = (async () => {
+    const response = await recoverSiteMutation();
+    if (!response.error?.outcome_unknown) {
+      setProposalRouteId(null);
+      setProposalOriginNodeId(null);
+      setProposalInputValue('');
+      setProposalApplyState('idle');
+      resetMoveState();
+      resetRenameState();
+      resetDeleteState();
+    }
+    if (response.ok) {
+      const data = response.data || {};
+      let moves = data.movedPages || [];
+      if (data.oldPath && data.newPath) moves = [{ oldFilePath: data.oldPath.replace(/^\//, '') + '.php', newFilePath: data.newPath.replace(/^\//, '') + '.php' }];
+      const deleted = data.deletedPage?.filePath ? [data.deletedPage.filePath] : [];
+      reconcileEditorPaths(moves, deleted);
+      if (moves.length) saveSelectedNode('page:' + moves[0].newFilePath);
+      if (deleted.length) saveSelectedNode(null);
+      setOrchResult({ summary: data.message || 'The Site change completed. The result was recovered from the server.', filesChanged: data.updatedFiles?.length ?? null, verification: [] });
+      setOrchState('applied');
+      store.set('previewDirty', true);
+      refreshView();
+    } else {
+      showMutationRecoveryFailure(response.error || { message: 'The mutation result could not be read.' });
+    }
+    await loadSiteMap();
+  })().finally(() => { mutationRecoveryPromise = null; });
+  return mutationRecoveryPromise;
+}
+
+function finishApply(data, success) {
+  setOrchResult({
+    ...data,
+    filesChanged: data.filesChanged ?? data.files_changed ?? 0,
+    summary: (data.recovery_resolved && data.recovery_note) || data.message || data.error || data.summary || (success ? 'Changes applied.' : 'Patch execution failed.'),
+    rollback_clean: typeof data.rollback_clean === 'boolean' ? data.rollback_clean : null,
+    verification: data.verification || [],
+    changed_files: data.changed_files || [],
+    recovery_snapshot_id: data.recovery_snapshot_id || null,
+  });
+  setOrchState(success ? 'applied' : 'apply_failed');
+  store.set('previewDirty', true);
+  refreshView();
+  // Both successful apply and incomplete rollback can change the graph.
+  loadSiteMap();
+}
+
+let recoveryPromise = null;
+function recoverApplyResult(planId, rejection = null) {
+  if (recoveryPromise) return recoveryPromise;
+  setOrchState('recovering');
+  refreshView();
+  recoveryPromise = (async () => {
+    const data = await waitForPlanResult(planId);
+    if (data.status === 'applied' || data.status === 'failed') {
+      finishApply(data.result || {}, data.status === 'applied');
+      return;
+    }
+    if (data.status === 'ready') {
+      setOrchState(rejection ? 'plan_failed' : 'plan');
+      const message = rejection?.message || 'The apply request did not start. Review and apply the same plan when ready.';
+      setOrchResult({ summary: message });
+      appendOrchLog({ type: rejection ? 'error' : 'info', message, time: Date.now() });
+      refreshView();
+      return;
+    }
+    setOrchState('apply_failed');
+    setOrchResult({
+      summary: rejection?.message || 'The server has not confirmed the apply result. Check again before retrying.',
+      rollback_clean: null,
+      outcome_unknown: true,
+      recovery_snapshot_id: data.recovery_snapshot_id || data.result?.recovery_snapshot_id || null,
+      changed_files: [...new Set((orchPlan?.edits || []).map(edit => edit.file))],
+    });
+    refreshView();
+    loadSiteMap();
+  })().finally(() => { recoveryPromise = null; });
+  return recoveryPromise;
 }
 
 /**
@@ -1068,6 +1163,10 @@ function refreshOrchPanel() {
 // ═══════════════════════════════════════════
 
 function bindWorkspaceEvents(root) {
+  // Keep the active transaction visible until its terminal result arrives.
+  if (siteBusy()) {
+    root.querySelectorAll('.vs-sc-action-bar button, #vs-sc-console-clear, #vs-sc-composer-submit, #vs-sc-composer-input, [data-action^="close-"]').forEach(control => { control.disabled = true; });
+  }
   // ── Left panel: filter input ──
   const searchInput = root.querySelector('#vs-sc-search');
   if (searchInput) {
@@ -1104,7 +1203,8 @@ function bindWorkspaceEvents(root) {
   // ── Left panel: tree item clicks (page selection) ──
   root.querySelectorAll('.vs-site-tree-item[data-page-id]').forEach(el => {
     el.addEventListener('click', (e) => {
-      if (e.target.closest('.vs-site-tree-toggle')) return;
+      const control = e.target.closest('button, input, textarea, select, a');
+      if (control && !control.matches('[data-select-page]')) return;
       const pageId = el.dataset.pageId;
       if (pageId) selectNode(pageId);
     });
@@ -1129,7 +1229,9 @@ function bindWorkspaceEvents(root) {
 
   // ── Canvas: diagram card clicks ──
   root.querySelectorAll('.vs-site-card[data-page-id]').forEach(el => {
-    el.addEventListener('click', () => {
+    el.addEventListener('click', (e) => {
+      const control = e.target.closest('button, input, textarea, select, a');
+      if (control && !control.matches('[data-select-page]')) return;
       const pageId = el.dataset.pageId;
       if (pageId) selectNode(pageId);
     });
@@ -1281,13 +1383,13 @@ function bindWorkspaceEvents(root) {
     composerInput.addEventListener('input', () => {
       setOrchPrompt(composerInput.value);
       autoResize();
-      if (composerSubmit) composerSubmit.disabled = !composerInput.value.trim() || orchState === 'running';
+      if (composerSubmit) composerSubmit.disabled = !composerInput.value.trim() || siteBusy();
     });
 
     composerInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         // Enter = submit (unless Shift is held for newline)
-        if (composerInput.value.trim() && orchState !== 'running') {
+        if (composerInput.value.trim() && !siteBusy()) {
           e.preventDefault();
           startOrchestration(composerInput.value.trim());
         } else {
@@ -1302,7 +1404,7 @@ function bindWorkspaceEvents(root) {
     composerSubmit.addEventListener('click', (e) => {
       e.stopPropagation();
       const prompt = orchPrompt.trim();
-      if (prompt && orchState !== 'running') {
+      if (prompt && !siteBusy()) {
         startOrchestration(prompt);
       }
     });
@@ -1322,6 +1424,7 @@ function bindWorkspaceEvents(root) {
   const consoleClear = root.querySelector('#vs-sc-console-clear');
   if (consoleClear) {
     consoleClear.addEventListener('click', () => {
+      if (siteBusy()) return;
       clearOrchLog();
       setOrchState('idle');
       setOrchResult(null);
@@ -1362,12 +1465,25 @@ function bindWorkspaceEvents(root) {
   const dismissBtn = root.querySelector('#vs-sc-orch-dismiss');
   if (dismissBtn) {
     dismissBtn.addEventListener('click', () => {
+      if (siteBusy()) return;
       setOrchState('idle');
       setOrchResult(null);
       setOrchPlan(null);
       refreshView();
     });
   }
+
+  root.querySelector('#vs-sc-orch-check')?.addEventListener('click', () => {
+    if (getPendingMutation() && !isOrchBusy()) recoverPendingSiteMutation();
+    else if (orchPlan?.plan_id && !siteBusy()) recoverApplyResult(orchPlan.plan_id);
+  });
+  root.querySelectorAll('[data-orch-open-file]').forEach(button => {
+    button.addEventListener('click', () => {
+      if (siteBusy()) return;
+      window.__vsEditorPendingFile = button.dataset.orchOpenFile;
+      window.location.hash = '#/editor';
+    });
+  });
 
   // ── Orchestration: Approve & Apply button (right panel) ──
   const applyBtn = root.querySelector('#vs-sc-orch-apply');

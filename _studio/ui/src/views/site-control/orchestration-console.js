@@ -28,13 +28,14 @@ import { icons } from '../../icons.js';
 //  Orchestration State
 // ═══════════════════════════════════════════
 
-/** @type {'idle' | 'running' | 'plan' | 'plan_failed' | 'applying' | 'applied' | 'apply_failed' | 'complete'} */
+/** @type {'idle' | 'running' | 'plan' | 'plan_failed' | 'applying' | 'recovering' | 'applied' | 'apply_failed' | 'complete'} */
 export let orchState = 'idle';
-export function setOrchState(s) { orchState = s; }
+export function setOrchState(s) { orchState = s; persistReview(); }
+export function isOrchBusy() { return ['running', 'applying', 'recovering'].includes(orchState); }
 
 /** @type {string} Current composer value */
 export let orchPrompt = '';
-export function setOrchPrompt(v) { orchPrompt = v; }
+export function setOrchPrompt(v) { orchPrompt = v; persistReview(); }
 
 /** @type {Array<{type: string, message: string, time: number}>} */
 export let orchLog = [];
@@ -43,11 +44,30 @@ export function clearOrchLog() { orchLog = []; }
 
 /** @type {object|null} Plan received from backend */
 export let orchPlan = null;
-export function setOrchPlan(p) { orchPlan = p; }
+export function setOrchPlan(p) { orchPlan = p; persistReview(); }
 
 /** @type {object|null} Final results */
 export let orchResult = null;
-export function setOrchResult(r) { orchResult = r; }
+export function setOrchResult(r) { orchResult = r; persistReview(); }
+
+// Keep the reviewed identifier across refreshes. The server remains the
+// authority for plan ownership, content and terminal apply results.
+const REVIEW_KEY = 'vs-sc-reviewed-plan';
+function persistReview() {
+  try {
+    if (!orchPlan?.plan_id) { sessionStorage.removeItem(REVIEW_KEY); return; }
+    sessionStorage.setItem(REVIEW_KEY, JSON.stringify({ state: orchState, plan: orchPlan, result: orchResult, prompt: orchPrompt }));
+  } catch { /* storage may be unavailable or full */ }
+}
+try {
+  const saved = JSON.parse(sessionStorage.getItem(REVIEW_KEY) || 'null');
+  if (saved?.plan?.plan_id) {
+    orchPlan = saved.plan;
+    orchResult = saved.result || null;
+    orchPrompt = saved.prompt || '';
+    orchState = ['applying', 'recovering'].includes(saved.state) ? 'recovering' : saved.state;
+  }
+} catch { /* ignore an invalid saved review */ }
 
 // ═══════════════════════════════════════════
 //  Console Height Persistence
@@ -113,7 +133,7 @@ export function renderOrchestrationConsole() {
           </span>
         ` : ''}
         ${orchLog.length > 0 ? `
-          <button class="vs-sc-console-clear" id="vs-sc-console-clear" title="Clear log">
+          <button class="vs-sc-console-clear" id="vs-sc-console-clear" title="Clear log" ${isOrchBusy() ? 'disabled' : ''}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -144,7 +164,7 @@ function renderStepLog() {
     return `
       <div class="vs-sc-console-empty">
         <span class="vs-sc-console-empty-text">
-          Describe a change — the orchestrator will plan and execute it across your site.
+          Describe a change. Review the affected files and edits before applying them to preview.
         </span>
       </div>
     `;
@@ -190,7 +210,7 @@ function renderStepLog() {
 // ═══════════════════════════════════════════
 
 function renderComposer() {
-  const isRunning = orchState === 'running';
+  const isRunning = isOrchBusy();
   const placeholder = isRunning
     ? 'Orchestrating…'
     : 'Describe a change across your site…';
@@ -236,6 +256,7 @@ function stateLabel(state) {
     case 'plan':         return 'Plan Ready';
     case 'plan_failed':  return 'Plan Failed';
     case 'applying':     return 'Applying…';
+    case 'recovering':   return 'Checking result…';
     case 'applied':      return 'Applied';
     case 'apply_failed': return 'Apply Failed';
     case 'complete':     return 'Done';

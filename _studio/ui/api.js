@@ -237,6 +237,7 @@ export async function apiStream(endpoint, body, callbacks = {}) {
     onWarning = () => {},
     onError  = () => {},
     signal   = null,
+    requireTerminal = false,
   } = callbacks;
 
   const token = getSessionToken();
@@ -375,6 +376,10 @@ export async function apiStream(endpoint, body, callbacks = {}) {
     // Poll for completion if we have a conversation ID —
     // this handles connection drops by Herd/Nginx during long generations.
     if (!receivedDone) {
+      if (requireTerminal) {
+        onError({ code: 'stream_interrupted', message: 'The connection closed before the server confirmed the result.', outcome_unknown: true });
+        return;
+      }
       const convId = trackedConversationId;
       if (convId) {
         onStatus('Waiting for server to finish...');
@@ -386,6 +391,15 @@ export async function apiStream(endpoint, body, callbacks = {}) {
       // else: no conversation, no tokens, no files — silent close (e.g. empty response)
     }
   } catch (err) {
+    // A terminal server event remains authoritative if closing the reader
+    // subsequently throws, including an AbortError.
+    if (receivedDone) return;
+    // Site applies have a durable plan result. A transport outcome cannot
+    // establish whether the server changed or restored files.
+    if (requireTerminal && !receivedDone) {
+      onError({ code: 'stream_interrupted', message: 'The connection closed before the server confirmed the result.', outcome_unknown: true });
+      return;
+    }
     if (err.name === 'AbortError') {
       // User cancelled — treat as a clean stop, not an error
       onDone({ cancelled: true, message: 'Generation stopped.' });

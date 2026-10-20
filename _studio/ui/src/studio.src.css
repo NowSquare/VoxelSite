@@ -10211,13 +10211,11 @@ select.vx-form-input {
 /* ── Status Bar (canvas bottom) ── */
 
 .vs-sc-status-bar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 6px 16px;
+  padding: 8px 12px;
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 4px 12px;
   align-items: center;
   font-size: 11px;
   color: var(--vs-text-ghost);
@@ -10229,6 +10227,17 @@ select.vx-form-input {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.vs-sc-status-counts {
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.vs-sc-status-counts > span {
+  white-space: nowrap;
 }
 
 .vs-sc-status-dot {
@@ -10609,9 +10618,10 @@ select.vx-form-input {
 }
 
 .vs-impact-ref-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: start;
+  gap: 4px 6px;
   width: 100%;
   padding: 5px 12px;
   font-size: 13px;
@@ -10643,16 +10653,23 @@ select.vx-form-input {
 .vs-impact-ref-type-asset { background: rgba(107, 114, 128, 0.1); color: #6b7280; }
 
 .vs-impact-ref-label {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  grid-column: 2;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vs-impact-ref-source {
+  grid-column: 2;
+  font-size: 11px;
+  color: var(--vs-text-muted);
+  overflow-wrap: anywhere;
 }
 
 .vs-impact-ref-meta {
+  grid-column: 2;
   font-size: 11px;
   color: var(--vs-text-muted);
-  flex-shrink: 0;
+  overflow-wrap: anywhere;
 }
 
 .vs-impact-ref-context {
@@ -10663,10 +10680,11 @@ select.vx-form-input {
 }
 
 .vs-impact-transitive-via {
+  grid-column: 2;
   font-size: 11px;
   color: var(--vs-text-muted);
   font-style: italic;
-  flex-shrink: 0;
+  overflow-wrap: anywhere;
 }
 
 .vs-impact-no-relations {
@@ -12056,6 +12074,21 @@ select.vx-form-input {
   color: var(--vs-accent);
 }
 
+.vs-site-tree-select {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .vs-site-tree-toggle {
   display: flex;
   align-items: center;
@@ -13280,6 +13313,10 @@ select.vx-form-input {
   z-index: 20;
 }
 
+.vs-site-card:has(.vs-sc-action-bar) {
+  margin-bottom: 44px;
+}
+
 [data-theme="dark"] .vs-site-card.is-selected {
   box-shadow:
     0 0 0 3px var(--vs-accent-dim),
@@ -13298,6 +13335,13 @@ select.vx-form-input {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .vs-site-card-title {

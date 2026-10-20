@@ -60,9 +60,11 @@ CSS;
     private array $rotateValues;
     private array $skewValues;
     private array $usedAnimations = [];
+    private string $themePath;
 
-    public function __construct()
+    public function __construct(?string $themePath = null)
     {
+        $this->themePath = $themePath ?? dirname(__DIR__, 2) . '/assets/css';
         $this->spacingScale      = TailwindConfig::spacingScale();
         $this->fractionScale     = TailwindConfig::fractionScale();
         $this->opacityScale      = TailwindConfig::opacityScale();
@@ -97,7 +99,7 @@ CSS;
      */
     private function registerThemeColors(): void
     {
-        $basePath = dirname(__DIR__, 2) . '/assets/css/';
+        $basePath = rtrim($this->themePath, '/') . '/';
         // Resolve symlinks (Forge/Envoyer shared directories)
         $resolvedBase = realpath($basePath);
         if ($resolvedBase !== false) {
@@ -1909,17 +1911,26 @@ CSS;
         }
 
         // Try atomic write first (rename within same filesystem)
+        $original = is_file($path) ? stat($path) : null;
         $tmpPath = $path . '.tmp.' . getmypid();
         $written = @file_put_contents($tmpPath, $css);
 
-        if ($written === false) {
+        if ($written !== false && $original !== null) {
+            if (!@chmod($tmpPath,$original['mode'] & 0777)
+                || (fileowner($tmpPath) !== $original['uid'] && !@chown($tmpPath,$original['uid']))
+                || (filegroup($tmpPath) !== $original['gid'] && !@chgrp($tmpPath,$original['gid']))) {
+                @unlink($tmpPath);
+                $written = false;
+            }
+        }
+        if ($written !== strlen($css)) {
             // tmp write failed — try direct write as fallback
             Logger::warning('tailwind', 'Atomic tmp write failed, falling back to direct write', [
                 'path' => $path,
                 'tmp'  => $tmpPath,
             ]);
             $fallback = @file_put_contents($path, $css);
-            if ($fallback === false) {
+            if ($fallback !== strlen($css) || @file_get_contents($path) !== $css) {
                 Logger::error('tailwind', 'Direct write also failed — CSS not persisted', [
                     'path' => $path,
                 ]);
@@ -1938,7 +1949,7 @@ CSS;
             ]);
             $fallback = @file_put_contents($path, $css);
             @unlink($tmpPath);
-            if ($fallback === false) {
+            if ($fallback !== strlen($css) || @file_get_contents($path) !== $css) {
                 Logger::error('tailwind', 'Direct write also failed — CSS not persisted', [
                     'path' => $path,
                 ]);
@@ -1951,6 +1962,6 @@ CSS;
             'path' => $path,
             'size' => strlen($css),
         ]);
-        return true;
+        return @file_get_contents($path) === $css;
     }
 }

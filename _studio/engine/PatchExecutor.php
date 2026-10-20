@@ -28,7 +28,7 @@ class PatchExecutor
 {
     private FileManager $fileManager;
 
-    /** @var list<array{file: string, original: string}> */
+    /** @var list<array{file: string, original: string|null}> */
     private array $snapshots = [];
 
     /** @var list<array{phase: string, file: string, status: string, detail: string, bytes: int|null, ms: float|null}> */
@@ -45,6 +45,10 @@ class PatchExecutor
 
     /** @var list<array{file: string, checks: list<array{check: string, passed: bool, detail: string}>}> */
     private array $verification = [];
+
+    private array $changedFiles = [];
+    private array $remainingChangedFiles = [];
+    private bool $compileAttempted = false;
 
     /** @var callable|null Fires at the instant each phase event is created */
     private $onEmit = null;
@@ -79,144 +83,167 @@ class PatchExecutor
         $this->hasMutated = false;
         $this->rollbackClean = true;
         $this->startTime = microtime(true);
+        $this->changedFiles = [];
+        $this->remainingChangedFiles = [];
+        $this->compileAttempted = false;
 
-        // ── Gate: only anchored edits ──
-        $anchored = array_filter($edits, fn($e) => ($e['anchored'] ?? false) === true);
-        $rejected = array_filter($edits, fn($e) => ($e['anchored'] ?? false) !== true);
-
-        if (!empty($rejected)) {
-            foreach ($rejected as $r) {
-                $this->emit('reject', $r['file'] ?? '?', 'refused',
-                    'Edit not anchored: ' . ($r['anchor_issue'] ?? 'unknown'));
-            }
-        }
-
-        if (empty($anchored)) {
-            $this->emit('abort', '', 'refused', 'No anchored edits to execute');
+        if ($edits === [] || !array_is_list($edits)) {
             return $this->result(false, 'No anchored edits to execute');
         }
-
-        // ── Group edits by file ──
         $byFile = [];
-        foreach ($anchored as $edit) {
-            $file = $edit['file'] ?? '';
-            if ($file === '') continue;
-            $byFile[$file][] = $edit;
-        }
-
-        // ── Sort edits within each file by line number DESCENDING ──
-        // Applying from bottom to top preserves line numbers for earlier edits.
-        foreach ($byFile as $file => &$fileEdits) {
-            usort($fileEdits, fn($a, $b) =>
-                ($b['region']['start'] ?? 0) <=> ($a['region']['start'] ?? 0)
-            );
-        }
-        unset($fileEdits);
-
-        // ── Phase 1: Snapshot all files ──
-        foreach (array_keys($byFile) as $file) {
-            $content = $this->fileManager->readFile($file);
-            if ($content === null) {
-                $this->emit('read', $file, 'failed', 'File not readable');
-                return $this->rollbackAndReturn('Cannot read file: ' . $file);
+        $strategies = ['token-edit', 'attribute-edit', 'line-replace', 'block-replace', 'block-insert', 'meta-edit', 'content-edit'];
+        foreach ($edits as $edit) {
+            if (!is_array($edit) || ($edit['anchored'] ?? false) !== true
+                || !is_string($edit['file'] ?? null) || $edit['file'] === ''
+                || !is_string($edit['before_snippet'] ?? null) || $edit['before_snippet'] === ''
+                || !is_string($edit['after_snippet'] ?? null)
+                || !in_array($edit['strategy'] ?? '', $strategies, true)) {
+                $this->emit('reject', is_array($edit) ? (string) ($edit['file'] ?? '?') : '?', 'refused', 'The complete plan must contain valid anchored edits. Nothing was changed.');
+                return $this->result(false, 'No anchored plan: one or more edits are invalid. Build a new plan.');
             }
-            $this->snapshots[] = ['file' => $file, 'original' => $content];
-            $this->emit('snapshot', $file, 'ok', 'Snapshot taken', strlen($content));
+            if ($edit['file'] === 'assets/css/tailwind.css') {
+                return $this->result(false, 'The generated Tailwind bundle cannot be edited directly.');
+            }
+            $byFile[$edit['file']][] = $edit;
         }
 
-        // ── Phase 2: Apply edits per file ──
-        // Wrapped in try/catch: if writeFile() or verifyFile() throws after
-        // earlier files were already mutated, rollback restores ALL snapshots.
-        $filesChanged = 0;
-        $changedFiles = [];
-        $currentFile = '';
-
+        // Validate the entire transaction against original files before any write.
+        // Patches never anchor to text produced by another edit in the same plan.
+        $prepared = [];
         try {
             foreach ($byFile as $file => $fileEdits) {
-                $currentFile = $file;
-                // Re-read current content
-                $current = $this->fileManager->readFile($file);
-                if ($current === null) {
-                    $this->emit('read', $file, 'failed', 'File became unreadable after snapshot');
-                    return $this->rollbackAndReturn('File became unreadable: ' . $file);
+                $original = $this->fileManager->readFile($file);
+                if ($original === null) {
+                    throw new \RuntimeException('Cannot read file: ' . $file);
                 }
-                $this->emit('read', $file, 'ok', 'Read file', strlen($current));
-
-                $modified = $current;
-
                 foreach ($fileEdits as $edit) {
-                    $strategy      = $edit['strategy'] ?? 'line-replace';
-                    $beforeSnippet = $edit['before_snippet'] ?? '';
-                    $afterSnippet  = $edit['after_snippet'] ?? '';
-                    $desc          = $edit['description'] ?? '';
-
-                    if ($strategy === 'block-insert') {
-                        $result = $this->applyInsert($modified, $edit);
-                    } else {
-                        $result = $this->applyReplace($modified, $beforeSnippet, $afterSnippet, $file);
+                    if (isset($edit['source_hash']) && (!is_string($edit['source_hash'])
+                        || !hash_equals($edit['source_hash'], hash('sha256', $original)))) {
+                        throw new \RuntimeException('File changed after review: ' . $file . '. Build a new plan.');
                     }
-
-                    if ($result['error'] !== null) {
-                        $this->emit('anchor', $file, 'failed', $result['error']);
-                        return $this->rollbackAndReturn($result['error']);
-                    }
-
-                    $this->emit('anchor', $file, 'ok',
-                        'Anchored: ' . mb_substr($desc, 0, 80));
-                    $modified = $result['content'];
                 }
+                $this->snapshots[] = ['file' => $file, 'original' => $original];
+                $this->emit('snapshot', $file, 'ok', 'Original source captured', strlen($original));
+                $prepared[$file] = $this->prepareFile($file, $original, $fileEdits);
+                $this->validateSyntax($file, $prepared[$file]);
+            }
+            // Compilation is part of the transaction, including its derived file.
+            $this->snapshots[] = ['file' => 'assets/css/tailwind.css', 'original' => $this->fileManager->readFile('assets/css/tailwind.css')];
+        } catch (\Throwable $e) {
+            $this->emit('reject', '', 'refused', $e->getMessage());
+            return $this->result(false, $e->getMessage());
+        }
 
-                // ── Write the patched file ──
+        try {
+            foreach ($prepared as $file => $modified) {
+                $original = $this->originalFor($file);
+                $current = $this->fileManager->readFile($file);
+                if ($current !== $original) {
+                    throw new \RuntimeException('File changed during apply: ' . $file);
+                }
+                $this->emit('read', $file, 'ok', 'Source hash confirmed', strlen($current));
                 if ($modified === $current) {
                     $this->emit('patch', $file, 'skip', 'No changes after applying edits');
                     continue;
                 }
-
                 $this->hasMutated = true;
-                $writeWarning = $this->fileManager->writeFile($file, $modified);
-                if ($writeWarning !== null) {
-                    $this->emit('lint', $file, 'failed', 'Syntax error: ' . $writeWarning);
-                    return $this->rollbackAndReturn(
-                        'Patch produced invalid syntax in ' . $file . ': ' . $writeWarning
-                    );
+                $this->changedFiles[] = $file;
+                $this->fileManager->writeExactFile($file, $modified);
+                $this->emit('patch', $file, 'ok', 'Exact approved bytes written', strlen($modified));
+                if ($this->fileManager->readFile($file) !== $modified) {
+                    throw new \RuntimeException('Written file differs from approved patch: ' . $file);
                 }
-                $this->emit('patch', $file, 'ok', 'Written to disk', strlen($modified));
-
-                // ── Phase 3: Post-write verification (B9) ──
-                $fileChecks = $this->verifyFile($file, $fileEdits);
-                $this->verification[] = [
-                    'file'   => $file,
-                    'checks' => $fileChecks,
-                ];
-
-                $failedChecks = array_filter($fileChecks, fn($c) => !$c['passed']);
-                if (!empty($failedChecks)) {
-                    $firstFailure = reset($failedChecks);
-                    $this->emit('verify', $file, 'failed', $firstFailure['detail']);
-                    return $this->rollbackAndReturn(
-                        'Verification failed in ' . $file . ': ' . $firstFailure['detail']
-                    );
+                $checks = $this->verifyFile($file, $byFile[$file]);
+                $this->verification[] = ['file' => $file, 'checks' => $checks];
+                foreach ($checks as $check) {
+                    if (!$check['passed']) throw new \RuntimeException('Verification failed in ' . $file . ': ' . $check['detail']);
                 }
-
-                $passedCount = count($fileChecks);
-                $this->emit('verify', $file, 'ok', $passedCount . ' check(s) passed');
-                $filesChanged++;
-                $changedFiles[] = $file;
+                $this->emit('verify', $file, 'ok', count($checks) . ' check(s) passed');
             }
+            if (!$this->hasMutated) {
+                return $this->result(false, 'The plan makes no changes. Build a new plan.');
+            }
+            $this->compileAttempted = true;
+            $compiled = $this->fileManager->compileTailwind();
+            if (($compiled['ok'] ?? false) !== true) {
+                throw new \RuntimeException('Tailwind compilation failed.');
+            }
+            $this->emit('compile', 'assets/css/tailwind.css', 'ok', 'Tailwind bundle compiled');
+            $this->fileManager->syncPageRegistry(true);
+            $this->emit('index', '', 'ok', 'Page registry refreshed from files');
         } catch (\Throwable $e) {
-            // writeFile() or verifyFile() threw — rollback all snapshots
-            $this->emit('crash', $currentFile, 'error',
-                'Exception: ' . $e->getMessage());
-            return $this->rollbackAndReturn(
-                'Crash during patch execution: ' . $e->getMessage()
-            );
+            $this->emit('crash', $file ?? '', 'error', $e->getMessage());
+            return $this->rollbackAndReturn('Patch execution failed: ' . $e->getMessage());
         }
 
-        // ── Success ──
-        $this->emit('done', '', 'ok',
-            $filesChanged . ' file(s) patched and verified');
+        $this->emit('done', '', 'ok', count($this->changedFiles) . ' file(s) patched and verified');
+        return $this->result(true, null, count($this->changedFiles));
+    }
 
-        return $this->result(true, null, $filesChanged);
+    /** Build all replacements from the same immutable original source. */
+    private function prepareFile(string $file, string $original, array $edits): string
+    {
+        $patches = [];
+        foreach ($edits as $edit) {
+            $before = $edit['before_snippet'];
+            $matches = substr_count($original, $before);
+            if ($matches !== 1) {
+                throw new \RuntimeException($matches === 0
+                    ? 'Anchor drift in ' . $file . ': before_snippet not found in current file'
+                    : 'Ambiguous anchor in ' . $file . ': before_snippet appears ' . $matches . ' times');
+            }
+            $start = strpos($original, $before);
+            $length = strlen($before);
+            if ($edit['strategy'] === 'block-insert') {
+                if ($edit['after_snippet'] === '') throw new \RuntimeException('Empty after_snippet for insert in ' . $file);
+                // Preserve the existing insert-after-anchor-line contract.
+                $anchorEnd = $start + $length;
+                $lineEnd = str_ends_with($before, "\n") ? $anchorEnd - 1 : strpos($original, "\n", $anchorEnd);
+                $start = $lineEnd === false ? strlen($original) : $lineEnd + 1;
+                $length = 0;
+                $replacement = ($lineEnd === false ? "\n" : '') . $edit['after_snippet'] . "\n";
+            } else {
+                $replacement = $edit['after_snippet'];
+            }
+            foreach ($patches as $patch) {
+                $end = $start + $length;
+                $otherEnd = $patch['start'] + $patch['length'];
+                $overlap = $length === 0 && $patch['length'] === 0 ? $start === $patch['start']
+                    : ($length === 0 ? $start >= $patch['start'] && $start < $otherEnd
+                    : ($patch['length'] === 0 ? $patch['start'] >= $start && $patch['start'] < $end
+                    : $start < $otherEnd && $patch['start'] < $end));
+                if ($overlap) throw new \RuntimeException('Overlapping edits in ' . $file . '. Build a new plan.');
+            }
+            $patches[] = ['start' => $start, 'length' => $length, 'replacement' => $replacement];
+            $this->emit('anchor', $file, 'ok', 'Source anchor is unique and does not overlap');
+        }
+        usort($patches, fn(array $a, array $b) => $b['start'] <=> $a['start']);
+        foreach ($patches as $patch) {
+            $original = substr_replace($original, $patch['replacement'], $patch['start'], $patch['length']);
+        }
+        return $original;
+    }
+
+    private function validateSyntax(string $file, string $content): void
+    {
+        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+        if ($ext === 'php') {
+            try { token_get_all($content, TOKEN_PARSE); }
+            catch (\ParseError $e) { throw new \RuntimeException('Invalid PHP syntax in ' . $file . ': ' . $e->getMessage()); }
+        } elseif ($ext === 'json') {
+            json_decode($content, true, 512, JSON_THROW_ON_ERROR);
+        } elseif ($ext === 'css') {
+            $check = $this->lintCss($content, $file);
+            if (!$check['passed']) throw new \RuntimeException('Invalid CSS syntax in ' . $file . ': ' . $check['detail']);
+        }
+    }
+
+    private function originalFor(string $file): ?string
+    {
+        foreach ($this->snapshots as $snapshot) {
+            if ($snapshot['file'] === $file) return $snapshot['original'];
+        }
+        return null;
     }
 
     // ═══════════════════════════════════════════
@@ -258,8 +285,8 @@ class PatchExecutor
         $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
 
         if ($ext === 'php') {
-            // PHP lint already ran during writeFile() — fatal on failure.
-            // Re-confirming here that it passed.
+            // token_get_all(TOKEN_PARSE) validates without requiring a shell binary.
+            $this->validateSyntax($file, $content);
             $checks[] = ['check' => 'php_lint', 'passed' => true, 'detail' => 'Syntax validated at write time'];
         } elseif ($ext === 'json') {
             $checks[] = $this->lintJson($content, $file);
@@ -297,99 +324,6 @@ class PatchExecutor
     }
 
     // ═══════════════════════════════════════════
-    //  Edit Application
-    // ═══════════════════════════════════════════
-
-    /**
-     * Apply a find-and-replace edit.
-     *
-     * @return array{content: string, error: string|null}
-     */
-    private function applyReplace(string $content, string $before, string $after, string $file): array
-    {
-        if ($before === '') {
-            return ['content' => $content, 'error' => "Empty before_snippet in {$file}"];
-        }
-
-        $count = substr_count($content, $before);
-
-        if ($count === 0) {
-            return [
-                'content' => $content,
-                'error'   => "Anchor drift in {$file}: before_snippet not found in current file"
-            ];
-        }
-
-        if ($count > 1) {
-            return [
-                'content' => $content,
-                'error'   => "Ambiguous anchor in {$file}: before_snippet appears {$count} times"
-            ];
-        }
-
-        return ['content' => str_replace($before, $after, $content), 'error' => null];
-    }
-
-    /**
-     * Apply a block-insert edit.
-     *
-     * @return array{content: string, error: string|null}
-     */
-    private function applyInsert(string $content, array $edit): array
-    {
-        $afterSnippet = $edit['after_snippet'] ?? '';
-        $targetLine   = (int) ($edit['region']['start'] ?? 0);
-        $file         = $edit['file'] ?? '';
-
-        if ($afterSnippet === '') {
-            return ['content' => $content, 'error' => "Empty after_snippet for insert in {$file}"];
-        }
-
-        $lines = explode("\n", $content);
-
-        if ($targetLine < 1 || $targetLine > count($lines) + 1) {
-            return [
-                'content' => $content,
-                'error'   => "Insert target line {$targetLine} out of range in {$file} (1-" . count($lines) . ")"
-            ];
-        }
-
-        // Every insert must have a source anchor — position alone is not trustworthy
-        $beforeSnippet = $edit['before_snippet'] ?? '';
-        if ($beforeSnippet === '') {
-            return ['content' => $content, 'error' => "Insert in {$file} has no before_snippet anchor"];
-        }
-
-        // Find the exact position of the anchor in the file
-        $fullContent = implode("\n", $lines);
-        $matchCount = substr_count($fullContent, $beforeSnippet);
-
-        if ($matchCount === 0) {
-            return [
-                'content' => $content,
-                'error'   => "Insert anchor drift in {$file}: before_snippet not found in file"
-            ];
-        }
-
-        if ($matchCount > 1) {
-            return [
-                'content' => $content,
-                'error'   => "Ambiguous insert anchor in {$file}: before_snippet appears {$matchCount} times"
-            ];
-        }
-
-        // Find the line number where the snippet ends — insert after that line
-        $pos = strpos($fullContent, $beforeSnippet);
-        $linesBeforeMatch = substr_count(substr($fullContent, 0, $pos + strlen($beforeSnippet)), "\n");
-        $targetLine = $linesBeforeMatch + 1;
-
-        $insertLines = explode("\n", $afterSnippet);
-        array_splice($lines, $targetLine, 0, $insertLines);
-
-        return ['content' => implode("\n", $lines), 'error' => null];
-    }
-
-    // ═══════════════════════════════════════════
     //  Rollback & Logging
     // ═══════════════════════════════════════════
 
@@ -399,23 +333,41 @@ class PatchExecutor
     private function rollbackAndReturn(string $reason): array
     {
         if ($this->hasMutated) {
-            $this->emit('rollback', '', 'start', 'Rolling back all changes');
-
+            $this->emit('rollback', '', 'start', 'Restoring original files and compiled CSS');
             foreach ($this->snapshots as $snapshot) {
+                // A later target may have changed independently before we wrote it.
+                // Restore only writes attempted by this transaction.
+                if (!in_array($snapshot['file'], $this->changedFiles, true)
+                    && !($this->compileAttempted && $snapshot['file'] === 'assets/css/tailwind.css')) {
+                    continue;
+                }
                 try {
-                    $this->fileManager->writeFile($snapshot['file'], $snapshot['original']);
-                    $this->emit('rollback', $snapshot['file'], 'ok', 'Restored to snapshot');
+                    if ($this->fileManager->readFile($snapshot['file']) !== $snapshot['original']) {
+                        if ($snapshot['original'] === null) {
+                            $this->fileManager->deleteFile($snapshot['file']);
+                        } else {
+                            $this->fileManager->writeExactFile($snapshot['file'], $snapshot['original']);
+                        }
+                    }
+                    if ($this->fileManager->readFile($snapshot['file']) !== $snapshot['original']) {
+                        throw new \RuntimeException('Restored bytes do not match original source');
+                    }
+                    $this->emit('rollback', $snapshot['file'], 'ok', 'Original bytes verified');
                 } catch (\Throwable $e) {
                     $this->rollbackClean = false;
-                    $this->emit('rollback', $snapshot['file'], 'failed',
-                        'CRITICAL: Cannot restore — ' . $e->getMessage());
+                    $this->remainingChangedFiles[] = $snapshot['file'];
+                    $this->emit('rollback', $snapshot['file'], 'failed', 'Cannot verify restoration: ' . $e->getMessage());
                 }
             }
-
+            try {
+                $this->fileManager->syncPageRegistry(true);
+            } catch (\Throwable $e) {
+                $this->rollbackClean = false;
+                $this->emit('index', '', 'failed', 'Files restored; page registry refresh failed: ' . $e->getMessage());
+            }
             $this->emit('rollback', '', $this->rollbackClean ? 'ok' : 'partial',
-                $this->rollbackClean ? 'All files restored' : 'Rollback completed with errors');
+                $this->rollbackClean ? 'All original bytes restored and verified' : 'Recovery is incomplete; use the safety snapshot');
         }
-
         return $this->result(false, $reason);
     }
 
@@ -448,6 +400,9 @@ class PatchExecutor
         return [
             'success'        => $success,
             'files_changed'  => $filesChanged,
+            'changed_files' => $this->changedFiles,
+            'remaining_changed_files' => $this->remainingChangedFiles,
+            'restoration_verified' => $this->rollbackClean,
             'log'            => $this->log,
             'verification'   => $this->verification,
             'error'          => $error,

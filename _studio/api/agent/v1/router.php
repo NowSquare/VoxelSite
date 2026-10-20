@@ -278,6 +278,23 @@ foreach ($routes as [$routeMethod, $routePattern, $handlerFile, $requiredScope])
         'settings'   => $settings,
     ];
 
+    $mutationPolicy = \VoxelSite\SiteMutationRoutePolicy::agent($method, $routePattern);
+    if ($mutationPolicy['lock']) {
+        try {
+            $websiteMutationLock = \VoxelSite\SiteMutationLock::acquire();
+            (new \VoxelSite\SiteMutationJournal(\VoxelSite\Database::getInstance()))->recoverInterrupted();
+            (new \VoxelSite\SitePlanStore(\VoxelSite\Database::getInstance(), new \VoxelSite\FileManager()))->recoverInterrupted();
+            if ($mutationPolicy['recoveryGate']) {
+                \VoxelSite\SiteRecovery::assertWritable(\VoxelSite\Database::getInstance());
+            }
+            if ($mutationPolicy['releaseBeforeDispatch']) {
+                unset($websiteMutationLock);
+            }
+        } catch (\Throwable $e) {
+            agentError(409, 'site_busy', $e->getMessage());
+            exit;
+        }
+    }
     require $handlerPath;
     exit;
 }

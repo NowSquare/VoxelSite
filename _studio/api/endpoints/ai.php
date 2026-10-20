@@ -243,19 +243,12 @@ if ($method === 'GET' && str_starts_with($path, '/ai/conversations/')) {
     // Uses COALESCE(last_progress_at, created_at) so that active heartbeats
     // from both interactive and headless modes prevent false expiry.
     $staleThreshold = 180; // 3 minutes
-    $hasStale = false;
     $staleIds = [];
     foreach ($prompts as &$prompt) {
         if ($prompt['status'] === 'streaming') {
             $progressCol = $prompt['last_progress_at'] ?? $prompt['created_at'] ?? '';
             $progressTs = strtotime($progressCol);
             if ($progressTs && (time() - $progressTs) > $staleThreshold) {
-                $db->update('prompt_log', [
-                    'status'        => 'partial',
-                    'error_message' => 'Generation was interrupted (process terminated by server).',
-                ], 'id = ?', [$prompt['id']]);
-                $prompt['status'] = 'partial';
-                $hasStale = true;
                 $staleIds[] = $prompt['id'];
             }
         }
@@ -267,20 +260,41 @@ if ($method === 'GET' && str_starts_with($path, '/ai/conversations/')) {
     }
     unset($prompt);
 
-    // Log stale-recovery mutations for audit trail (support diagnostics)
-    if ($hasStale) {
-        \VoxelSite\Logger::warning('ai', 'Recovered stale streaming prompts (conversation refresh)', [
-            'conversation_id' => $conversationId,
-            'count'           => count($staleIds),
-            'ids'             => $staleIds,
-        ]);
-    }
-
-    // If we recovered stale prompts, compile Tailwind for the partial files
-    if ($hasStale) {
-        $fm = new \VoxelSite\FileManager();
-        $fm->ensureStyleCssExists();
-        $fm->compileTailwind();
+    // This history read only becomes a website writer when recovering styles.
+    // Defer the whole cleanup while busy or awaiting recovery, so a later read
+    // can retry it without blocking access to the conversation itself.
+    if ($staleIds && !\VoxelSite\DemoMode::isActive()) {
+        try {
+            $staleRecoveryLock = \VoxelSite\SiteMutationLock::acquire();
+            (new \VoxelSite\SiteMutationJournal($db))->recoverInterrupted();
+            (new \VoxelSite\SitePlanStore($db, new \VoxelSite\FileManager($db)))->recoverInterrupted();
+            \VoxelSite\SiteRecovery::assertWritable($db);
+            $fm = new \VoxelSite\FileManager($db);
+            $fm->ensureStyleCssExists();
+            if (!($fm->compileTailwind()['ok'] ?? false)) {
+                throw new \RuntimeException('Interrupted generation styles could not be compiled.');
+            }
+            foreach ($prompts as &$prompt) {
+                if (!in_array($prompt['id'], $staleIds, true)) continue;
+                $db->update('prompt_log', [
+                    'status'        => 'partial',
+                    'error_message' => 'Generation was interrupted (process terminated by server).',
+                ], 'id = ?', [$prompt['id']]);
+                $prompt['status'] = 'partial';
+            }
+            unset($prompt);
+            \VoxelSite\Logger::warning('ai', 'Recovered stale streaming prompts (conversation refresh)', [
+                'conversation_id' => $conversationId,
+                'count'           => count($staleIds),
+                'ids'             => $staleIds,
+            ]);
+        } catch (\RuntimeException $error) {
+            \VoxelSite\Logger::info('ai', 'Deferred interrupted generation recovery', [
+                'conversation_id' => $conversationId, 'reason' => $error->getMessage(),
+            ]);
+        } finally {
+            unset($staleRecoveryLock);
+        }
     }
 
     $conversation['prompts'] = $prompts;

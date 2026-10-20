@@ -426,9 +426,9 @@ async function loadHistory() {
                 <span class="vs-timeline-ago" title="${fullDate}">${ago}</span>
               </div>
               ${description}
-              <div class="vs-timeline-meta">${snap.file_count} files · ${sizeKB}</div>
+              <div class="vs-timeline-meta">Snapshot #${escapeHtml(String(snap.id))} · ${snap.file_count} files · ${sizeKB}</div>
               <div class="vs-timeline-actions">
-                <button data-preview-id="${snap.id}" data-snap='${JSON.stringify({ label: snap.label, description: snap.description, type: snap.snapshot_type, files: snap.file_count, size: sizeKB, date: fullDate }).replace(/'/g, '&#39;')}' class="vs-btn vs-btn-ghost vs-btn-xs" style="color: var(--vs-text-secondary);">
+                <button data-preview-id="${snap.id}" data-snap='${JSON.stringify({ id: snap.id, label: snap.label, description: snap.description, type: snap.snapshot_type, files: snap.file_count, size: sizeKB, date: fullDate }).replace(/'/g, '&#39;')}' class="vs-btn vs-btn-ghost vs-btn-xs" style="color: var(--vs-text-secondary);">
                   ${icons.eye} Preview
                 </button>
                 <button data-restore-id="${snap.id}" class="vs-btn vs-btn-ghost vs-btn-xs" style="color: var(--vs-text-secondary);">
@@ -465,8 +465,8 @@ function bindHistoryEvents(container) {
 
       const id = btn.dataset.restoreId;
       const confirmed = await showConfirmModal({
-        title: 'Restore Snapshot',
-        description: 'This will overwrite your current preview. A safety snapshot of your current state will be created automatically.',
+        title: 'Restore snapshot #' + id,
+        description: 'This replaces preview files and shared assets. Asset changes can affect the live site. PHP pages still need Publish. VoxelSite saves a safety snapshot before restoring.',
         confirmLabel: 'Restore',
       });
       if (!confirmed) return;
@@ -1023,10 +1023,12 @@ function showSnapshotPreviewModal(snap) {
   overlay.innerHTML = `
     <div class="vs-modal" style="max-width: 480px;">
       <div class="vs-modal-header">
-        <h2 class="vs-modal-title">${icons.eye} Snapshot Details</h2>
+        <h2 class="vs-modal-title">${icons.eye} Snapshot #${escapeHtml(String(snap.id))}</h2>
       </div>
       <div class="vs-modal-body">
         <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px;">
+          <span style="color: var(--vs-text-ghost);">Snapshot</span>
+          <span style="color: var(--vs-text-primary);">#${escapeHtml(String(snap.id))}</span>
           <span style="color: var(--vs-text-ghost);">Type</span>
           <span style="display: flex; align-items: center; gap: 6px;">
             <span style="width: 8px; height: 8px; border-radius: 50%; background: ${dotColor}; display: inline-block;"></span>

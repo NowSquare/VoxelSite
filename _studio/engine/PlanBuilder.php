@@ -165,7 +165,7 @@ PROMPT;
 
         $data = json_decode($cleaned, true);
 
-        if (!is_array($data)) {
+        if (!is_array($data) || !isset($data['edits']) || !is_array($data['edits']) || !array_is_list($data['edits'])) {
             throw new \RuntimeException(
                 'PlanBuilder: LLM returned unparseable response: ' . mb_substr($raw, 0, 300)
             );
@@ -177,44 +177,49 @@ PROMPT;
 
         // Build per-file index: file path → [{start, end, content}]
         $fileRegions = [];
+        $sourceHashes = [];
+        $sourceContents = [];
         foreach ($scoped as $s) {
             $path = $s['file'] ?? '';
             if ($path === '') continue;
             $fileRegions[$path] = $s['regions'] ?? [];
+            $sourceHashes[$path] = $s['source_hash'] ?? null;
+            $sourceContents[$path] = $s['source_content'] ?? null;
         }
 
-        foreach (($data['edits'] ?? []) as $edit) {
-            if (!is_array($edit)) continue;
+        foreach ($data['edits'] as $edit) {
+            if (!is_array($edit)) {
+                throw new \RuntimeException('PlanBuilder: every proposed edit must be an object. No part of this plan can be applied.');
+            }
 
-            $file = $edit['file'] ?? '';
+            $file = is_string($edit['file'] ?? null) ? $edit['file'] : '';
             $strategy = $edit['strategy'] ?? 'line-replace';
 
-            // Validate file is in our candidate set
-            if (!isset($fileRegions[$file])) continue;
+            $fileInScope = isset($fileRegions[$file]);
 
-            // Validate strategy
-            if (!in_array($strategy, $validStrategies, true)) {
-                $strategy = 'line-replace';
-            }
+            $validStrategy = in_array($strategy, $validStrategies, true);
 
             // Validate region bounds
             $region = $edit['region'] ?? [];
-            if (!isset($region['start']) || !isset($region['end'])) {
+            $validBounds = is_array($region) && isset($region['start'], $region['end'])
+                && is_int($region['start']) && is_int($region['end']);
+            if (!$validBounds) {
                 $region = ['start' => 1, 'end' => 1];
             }
             $regionStart = (int) $region['start'];
             $regionEnd   = (int) $region['end'];
 
             // Check before_snippet anchoring against scoped region content
-            $beforeSnippet = (string) ($edit['before_snippet'] ?? '');
-            $afterSnippet  = (string) ($edit['after_snippet'] ?? '');
+            $snippetsValid = is_string($edit['before_snippet'] ?? null) && is_string($edit['after_snippet'] ?? null);
+            $beforeSnippet = is_string($edit['before_snippet'] ?? null) ? $edit['before_snippet'] : '';
+            $afterSnippet  = is_string($edit['after_snippet'] ?? null) ? $edit['after_snippet'] : '';
             $anchored      = false;
             $anchorReason  = '';
 
             // Helper: check if the edit's target position falls within any scoped region
             $positionInScope = false;
             $containingRegion = null;
-            foreach ($fileRegions[$file] as $scopedRegion) {
+            foreach (($fileRegions[$file] ?? []) as $scopedRegion) {
                 $scopedStart = (int) ($scopedRegion['start'] ?? 0);
                 $scopedEnd   = (int) ($scopedRegion['end'] ?? 0);
                 if ($regionStart >= $scopedStart && $regionEnd <= $scopedEnd) {
@@ -247,7 +252,7 @@ PROMPT;
                 // Verify before_snippet is an exact substring of at least one
                 // scoped region for this file, with valid bounds
                 $snippetSeen = false;
-                foreach ($fileRegions[$file] as $scopedRegion) {
+                foreach (($fileRegions[$file] ?? []) as $scopedRegion) {
                     $regionContent = $scopedRegion['content'] ?? '';
                     if ($regionContent === '' || !str_contains($regionContent, $beforeSnippet)) {
                         continue;
@@ -272,6 +277,17 @@ PROMPT;
                 }
             }
 
+            if (!$fileInScope || !$validStrategy || !$snippetsValid || !$validBounds || $regionStart < 1 || $regionEnd < $regionStart) {
+                $anchored = false;
+                $anchorReason = !$fileInScope ? 'File is outside the discovered context' :
+                    (!$validStrategy ? 'Unsupported edit strategy' : (!$snippetsValid ? 'Invalid snippets' : 'Invalid region bounds'));
+            }
+            if ($anchored && is_string($sourceContents[$file] ?? null)
+                && substr_count($sourceContents[$file], $beforeSnippet) !== 1) {
+                $anchored = false;
+                $anchorReason = 'Source anchor must occur exactly once in the complete original file';
+            }
+
             $edits[] = [
                 'file'            => $file,
                 'region'          => [
@@ -285,7 +301,26 @@ PROMPT;
                 'verification'    => trim((string) ($edit['verification'] ?? '')),
                 'anchored'        => $anchored,
                 'anchor_issue'    => $anchorReason,
+                'source_hash'     => $sourceHashes[$file] ?? null,
             ];
+        }
+
+        // Reject intersecting source anchors before offering an executable plan.
+        // Validation must never silently turn an incomplete plan into a smaller one.
+        foreach ($edits as $i => $edit) {
+            if (!$edit['anchored']) continue;
+            foreach ($edits as $j => $other) {
+                if ($j <= $i || !$other['anchored'] || $other['file'] !== $edit['file']) continue;
+                foreach ($fileRegions[$edit['file']] as $sourceRegion) {
+                    $source = $sourceRegion['content'] ?? '';
+                    $a = strpos($source, $edit['before_snippet']);
+                    $b = strpos($source, $other['before_snippet']);
+                    if ($a !== false && $b !== false && $a < $b + strlen($other['before_snippet']) && $b < $a + strlen($edit['before_snippet'])) {
+                        $edits[$i]['anchored'] = $edits[$j]['anchored'] = false;
+                        $edits[$i]['anchor_issue'] = $edits[$j]['anchor_issue'] = 'Overlapping source anchors require a new plan';
+                    }
+                }
+            }
         }
 
         // Validate risk level
@@ -316,6 +351,9 @@ PROMPT;
             'risk_level'        => $riskLevel,
             'anchored_count'    => $anchoredCount,
             'unanchored_count'  => $unanchoredCount,
+            'applicable'       => $anchoredCount > 0 && $unanchoredCount === 0,
+            'validation_errors' => array_values(array_map(fn(array $e) => $e['file'] . ': ' . $e['anchor_issue'],
+                array_filter($edits, fn(array $e) => !$e['anchored']))),
         ];
     }
 }

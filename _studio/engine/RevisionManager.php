@@ -38,7 +38,7 @@ class RevisionManager
         $this->db = $db ?? Database::getInstance();
         $this->settings = $settings ?? new Settings($this->db);
         $this->fileManager = $fileManager ?? new FileManager($this->db);
-        $this->revisionsPath = dirname(__DIR__) . '/revisions';
+        $this->revisionsPath = getenv('VS_TEST_REVISIONS_DIR') ?: dirname(__DIR__) . '/revisions';
     }
 
     /**
@@ -100,12 +100,73 @@ class RevisionManager
             if ($content !== null) {
                 $targetFile = $beforePath . '/' . $op['path'];
                 $this->ensureDir(dirname($targetFile));
-                file_put_contents($targetFile, $content);
+                if (file_put_contents($targetFile, $content) !== strlen($content)) {
+                    throw new RuntimeException('Cannot save revision before-state.');
+                }
             }
             // If file doesn't exist (new file), no before state needed
         }
 
         return $revisionId;
+    }
+
+    /**
+     * Record an already applied Site transaction without endangering redo history.
+     * The optional callback persists its terminal outcome in the same DB commit.
+     */
+    public function recordAppliedRevision(array $operations, string $description, int $userId, array $before, ?callable $onRecorded = null): int
+    {
+        $stage = $this->revisionsPath . '/.pending-site-' . bin2hex(random_bytes(8));
+        $committedPath = null;
+        $futureIds = [];
+        $metadata = [];
+        try {
+            $this->ensureDir($stage . '/before');
+            $this->ensureDir($stage . '/after');
+            foreach ($operations as $operation) {
+                $path = $operation['path'];
+                if (!array_key_exists($path, $before)) throw new RuntimeException('Missing original revision state: ' . $path);
+                $after = $this->fileManager->readFile($path);
+                if ($after === null) throw new RuntimeException('Cannot capture applied revision: ' . $path);
+                $metadata[] = ['path' => $path, 'action' => $operation['action'], 'had_previous' => $before[$path] !== null];
+                foreach (['before' => $before[$path], 'after' => $after] as $phase => $content) {
+                    if ($content === null) continue;
+                    $target = $stage . '/' . $phase . '/' . $path;
+                    $this->ensureDir(dirname($target));
+                    if (file_put_contents($target, $content) !== strlen($content) || file_get_contents($target) !== $content) {
+                        throw new RuntimeException('Cannot save exact revision ' . $phase . '-state.');
+                    }
+                }
+            }
+            $id = $this->db->transaction(function () use ($metadata, $description, $userId, $stage, $onRecorded, &$committedPath, &$futureIds) {
+                $pointer = $this->normalizePointer();
+                $futureIds = array_column($this->db->query('SELECT id FROM revisions WHERE id > ?', [$pointer]), 'id');
+                $id = $this->db->insert('revisions', ['prompt_log_id' => null, 'user_id' => $userId,
+                    'description' => $description, 'files_changed' => json_encode($metadata, JSON_THROW_ON_ERROR), 'created_at' => now()]);
+                $committedPath = $this->revisionsPath . '/' . $id;
+                if (file_exists($committedPath) || !rename($stage, $committedPath)) {
+                    $committedPath = null;
+                    throw new RuntimeException('Cannot finalize captured revision.');
+                }
+                foreach ($futureIds as $futureId) $this->db->delete('revisions', 'id = ?', [$futureId]);
+                $this->settings->set('revision_pointer', $id);
+                if ($onRecorded !== null) $onRecorded($id);
+                return $id;
+            });
+        } catch (\Throwable $error) {
+            if ($committedPath !== null) $this->removeDir($committedPath);
+            $this->removeDir($stage);
+            // Settings caches must not retain a pointer from a rolled back DB transaction.
+            $this->settings = new Settings($this->db);
+            throw $error;
+        }
+        // Unreferenced future directories are cleanup only, after the durable commit.
+        // A cleanup problem must not report a committed Site transaction as failed.
+        foreach ($futureIds as $futureId) {
+            try { $this->removeDir($this->revisionsPath . '/' . $futureId); }
+            catch (\Throwable $error) { Logger::warning('revisions', 'Could not remove discarded revision directory', ['id' => $futureId, 'error' => $error->getMessage()]); }
+        }
+        return $id;
     }
 
     /**
@@ -126,7 +187,9 @@ class RevisionManager
                 if ($content !== null) {
                     $targetFile = $afterPath . '/' . $op['path'];
                     $this->ensureDir(dirname($targetFile));
-                    file_put_contents($targetFile, $content);
+                    if (file_put_contents($targetFile, $content) !== strlen($content)) {
+                        throw new RuntimeException('Cannot save revision after-state.');
+                    }
                 }
             }
             // For deletes: no after state (file was removed)
@@ -166,41 +229,11 @@ class RevisionManager
             return null;
         }
 
-        $filesChanged = json_decode($revision['files_changed'], true);
-        $beforePath = $this->revisionsPath . '/' . $pointer . '/before';
-        $filesRestored = [];
-
-        foreach ($filesChanged as $file) {
-            $beforeFile = $beforePath . '/' . $file['path'];
-
-            if ($file['had_previous'] && file_exists($beforeFile)) {
-                // Restore the previous version
-                $content = file_get_contents($beforeFile);
-                $this->fileManager->writeFile($file['path'], $content);
-                $filesRestored[] = $file['path'];
-            } elseif (!$file['had_previous']) {
-                // File was created by this revision — delete it
-                $this->fileManager->deleteFile($file['path']);
-                $filesRestored[] = $file['path'];
-            }
-        }
-
-        // Mark revision as undone
-        $this->db->update('revisions', ['is_undone' => 1], 'id = ?', [$pointer]);
-
-        // Move pointer back
-        $previousRevision = $this->db->queryOne(
-            'SELECT id FROM revisions WHERE id < ? ORDER BY id DESC LIMIT 1',
-            [$pointer]
-        );
-        $newPointer = $previousRevision ? (int) $previousRevision['id'] : 0;
-        $this->settings->set('revision_pointer', $newPointer);
-
-        // Sync pages
-        $this->fileManager->syncPageRegistry();
-        if ($this->fileManager->pathsAffectTailwind($filesRestored)) {
-            $this->fileManager->compileTailwind();
-        }
+        $filesRestored = $this->restoreRevisionFiles($revision, 'before', function () use ($pointer) {
+            $this->db->update('revisions', ['is_undone' => 1], 'id = ?', [$pointer]);
+            $previous = $this->db->queryOne('SELECT id FROM revisions WHERE id < ? ORDER BY id DESC LIMIT 1', [$pointer]);
+            $this->settings->set('revision_pointer', $previous ? (int) $previous['id'] : 0);
+        });
 
         return [
             'revision_id'    => $pointer,
@@ -232,42 +265,74 @@ class RevisionManager
         }
 
         $revisionId = (int) $nextRevision['id'];
-        $filesChanged = json_decode($nextRevision['files_changed'], true);
-        $afterPath = $this->revisionsPath . '/' . $revisionId . '/after';
-        $filesRestored = [];
-
-        foreach ($filesChanged as $file) {
-            $afterFile = $afterPath . '/' . $file['path'];
-
-            if (($file['action'] === 'write' || $file['action'] === 'merge') && file_exists($afterFile)) {
-                // Restore the after version
-                $content = file_get_contents($afterFile);
-                $this->fileManager->writeFile($file['path'], $content);
-                $filesRestored[] = $file['path'];
-            } elseif ($file['action'] === 'delete') {
-                // Re-delete the file
-                $this->fileManager->deleteFile($file['path']);
-                $filesRestored[] = $file['path'];
-            }
-        }
-
-        // Mark revision as not undone
-        $this->db->update('revisions', ['is_undone' => 0], 'id = ?', [$revisionId]);
-
-        // Move pointer forward
-        $this->settings->set('revision_pointer', $revisionId);
-
-        // Sync pages
-        $this->fileManager->syncPageRegistry();
-        if ($this->fileManager->pathsAffectTailwind($filesRestored)) {
-            $this->fileManager->compileTailwind();
-        }
+        $filesRestored = $this->restoreRevisionFiles($nextRevision, 'after', function () use ($revisionId) {
+            $this->db->update('revisions', ['is_undone' => 0], 'id = ?', [$revisionId]);
+            $this->settings->set('revision_pointer', $revisionId);
+        });
 
         return [
             'revision_id'    => $revisionId,
             'description'    => $nextRevision['description'],
             'files_restored' => $filesRestored,
         ];
+    }
+
+    /** Restore exact history bytes; a failed compiler never advances the pointer. */
+    private function restoreRevisionFiles(array $revision, string $phase, callable $finalize): array
+    {
+        $files = json_decode($revision['files_changed'], true, 512, JSON_THROW_ON_ERROR);
+        $sourceRoot = $this->revisionsPath . '/' . $revision['id'] . '/' . $phase;
+        $targets = [];
+        $originals = [];
+        foreach ($files as $file) {
+            $path = $file['path'];
+            $capture = $sourceRoot . '/' . $path;
+            if (is_file($capture)) {
+                $targets[$path] = file_get_contents($capture);
+                if ($targets[$path] === false) throw new RuntimeException('Cannot read captured revision: ' . $path);
+            } elseif (($phase === 'before' && !$file['had_previous']) || ($phase === 'after' && $file['action'] === 'delete')) {
+                $targets[$path] = null;
+            } else {
+                throw new RuntimeException('Captured revision file is missing: ' . $path . '. No files were changed.');
+            }
+            $originals[$path] = $this->fileManager->readFile($path);
+        }
+        $originals['assets/css/tailwind.css'] = $this->fileManager->readFile('assets/css/tailwind.css');
+        $attempted = [];
+        try {
+            foreach ($targets as $path => $content) {
+                $attempted[] = $path;
+                if ($content === null) $this->fileManager->deleteFile($path);
+                else $this->fileManager->writeExactFile($path, $content);
+                if ($this->fileManager->readFile($path) !== $content) throw new RuntimeException('Revision restoration differs from captured bytes: ' . $path);
+            }
+            if ($this->fileManager->pathsAffectTailwind(array_keys($targets))) {
+                $attempted[] = 'assets/css/tailwind.css';
+                $compiled = $this->fileManager->compileTailwind();
+                if (($compiled['ok'] ?? false) !== true) throw new RuntimeException('Tailwind compilation failed.');
+            }
+            $this->db->transaction(function () use ($finalize) {
+                $this->fileManager->syncPageRegistry(true);
+                $finalize();
+            });
+        } catch (\Throwable $error) {
+            $remaining = [];
+            foreach (array_unique($attempted) as $path) {
+                try {
+                    if ($this->fileManager->readFile($path) !== $originals[$path]) {
+                        if ($originals[$path] === null) $this->fileManager->deleteFile($path);
+                        else $this->fileManager->writeExactFile($path, $originals[$path]);
+                    }
+                    if ($this->fileManager->readFile($path) !== $originals[$path]) throw new RuntimeException('Unverified restore');
+                } catch (\Throwable) { $remaining[] = $path; }
+            }
+            try { $this->fileManager->syncPageRegistry(true); } catch (\Throwable) { $remaining[] = 'page registry'; }
+            $this->settings = new Settings($this->db);
+            throw new RuntimeException($error->getMessage() . ($remaining === []
+                ? ' The previous files were restored and verified; history did not move.'
+                : ' Recovery is incomplete for: ' . implode(', ', $remaining) . '. Restore the safety snapshot.'), 0, $error);
+        }
+        return array_keys($targets);
     }
 
     /**
@@ -382,8 +447,8 @@ class RevisionManager
      */
     private function ensureDir(string $path): void
     {
-        if (!is_dir($path)) {
-            mkdir($path, 0755, true);
+        if (!is_dir($path) && !@mkdir($path, 0755, true) && !is_dir($path)) {
+            throw new RuntimeException('Cannot create revision capture directory.');
         }
     }
 

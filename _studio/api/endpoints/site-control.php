@@ -18,6 +18,8 @@ use VoxelSite\FileManager;
 use VoxelSite\NavLinksParser;
 use VoxelSite\PageService;
 
+require_once dirname(__DIR__, 2) . '/engine/SiteControlSnapshots.php';
+
 $user   = $_REQUEST['_user'] ?? null;
 $method = $_REQUEST['_route_method'];
 $path   = $_REQUEST['_route_path'];
@@ -29,6 +31,10 @@ if (($user['role'] ?? '') === 'viewer') {
         'message' => 'Site Control mutations require editor or owner access.',
     ]], 403);
     return;
+}
+
+if ($method === 'POST') {
+    $siteMutationLock = \VoxelSite\SiteMutationLock::acquire();
 }
 
 // ═══════════════════════════════════════════
@@ -82,13 +88,13 @@ if ($method === 'POST' && $path === '/site-control/url-rename') {
         return;
     }
 
-    // Normalize new path → slug (Phase 2A: single-segment only)
+    // Change the basename in place; structural parent changes belong to Move.
     $newSlug = normalizeSiteControlPath($newPath);
 
     if ($newSlug === null) {
         jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'nested_path',
-            'message' => 'Nested URL paths (e.g. /services/web-design) are not supported in this version. Use a single-segment path.',
+            'code'    => 'invalid_path',
+            'message' => 'Use a valid URL path with letters, numbers, and hyphens in each segment.',
         ]], 422);
         return;
     }
@@ -98,6 +104,14 @@ if ($method === 'POST' && $path === '/site-control/url-rename') {
             'code'    => 'invalid_path',
             'message' => 'The new URL path is invalid. Use lowercase letters, numbers, and hyphens.',
         ]], 400);
+        return;
+    }
+
+    if (dirname($newSlug) !== dirname($oldSlug)) {
+        jsonResponse(['ok' => false, 'error' => [
+            'code' => 'parent_change',
+            'message' => 'Keep the current parent path. Use Move to change the parent, then Change URL to rename the page.',
+        ]], 422);
         return;
     }
 
@@ -119,6 +133,10 @@ if ($method === 'POST' && $path === '/site-control/url-rename') {
         ]], 409);
         return;
     }
+
+    $reviewGraph = (new \VoxelSite\SiteGraphIndexer($db, $fileManager))->buildGraph();
+    if (scRejectUnsupportedReferences($reviewGraph)) return;
+    $referenceCount = count($reviewGraph->getInEdges($routeId, 'links_to'));
 
     // ── Create pre-mutation snapshot (only after validation passes) ──
     $snapshotResult = createSiteControlSnapshot(
@@ -147,6 +165,8 @@ if ($method === 'POST' && $path === '/site-control/url-rename') {
             if (!$restoreResult['ok']) {
                 jsonResponse(['ok' => false, 'error' => [
                     'code'    => 'restore_failed',
+                    'snapshotId' => $snapshotId,
+                    'restored' => false,
                     'message' => 'URL rename failed and automatic restore also failed. Manual intervention required. '
                                . 'Original error: ' . $e->getMessage()
                                . ' Restore error: ' . ($restoreResult['error'] ?? 'unknown'),
@@ -171,6 +191,8 @@ if ($method === 'POST' && $path === '/site-control/url-rename') {
 
         jsonResponse(['ok' => false, 'error' => [
             'code'    => $errorCode,
+            'snapshotId' => $snapshotId,
+            'restored' => true,
             'message' => $e->getMessage(),
         ]], $httpStatus);
         return;
@@ -191,7 +213,8 @@ if ($method === 'POST' && $path === '/site-control/url-rename') {
         'pageSlug'        => $newSlug,
         'updatedFiles'    => $updatedFiles,
         'snapshotId'      => $snapshotId,
-        'referenceCount'  => count($refUpdatedFiles),
+        'referenceCount'  => $referenceCount,
+        'referenceFileCount' => count($refUpdatedFiles),
         'suggestedPrompt' => $suggestedPrompt,
         'message'         => "URL updated from {$oldPath} to /{$newSlug}.",
     ]]);
@@ -583,7 +606,7 @@ if ($method === 'POST' && $path === '/site-control/nav-reorder') {
             if ($normalizedContent === null) {
                 throw new \RuntimeException('Normalization failed: could not produce a valid canonical nav.php');
             }
-            file_put_contents($navFilePath, $normalizedContent);
+            scWriteVerified($navFilePath, $normalizedContent);
             // Re-read so we work with the normalized file
             $navContent = file_get_contents($navFilePath);
             $navLinks = NavLinksParser::parse($navContent);
@@ -603,7 +626,7 @@ if ($method === 'POST' && $path === '/site-control/nav-reorder') {
             throw new \RuntimeException('Could not locate $navLinks block for replacement');
         }
 
-        file_put_contents($navFilePath, $updatedContent);
+        scWriteVerified($navFilePath, $updatedContent);
 
         // Test hook: force failure AFTER the write so rollback must repair real changes
         if (getenv('VS_TEST_NAV_FAIL_WRITE')) {
@@ -625,6 +648,8 @@ if ($method === 'POST' && $path === '/site-control/nav-reorder') {
             if (!$restoreResult['ok']) {
                 jsonResponse(['ok' => false, 'error' => [
                     'code'    => 'restore_failed',
+                    'snapshotId' => $snapshotId,
+                    'restored' => false,
                     'message' => 'Nav reorder failed and automatic restore also failed. Manual intervention required. '
                                . 'Original error: ' . $e->getMessage()
                                . ' Restore error: ' . ($restoreResult['error'] ?? 'unknown'),
@@ -644,6 +669,8 @@ if ($method === 'POST' && $path === '/site-control/nav-reorder') {
 
         jsonResponse(['ok' => false, 'error' => [
             'code'    => $errorCode,
+            'snapshotId' => $snapshotId,
+            'restored' => true,
             'message' => $e->getMessage(),
         ]], $httpStatus);
         return;
@@ -779,7 +806,7 @@ if ($method === 'POST' && $path === '/site-control/page-rename') {
 
         $pageContent = file_get_contents($pageFilePath);
         $updatedContent = PageService::updatePhpMeta($pageContent, $newTitle, $slug);
-        file_put_contents($pageFilePath, $updatedContent);
+        scWriteVerified($pageFilePath, $updatedContent);
 
         // 2. Update pages.title in DB
         $dbUpdates = [
@@ -840,9 +867,8 @@ if ($method === 'POST' && $path === '/site-control/page-rename') {
                         // Serialize and write back
                         $newNavBlock = NavLinksParser::serialize($navLinks);
                         $updatedNav = NavLinksParser::replaceNavBlock($navContent, $newNavBlock);
-                        if ($updatedNav !== null) {
-                            file_put_contents($navFilePath, $updatedNav);
-                        }
+                        if ($updatedNav === null) throw new \RuntimeException('Could not replace canonical nav declaration.');
+                        scWriteVerified($navFilePath, $updatedNav);
 
                         // Update DB projection
                         $dbUpdates['nav_label'] = $newTitle;
@@ -870,7 +896,7 @@ if ($method === 'POST' && $path === '/site-control/page-rename') {
 
         // Tailwind recompile if page file changed
         if ($fileManager->pathAffectsTailwind($page['file_path'])) {
-            $fileManager->compileTailwind();
+            if (!($fileManager->compileTailwind()['ok'] ?? false)) throw new \RuntimeException('Could not compile website styles.');
         }
 
     } catch (\Throwable $e) {
@@ -880,6 +906,8 @@ if ($method === 'POST' && $path === '/site-control/page-rename') {
             if (!$restoreResult['ok']) {
                 jsonResponse(['ok' => false, 'error' => [
                     'code'    => 'restore_failed',
+                    'snapshotId' => $snapshotId,
+                    'restored' => false,
                     'message' => 'Page rename failed and automatic restore also failed. Manual intervention required. '
                                . 'Original error: ' . $e->getMessage()
                                . ' Restore error: ' . ($restoreResult['error'] ?? 'unknown'),
@@ -897,6 +925,8 @@ if ($method === 'POST' && $path === '/site-control/page-rename') {
 
         jsonResponse(['ok' => false, 'error' => [
             'code'    => $errorCode,
+            'snapshotId' => $snapshotId,
+            'restored' => true,
             'message' => $e->getMessage(),
         ]], $httpStatus);
         return;
@@ -1027,6 +1057,7 @@ if ($method === 'POST' && $path === '/site-control/page-delete') {
     try {
         $indexer = new \VoxelSite\SiteGraphIndexer($db);
         $graph   = $indexer->buildGraph();
+        if (scRejectUnsupportedReferences($graph)) return;
 
         $routeNodeId = 'route:' . $routePath;
         $inboundEdges = $graph->getInEdges($routeNodeId, 'links_to');
@@ -1050,8 +1081,8 @@ if ($method === 'POST' && $path === '/site-control/page-delete') {
 
         $affectedReferences = array_values($refsBySource);
     } catch (\Throwable $e) {
-        // Graph indexing failure is non-fatal — proceed with deletion
-        // but report zero affected references
+        jsonResponse(['ok' => false, 'error' => ['code' => 'inspection_failed', 'message' => 'Could not verify page references. Refresh Site and try again.']], 500);
+        return;
     }
 
     // ── Create pre-mutation snapshot ──
@@ -1111,7 +1142,7 @@ if ($method === 'POST' && $path === '/site-control/page-delete') {
                         );
                     }
 
-                    $written = file_put_contents($navFilePath, $updatedNavContent);
+                    $written = scWriteVerified($navFilePath, $updatedNavContent);
                     if ($written === false) {
                         throw new \RuntimeException(
                             'Nav entry removal succeeded in memory but file_put_contents() failed to write nav file.'
@@ -1162,7 +1193,7 @@ if ($method === 'POST' && $path === '/site-control/page-delete') {
 
         // 7. Tailwind recompile if any cleaned-up files affect it
         if (!empty($cleanedUpFiles) && $fileManager->pathsAffectTailwind($cleanedUpFiles)) {
-            $fileManager->compileTailwind();
+            if (!($fileManager->compileTailwind()['ok'] ?? false)) throw new \RuntimeException('Could not compile website styles.');
         }
 
     } catch (\Throwable $e) {
@@ -1172,6 +1203,8 @@ if ($method === 'POST' && $path === '/site-control/page-delete') {
             if (!$restoreResult['ok']) {
                 jsonResponse(['ok' => false, 'error' => [
                     'code'    => 'restore_failed',
+                    'snapshotId' => $snapshotId,
+                    'restored' => false,
                     'message' => 'Page delete failed and automatic restore also failed. Manual intervention required. '
                                . 'Original error: ' . $e->getMessage()
                                . ' Restore error: ' . ($restoreResult['error'] ?? 'unknown'),
@@ -1182,6 +1215,8 @@ if ($method === 'POST' && $path === '/site-control/page-delete') {
 
         jsonResponse(['ok' => false, 'error' => [
             'code'    => 'delete_failed',
+            'snapshotId' => $snapshotId,
+            'restored' => true,
             'message' => $e->getMessage(),
         ]], 500);
         return;
@@ -1222,6 +1257,11 @@ if ($method === 'POST' && $path === '/site-control/structural-move') {
 
     $pageId       = trim($body['pageId'] ?? '');
     $targetParent = $body['targetParent'] ?? null;
+    $targetIndex = $body['targetIndex'] ?? null;
+    if ($targetIndex !== null && (!is_int($targetIndex) || $targetIndex < 0)) {
+        jsonResponse(['ok' => false, 'error' => ['code' => 'invalid_target_index', 'message' => 'targetIndex must be a non-negative integer.']], 422);
+        return;
+    }
 
     // ── 3.1 Validate required fields ──
     if ($pageId === '') {
@@ -1439,6 +1479,7 @@ if ($method === 'POST' && $path === '/site-control/structural-move') {
     try {
         $indexer = new \VoxelSite\SiteGraphIndexer($db);
         $graph   = $indexer->buildGraph();
+        if (scRejectUnsupportedReferences($graph)) return;
 
         foreach ($subtree as $page) {
             $routeNodeId  = 'route:/' . $page['old_slug'];
@@ -1449,7 +1490,7 @@ if ($method === 'POST' && $path === '/site-control/structural-move') {
                 // Skip inbound links from other pages in the subtree (they'll be rewritten)
                 $isFromSubtree = false;
                 foreach ($subtree as $other) {
-                    if ($sourceId === 'file:' . $other['old_file']) {
+                    if ($sourceId === 'page:' . $other['old_file']) {
                         $isFromSubtree = true;
                         break;
                     }
@@ -1474,7 +1515,8 @@ if ($method === 'POST' && $path === '/site-control/structural-move') {
 
         $affectedReferences = array_values($affectedReferences);
     } catch (\Throwable $e) {
-        // Graph indexing failure is non-fatal
+        jsonResponse(['ok' => false, 'error' => ['code' => 'inspection_failed', 'message' => 'Could not verify page references. Refresh Site and try again.']], 500);
+        return;
     }
 
     // ── 3.8 Create pre-mutation snapshot ──
@@ -1528,8 +1570,9 @@ if ($method === 'POST' && $path === '/site-control/structural-move') {
             }
 
             $updated = PageService::updatePhpMeta($content, $page['title'], $page['new_slug']);
+            $updated = PageService::rebasePageIncludes($updated, $page['old_file'], $page['new_file']);
             if ($updated !== $content) {
-                $written = file_put_contents($newAbsPath, $updated);
+                $written = scWriteVerified($newAbsPath, $updated);
                 if ($written === false) {
                     throw new \RuntimeException("Could not write updated metadata to {$page['new_file']}");
                 }
@@ -1568,18 +1611,30 @@ if ($method === 'POST' && $path === '/site-control/structural-move') {
                         $newParentHref = $slashCount === 0
                             ? null
                             : '/' . implode('/', array_slice(explode('/', $page['new_slug']), 0, -1));
-                        $relocResult = scRelocateNavEntry($navLinks, $oldHref, $newHref, $newParentHref);
+                        $existingHref = NavLinksParser::findPosition($navLinks, $oldHref) !== null ? $oldHref : $newHref;
+                        $relocResult = scRelocateNavEntry($navLinks, $existingHref, $newHref, $newParentHref);
                         $navLinks = $relocResult['navLinks'];
                         $navStatusPerPage[$page['old_file']] = $relocResult['status'];
                     } else {
                         // depth > 1: remove from nav (page is still routable but hidden)
-                        $result = scRemoveNavEntryAndPromoteChildren($navLinks, $oldHref);
+                        $result = scRemoveNavEntryAndPromoteChildren($navLinks, NavLinksParser::findPosition($navLinks, $oldHref) !== null ? $oldHref : $newHref);
                         $navLinks = $result['navLinks'];
                         $navStatusPerPage[$page['old_file']] = 'removed';
                     }
                     $navModified = true;
                 }
 
+                if ($targetIndex !== null) {
+                    $sourceNewHref = '/' . $slugMap[$sourceSlug];
+                    $position = NavLinksParser::findPosition($navLinks, $sourceNewHref);
+                    if ($position !== null) {
+                        if ($targetIndex >= $position['siblingCount']) {
+                            throw new \RuntimeException('Chosen navigation position is no longer available. Review the move again.');
+                        }
+                        $navLinks = NavLinksParser::applyMove($navLinks, $sourceNewHref, $position['parentHref'], $targetIndex);
+                        $navModified = true;
+                    }
+                }
                 if ($navModified) {
                     $newNavBlock     = NavLinksParser::serialize($navLinks);
                     $updatedNavContent = NavLinksParser::replaceNavBlock($navContent, $newNavBlock);
@@ -1588,7 +1643,7 @@ if ($method === 'POST' && $path === '/site-control/structural-move') {
                         throw new \RuntimeException('Nav update succeeded in memory but replaceNavBlock() failed.');
                     }
 
-                    $written = file_put_contents($navFilePath, $updatedNavContent);
+                    $written = scWriteVerified($navFilePath, $updatedNavContent);
                     if ($written === false) {
                         throw new \RuntimeException('Nav update succeeded in memory but file_put_contents() failed.');
                     }
@@ -1632,6 +1687,7 @@ if ($method === 'POST' && $path === '/site-control/structural-move') {
         if ($navUpdated) {
             $fileManager->syncNavOrderFromPartial();
         }
+        if (!($fileManager->compileTailwind()['ok'] ?? false)) throw new \RuntimeException('Could not compile website styles.');
 
     } catch (\Throwable $e) {
         // ── Automatic rollback from snapshot ──
@@ -1640,6 +1696,8 @@ if ($method === 'POST' && $path === '/site-control/structural-move') {
             if (!$restoreResult['ok']) {
                 jsonResponse(['ok' => false, 'error' => [
                     'code'    => 'restore_failed',
+                    'snapshotId' => $snapshotId,
+                    'restored' => false,
                     'message' => 'Structural move failed and automatic restore also failed. Manual intervention required. '
                                . 'Original error: ' . $e->getMessage()
                                . ' Restore error: ' . ($restoreResult['error'] ?? 'unknown'),
@@ -1650,6 +1708,8 @@ if ($method === 'POST' && $path === '/site-control/structural-move') {
 
         jsonResponse(['ok' => false, 'error' => [
             'code'    => 'move_failed',
+            'snapshotId' => $snapshotId,
+            'restored' => true,
             'message' => $e->getMessage(),
         ]], 500);
         return;
@@ -1667,6 +1727,7 @@ if ($method === 'POST' && $path === '/site-control/structural-move') {
             return $mp;
         }, $movedPageDetails),
         'totalPagesMoved'       => count($subtree),
+        'targetIndex'           => $targetIndex,
         'referencesRewritten'   => count($refUpdatedFiles),
         'snapshotId'            => $snapshotId,
         'affectedReferences'    => $affectedReferences,
@@ -1691,25 +1752,12 @@ jsonResponse(['ok' => false, 'error' => [
 //  Helper Functions
 // ═══════════════════════════════════════════
 
-/**
- * Normalize a URL path to a single-segment page slug.
- *
- * Phase 2A constraint: only single-segment paths are supported.
- * Returns null if the path contains slashes (multi-segment).
- * Returns '' if the path normalizes to nothing (invalid chars only).
- */
+/** Normalize an existing page URL without flattening nested path segments. */
 function normalizeSiteControlPath(string $value): ?string
 {
     $value = trim($value, '/ ');
-    // Strip .php extension if present
-    if (str_ends_with($value, '.php')) {
-        $value = substr($value, 0, -4);
-    }
-    // Reject multi-segment paths (Phase 2A: single-segment only)
-    if (str_contains($value, '/')) {
-        return null;
-    }
-    return PageService::normalizeSlug($value);
+    if (str_ends_with($value, '.php')) $value = substr($value, 0, -4);
+    return PageService::normalizePathSlug($value);
 }
 
 /**
@@ -1750,190 +1798,17 @@ function resolveRouteToPage(string $routeId, Database $db): ?array
     ];
 }
 
-/**
- * Create a pre-mutation safety snapshot.
- *
- * Inlined from snapshots.php because that endpoint file has top-level
- * side effects that would execute on require_once.
- */
-function createSiteControlSnapshot(Database $db, string $label, string $description): array
+/** Propagation is safe only when every potentially affected reference is inspectable. */
+function scRejectUnsupportedReferences(\VoxelSite\SiteGraph $graph): bool
 {
-    if (!class_exists('ZipArchive')) {
-        return ['ok' => false, 'error' => 'ZipArchive extension is not installed.'];
-    }
-
-    $snapshotDir = getenv('VS_TEST_SNAPSHOT_DIR') ?: dirname(__DIR__, 2) . '/data/snapshots';
-    $previewDir  = getenv('VS_TEST_PREVIEW_DIR')  ?: dirname(__DIR__, 2) . '/preview';
-    $assetsDir   = getenv('VS_TEST_ASSETS_DIR')   ?: dirname(__DIR__, 3) . '/assets';
-
-    if (!is_dir($snapshotDir)) {
-        mkdir($snapshotDir, 0755, true);
-    }
-
-    $timestamp = date('Y-m-d_H-i-s');
-    $filename  = "snapshot_auto_{$timestamp}.zip";
-    $zipPath   = $snapshotDir . '/' . $filename;
-    $fileCount = 0;
-
-    $zip = new \ZipArchive();
-    if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
-        return ['ok' => false, 'error' => 'Could not create snapshot archive.'];
-    }
-
-    // Add preview files
-    if (is_dir($previewDir)) {
-        $fileCount += scZipAddDir($zip, $previewDir, 'preview');
-    }
-
-    // Add assets
-    if (is_dir($assetsDir)) {
-        $fileCount += scZipAddDir($zip, $assetsDir, 'assets');
-    }
-
-    $zip->close();
-
-    if ($fileCount === 0) {
-        @unlink($zipPath);
-        return ['ok' => false, 'error' => 'Nothing to snapshot — no files found.'];
-    }
-
-    $sizeBytes = filesize($zipPath);
-
-    $id = $db->insert('snapshots', [
-        'filename'       => $filename,
-        'snapshot_type'  => 'auto',
-        'label'          => $label ?: null,
-        'description'    => $description ?: null,
-        'file_count'     => $fileCount,
-        'size_bytes'     => $sizeBytes,
-        'created_by'     => $_REQUEST['_user']['id'] ?? null,
-        'created_at'     => now(),
-    ]);
-
-    // Test hook: after snapshot is safely captured, delete a page file to
-    // force a write failure in the subsequent updatePage call. This lets
-    // the test exercise the real rollback path end-to-end.
-    // VS_TEST_SABOTAGE_FILE is never set in production.
-    $sabotageFile = getenv('VS_TEST_SABOTAGE_FILE');
-    if ($sabotageFile !== false && $sabotageFile !== '') {
-        $sabotageTarget = $previewDir . '/' . $sabotageFile;
-        if (file_exists($sabotageTarget)) {
-            @unlink($sabotageTarget);
-        }
-    }
-
-    return [
-        'ok'       => true,
-        'snapshot' => [
-            'id'       => $id,
-            'filename' => $filename,
-        ],
-    ];
-}
-
-/**
- * Attempt to restore from a snapshot by ID.
- */
-function restoreSiteControlSnapshot(Database $db, int $snapshotId): array
-{
-    $snapshot = $db->queryOne('SELECT * FROM snapshots WHERE id = ?', [$snapshotId]);
-    if (!$snapshot) {
-        return ['ok' => false, 'error' => 'Snapshot record not found.'];
-    }
-
-    $snapshotDir = getenv('VS_TEST_SNAPSHOT_DIR') ?: dirname(__DIR__, 2) . '/data/snapshots';
-    $previewDir  = getenv('VS_TEST_PREVIEW_DIR')  ?: dirname(__DIR__, 2) . '/preview';
-    $assetsDir   = getenv('VS_TEST_ASSETS_DIR')   ?: dirname(__DIR__, 3) . '/assets';
-
-    $zipPath = $snapshotDir . '/' . $snapshot['filename'];
-    if (!file_exists($zipPath)) {
-        return ['ok' => false, 'error' => 'Snapshot ZIP file is missing.'];
-    }
-
-    $zip = new \ZipArchive();
-    if ($zip->open($zipPath) !== true) {
-        return ['ok' => false, 'error' => 'Could not open snapshot archive.'];
-    }
-
-    // Clear current preview files (keep .gitkeep)
-    scClearDir($previewDir, ['gitkeep']);
-
-    // Clear current CSS/JS assets
-    scClearDir($assetsDir . '/css');
-    scClearDir($assetsDir . '/js');
-
-    // Extract files
-    for ($i = 0; $i < $zip->numFiles; $i++) {
-        $entry = $zip->getNameIndex($i);
-        if (!is_string($entry) || str_ends_with($entry, '/')) continue;
-
-        if (str_starts_with($entry, 'preview/')) {
-            $rel     = substr($entry, strlen('preview/'));
-            $baseDir = $previewDir;
-        } elseif (str_starts_with($entry, 'assets/')) {
-            $rel     = substr($entry, strlen('assets/'));
-            $baseDir = $assetsDir;
-        } else {
-            continue;
-        }
-
-        $content = $zip->getFromIndex($i);
-        if ($content === false) continue;
-
-        $target    = rtrim($baseDir, '/') . '/' . ltrim(str_replace('\\', '/', $rel), '/');
-        $parentDir = dirname($target);
-        if (!is_dir($parentDir)) @mkdir($parentDir, 0755, true);
-        file_put_contents($target, $content);
-    }
-
-    $zip->close();
-
-    // Resync page registry after restore
-    $fileManager = new \VoxelSite\FileManager($db);
-    $fileManager->syncPageRegistry();
-
-    return ['ok' => true];
-}
-
-/**
- * Recursively add a directory to a ZipArchive.
- */
-function scZipAddDir(\ZipArchive $zip, string $dir, string $prefix): int
-{
-    $count = 0;
-    $realDir = realpath($dir) ?: $dir;
-    $it = new \RecursiveIteratorIterator(
-        new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-        \RecursiveIteratorIterator::LEAVES_ONLY
-    );
-    foreach ($it as $file) {
-        if ($file->isFile()) {
-            $real = $file->getRealPath();
-            $rel  = $prefix . '/' . ltrim(str_replace($realDir, '', $real), DIRECTORY_SEPARATOR);
-            $zip->addFile($real, str_replace('\\', '/', $rel));
-            $count++;
-        }
-    }
-    return $count;
-}
-
-/**
- * Recursively remove files from a directory.
- */
-function scClearDir(string $dir, array $keepExtensions = []): void
-{
-    if (!is_dir($dir)) return;
-    $it = new \RecursiveIteratorIterator(
-        new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-        \RecursiveIteratorIterator::CHILD_FIRST
-    );
-    foreach ($it as $item) {
-        if ($item->isFile()) {
-            if (!in_array(ltrim($item->getExtension(), '.'), $keepExtensions, true)) {
-                @unlink($item->getRealPath());
-            }
-        }
-    }
+    $warnings = $graph->toArray()['warnings'] ?? [];
+    if (!$warnings) return false;
+    jsonResponse(['ok' => false, 'error' => [
+        'code' => 'unsupported_references',
+        'message' => 'Some PHP includes or links cannot be resolved safely. Review the listed files in Editor before changing URLs, moving, or deleting pages. Nothing was changed.',
+        'warnings' => $warnings,
+    ]], 422);
+    return true;
 }
 
 /**

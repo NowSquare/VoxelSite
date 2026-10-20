@@ -25,6 +25,8 @@ namespace VoxelSite;
  */
 class RegionScoper
 {
+    private const MAX_FILES = 24;
+    private const MAX_CONTEXT_BYTES = 96000;
     private FileManager $fileManager;
 
     public function __construct(?FileManager $fileManager = null)
@@ -50,6 +52,9 @@ class RegionScoper
      */
     public function scope(array $candidates, array $intent): array
     {
+        if (count($candidates) > self::MAX_FILES) {
+            throw new \RuntimeException('This request covers more than 24 files. Choose a page, shared partial or design token to narrow the request.');
+        }
         $category = $intent['category'] ?? 'content';
         $keywords = $intent['keywords'] ?? [];
         $scoped = [];
@@ -70,6 +75,9 @@ class RegionScoper
                 ];
                 continue;
             }
+            if (strlen($content) > 1048576) {
+                throw new \RuntimeException('A selected file exceeds the 1 MB planning limit. Narrow or split this file before planning.');
+            }
 
             $lines = explode("\n", $content);
             $totalLines = count($lines);
@@ -88,12 +96,25 @@ class RegionScoper
 
             $scoped[] = [
                 'file'        => $filePath,
+                'source_hash' => hash('sha256', $content),
+                // Validation only. buildUserMessage() and SSE metadata omit this.
+                'source_content' => $content,
                 'type'        => $candidate['type'] ?? 'unknown',
                 'regions'     => $result['regions'],
                 'total_lines' => $totalLines,
                 'strategy'    => $result['strategy'],
                 'reason'      => $candidate['reason'] ?? '',
             ];
+        }
+
+        $contextBytes = 0;
+        foreach ($scoped as $file) {
+            foreach ($file['regions'] as $region) {
+                $contextBytes += strlen($region['content']);
+            }
+        }
+        if ($contextBytes > self::MAX_CONTEXT_BYTES) {
+            throw new \RuntimeException('The selected context is too large. Choose a narrower page, partial or token request.');
         }
 
         return $scoped;

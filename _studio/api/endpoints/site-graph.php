@@ -8,7 +8,7 @@ declare(strict_types=1);
  * GET /site-graph              — Full graph index with summary, nodes, and edges
  * GET /site-graph/blast-radius — Blast radius for a specific node (?node=<nodeId>)
  *
- * These endpoints are read-only. No mutations, no side effects.
+ * Graph reads synchronize file-backed projections and recover interrupted Site work.
  */
 
 use VoxelSite\Database;
@@ -28,6 +28,18 @@ if ($user['role'] === 'viewer') {
         'message' => 'Site workspace requires editor or owner access.',
     ]], 403);
     return;
+}
+
+if (!\VoxelSite\DemoMode::isActive()) {
+    try {
+        $graphLock = \VoxelSite\SiteMutationLock::acquire();
+        $recoveryDb = Database::getInstance();
+        (new \VoxelSite\SiteMutationJournal($recoveryDb))->recoverInterrupted();
+        (new \VoxelSite\SitePlanStore($recoveryDb, new FileManager($recoveryDb)))->recoverInterrupted();
+    } catch (\Throwable $e) {
+        jsonResponse(['ok'=>false,'error'=>['code'=>'site_busy','message'=>$e->getMessage()]],409);
+        return;
+    }
 }
 
 // ═══════════════════════════════════════════
@@ -52,6 +64,7 @@ if ($method === 'GET' && $path === '/site-graph') {
             'summary'       => $summary,
             'nodes'         => $data['nodes'],
             'edges'         => $data['edges'],
+            'warnings'      => $data['warnings'] ?? [],
             'built_at'      => gmdate('Y-m-d\TH:i:s\Z'),
             'build_time_ms' => $buildTimeMs,
         ]]);
@@ -105,6 +118,7 @@ if ($method === 'GET' && $path === '/site-graph/blast-radius') {
             'affected_count' => count($affectedPages),
             'total_pages'    => $summary['pages'],
             'is_global'      => $isGlobal,
+            'warnings'       => $graph->toArray()['warnings'] ?? [],
         ]]);
     } catch (\Throwable $e) {
         jsonResponse(['ok' => false, 'error' => [

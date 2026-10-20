@@ -105,15 +105,22 @@ export function renderTree(nodes, depth) {
              data-page-id="${escapeHtml(node.id)}">
           ${hasChildren ? `
             <button class="vs-site-tree-toggle"
-                    data-toggle-page="${escapeHtml(node.id)}">
+                    data-toggle-page="${escapeHtml(node.id)}"
+                    aria-label="${isCollapsed ? 'Expand' : 'Collapse'} ${escapeHtml(node.label)}"
+                    aria-expanded="${!isCollapsed}">
               ${icons.chevronDown}
             </button>
           ` : `<span class="vs-site-tree-toggle-spacer"></span>`}
-          ${node.isHomepage ? `<span class="vs-site-tree-star">★</span>` : ''}
-          <span class="vs-site-tree-label">${escapeHtml(node.label)}</span>
-          ${node.hierarchySource === 'inferred' ? `<span class="vs-site-tree-inferred" title="Inferred from URL structure — not explicitly authored">ⁱ</span>` : ''}
-          ${isOverDepth ? `<span class="vs-site-tree-overdepth" title="Deeper than 3 levels, shown at Level 3">⁺</span>` : ''}
-          ${hasChildren ? `<span class="vs-site-tree-badge">${node.childCount}</span>` : ''}
+          <button type="button" class="vs-site-tree-select"
+                  data-select-page="${escapeHtml(node.id)}"
+                  aria-label="Inspect ${escapeHtml(node.label)}"
+                  aria-pressed="${selectedNodeId === node.id}">
+            ${node.isHomepage ? `<span class="vs-site-tree-star">★</span>` : ''}
+            <span class="vs-site-tree-label">${escapeHtml(node.label)}</span>
+            ${node.hierarchySource === 'inferred' ? `<span class="vs-site-tree-inferred" title="Inferred from URL structure — not explicitly authored">ⁱ</span>` : ''}
+            ${isOverDepth ? `<span class="vs-site-tree-overdepth" title="Deeper than 3 levels, shown at Level 3">⁺</span>` : ''}
+            ${hasChildren ? `<span class="vs-site-tree-badge">${node.childCount}</span>` : ''}
+          </button>
         </div>
         ${hasChildren ? `
           <div class="vs-site-tree-children">
@@ -252,7 +259,8 @@ function renderEntityItem(node, section) {
   }
 
   return `
-    <button class="vs-impact-item ${isSelected ? 'is-selected' : ''}" data-node-id="${escapeHtml(node.id)}">
+    <button type="button" class="vs-impact-item ${isSelected ? 'is-selected' : ''}" data-node-id="${escapeHtml(node.id)}"
+            aria-label="Inspect ${escapeHtml(node.type)} ${label}" aria-pressed="${isSelected}">
       <span class="vs-impact-item-icon">${icons[iconKey] || icons[section.icon] || ''}</span>
       <span class="vs-impact-item-label">${label}</span>
       ${swatch}

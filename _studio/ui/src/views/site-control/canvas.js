@@ -337,13 +337,16 @@ export function renderCard(node) {
     <div class="${classes}"
          data-page-id="${escapeHtml(node.id)}"
          title="${escapeHtml(routeLabel || node.label)}">
-      <div class="vs-site-card-body">
-        <div class="vs-site-card-title">
+      <button type="button" class="vs-site-card-body"
+              data-select-page="${escapeHtml(node.id)}"
+              aria-label="Inspect ${escapeHtml(node.label)}${routeLabel ? ', ' + escapeHtml(routeLabel) : ''}"
+              aria-pressed="${selectedNodeId === node.id}">
+        <span class="vs-site-card-title">
           ${node.isHomepage ? '<span class="vs-site-card-star">★</span>' : ''}
           <span class="vs-site-card-label">${escapeHtml(node.label)}</span>
-        </div>
-        ${routeLabel ? `<div class="vs-site-card-route">${escapeHtml(routeLabel)}</div>` : ''}
-      </div>
+        </span>
+        ${routeLabel ? `<span class="vs-site-card-route">${escapeHtml(routeLabel)}</span>` : ''}
+      </button>
       ${node.childCount > 0 ? `<span class="vs-site-card-count">${node.childCount}</span>` : ''}
       ${renderNodeActions(node.id)}
     </div>

@@ -251,6 +251,8 @@ $routes = [
     ['POST',   '/site-control/structural-move',  'site-control.php',  true],
     ['POST',   '/site-control/orchestrate',      'site-orchestrate.php', true],
     ['POST',   '/site-control/apply',             'site-orchestrate.php', true],
+    ['GET',    '/site-control/plans/:id',         'site-orchestrate.php', true],
+    ['GET',    '/site-control/mutations/:id',     'site-orchestrate.php', true],
 
     // Team
     ['GET',    '/team',                  'team.php',           true],
@@ -442,6 +444,42 @@ foreach ($routes as [$routeMethod, $routePattern, $endpointFile, $requiresAuth])
     }
 
     // ── Normal dispatch ──
+    // Only endpoints that touch website files share the website lock. Account,
+    // notes, settings and other Studio state remain usable during generation.
+    $mutationPolicy = \VoxelSite\SiteMutationRoutePolicy::studio($method, $routePattern);
+    if ($requiresAuth && $path === '/site/reset-install' && ($user['role'] ?? '') !== 'owner') {
+        jsonResponse(['ok'=>false,'error'=>['code'=>'forbidden','message'=>'Only the site owner can reset the installation.']],403);
+        exit;
+    }
+    if ($requiresAuth && $mutationPolicy['lock']) {
+        try {
+            $websiteMutationLock = \VoxelSite\SiteMutationLock::acquire();
+            (new \VoxelSite\SiteMutationJournal(Database::getInstance()))->recoverInterrupted();
+            (new \VoxelSite\SitePlanStore(Database::getInstance(), new \VoxelSite\FileManager()))->recoverInterrupted();
+            if ($mutationPolicy['recoveryGate']) {
+                \VoxelSite\SiteRecovery::assertWritable(Database::getInstance());
+            }
+        } catch (\Throwable $e) {
+            jsonResponse(['ok'=>false,'error'=>['code'=>'site_busy','message'=>$e->getMessage()]],409);
+            exit;
+        }
+    }
+    if ($method === 'POST' && in_array($path, ['/site-control/url-rename','/site-control/nav-reorder',
+        '/site-control/page-rename','/site-control/page-delete','/site-control/structural-move'],true)) {
+        try {
+            $body = getJsonBody();
+            $mutationId = $body['mutation_id'] ?? bin2hex(random_bytes(16));
+            if (!is_string($mutationId) || !preg_match('/^[a-f0-9]{32}$/D',$mutationId)) {
+                throw new \RuntimeException('Invalid mutation identity. Refresh and try again.');
+            }
+            $journal = new \VoxelSite\SiteMutationJournal(Database::getInstance());
+            $previous = $journal->begin($mutationId,(int)$user['id'],$path,$body);
+            if ($previous !== null) { jsonResponse($previous['response'],$previous['httpCode']); exit; }
+        } catch (\Throwable $e) {
+            jsonResponse(['ok'=>false,'error'=>['code'=>'mutation_conflict','message'=>$e->getMessage()]],409);
+            exit;
+        }
+    }
     require $endpointPath;
     exit;
 }
@@ -501,6 +539,7 @@ function matchRoute(string $pattern, string $path): ?array
  */
 function jsonResponse(mixed $data, int $status = 200): void
 {
+    if (is_array($data)) { \VoxelSite\SiteMutationJournal::finish($data,$status); }
     http_response_code($status);
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }

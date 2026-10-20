@@ -99,8 +99,8 @@ class FileManager
      */
     public function compileTailwind(): array
     {
-        $compiler = new TailwindCompiler();
-        return $compiler->compile();
+        $compiler = new TailwindCompiler($this->assetsPath . '/css');
+        return $compiler->compile($this->previewPath, $this->assetsPath . '/css/tailwind.css');
     }
 
     /**
@@ -297,6 +297,38 @@ CSS;
         }
 
         return null;
+    }
+
+    /** Write reviewed bytes or recovery bytes without generation-time transformations. */
+    public function writeExactFile(string $relativePath, string $content): void
+    {
+        $path = $this->resolvePath($relativePath, true);
+        $base = str_starts_with($relativePath, 'assets/') ? $this->assetsPath : $this->previewPath;
+        if (str_starts_with($relativePath, '_prompts/')) {
+            throw new RuntimeException('Site edits cannot modify prompts.');
+        }
+        $realBase = realpath($base);
+        $realParent = realpath(dirname($path));
+        if ($realBase === false || $realParent === false || is_link($path)
+            || ($realParent !== $realBase && !str_starts_with($realParent, $realBase . '/'))) {
+            throw new RuntimeException('Exact write target is outside the website or does not exist.');
+        }
+        $originalStat = is_file($path) ? stat($path) : null;
+        $mode = $originalStat ? ($originalStat['mode'] & 0777) : 0644;
+        $temporary = tempnam($realParent, '.site-');
+        if ($temporary === false) { throw new RuntimeException('Cannot stage website file.'); }
+        try {
+            if ($originalStat && ((fileowner($temporary) !== $originalStat['uid'] && !@chown($temporary, $originalStat['uid']))
+                || (filegroup($temporary) !== $originalStat['gid'] && !@chgrp($temporary, $originalStat['gid'])))) {
+                throw new RuntimeException('Cannot preserve website file ownership: ' . $relativePath);
+            }
+            if (file_put_contents($temporary, $content) !== strlen($content)
+                || !chmod($temporary, $mode) || !rename($temporary, $path)) {
+                throw new RuntimeException('Cannot write website file: ' . $relativePath);
+            }
+        } finally {
+            if (is_file($temporary)) { unlink($temporary); }
+        }
     }
 
     /**
@@ -1973,7 +2005,7 @@ SAFETY;
      * missing ordering data, so the Studio grid matches the
      * website's actual navigation order.
      */
-    public function syncPageRegistry(): void
+    public function syncPageRegistry(bool $refreshTitles = false): void
     {
         $now = now();
         $files = $this->listPreviewFilesRecursive();
@@ -1981,7 +2013,7 @@ SAFETY;
         // ── Phase 1: Build lookup maps ──
         // Collect all current DB rows for comparison
         $dbRows = $this->db->query(
-            "SELECT id, slug, file_path, title FROM pages WHERE page_type = 'page'"
+            "SELECT id, slug, file_path, title, description FROM pages WHERE page_type = 'page'"
         );
         $dbBySlug = [];
         $dbByFilePath = [];
@@ -2025,8 +2057,15 @@ SAFETY;
                 $fileTitle = $this->extractTitle($file['path']);
                 if ($fileTitle !== null && (string) $existing['title'] !== $fileTitle) {
                     $autoTitle = ucfirst(str_replace('-', ' ', basename($slug)));
-                    if ((string) $existing['title'] === $autoTitle) {
+                    if ($refreshTitles || (string) $existing['title'] === $autoTitle) {
                         $repairs['title'] = $fileTitle;
+                    }
+                }
+
+                if ($refreshTitles) {
+                    $metadata = $this->extractPageMetadata($file['path']);
+                    if (($existing['description'] ?? null) !== ($metadata['description'] ?? null)) {
+                        $repairs['description'] = $metadata['description'] ?? null;
                     }
                 }
 
@@ -2085,6 +2124,7 @@ SAFETY;
             $this->db->insert('pages', [
                 'slug'        => $file['slug'],
                 'title'       => $title ?? ucfirst(str_replace('-', ' ', basename($file['slug']))),
+                'description' => $this->extractPageMetadata($file['path'])['description'] ?? null,
                 'file_path'   => $file['path'],
                 'is_homepage' => $file['slug'] === 'index' ? 1 : 0,
                 'created_at'  => $now,
@@ -2746,10 +2786,8 @@ SAFETY;
             return null;
         }
 
-        // Try PHP $page array first: $page = ['title' => 'About Us', ...]
-        if (preg_match('/[\'"]title[\'"]\s*=>\s*[\'"](.*?)[\'"]/i', $content, $match)) {
-            return trim($match[1]);
-        }
+        $metadata = $this->extractPageMetadata($filename);
+        if (isset($metadata['title'])) { return $metadata['title']; }
 
         // Fallback: try <title> tag (for partials like header.php)
         if (preg_match('/<title>([^<]+)<\/title>/i', $content, $match)) {
@@ -2757,6 +2795,42 @@ SAFETY;
         }
 
         return null;
+    }
+
+    /** Read only literal $page metadata; never execute PHP to populate the registry. */
+    private function extractPageMetadata(string $filename): array
+    {
+        $source = @file_get_contents($this->previewPath . '/' . $filename);
+        if ($source === false) { return []; }
+        $tokens = array_values(array_filter(token_get_all($source), static fn($t) =>
+            !is_array($t) || !in_array($t[0], [T_WHITESPACE,T_COMMENT,T_DOC_COMMENT],true)));
+        $decode = static function (string $literal): string {
+            $body = substr($literal,1,-1);
+            return $literal[0] === "'" ? strtr($body, ["\\\\"=>"\\", "\\'"=>"'"])
+                : preg_replace_callback('/\\\\(?:[nrtvef\\\\$\"]|[0-7]{1,3}|x[0-9a-fA-F]{1,2})/',
+                    static fn($m) => stripcslashes($m[0]), $body);
+        };
+        for ($i=0,$count=count($tokens);$i<$count;$i++) {
+            if (!is_array($tokens[$i]) || $tokens[$i][0] !== T_VARIABLE || $tokens[$i][1] !== '$page'
+                || ($tokens[$i+1] ?? null) !== '=') { continue; }
+            $open = $i+2;
+            if (is_array($tokens[$open] ?? null) && $tokens[$open][0] === T_ARRAY) { $open++; }
+            if (!in_array($tokens[$open] ?? null,['[','('],true)) { continue; }
+            $depth=1; $result=[];
+            for ($j=$open+1;$j<$count;$j++) {
+                $token=$tokens[$j];
+                if ($token==='[' || $token==='(') { $depth++; continue; }
+                if ($token===']' || $token===')') { if (--$depth===0) { return $result; } continue; }
+                if ($depth!==1 || !is_array($token) || $token[0]!==T_CONSTANT_ENCAPSED_STRING) { continue; }
+                $key=$decode($token[1]);
+                if (in_array($key,['title','description'],true) && is_array($tokens[$j+1] ?? null)
+                    && $tokens[$j+1][0]===T_DOUBLE_ARROW && is_array($tokens[$j+2] ?? null)
+                    && $tokens[$j+2][0]===T_CONSTANT_ENCAPSED_STRING) {
+                    $result[$key]=$decode($tokens[$j+2][1]);
+                }
+            }
+        }
+        return [];
     }
 
     /**

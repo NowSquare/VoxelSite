@@ -84,7 +84,16 @@ class SurfaceDiscovery
         $skipped = [];
 
         // Find the page node — try common ID patterns
-        $pageNode = $this->findPageBySlug($slug);
+        $matches = $this->findPagesBySelector($slug);
+        if (count($matches) > 1) {
+            return [
+                'candidates' => [], 'affected_pages' => [],
+                'clarification_required' => true,
+                'message' => 'Several pages match this target. Specify the exact route: ' . implode(', ', array_map(fn(array $n) => '/' . $n['meta']['slug'], $matches)),
+                'skipped' => array_map(fn(array $n) => ['path' => $n['meta']['file_path'], 'reason' => 'Ambiguous page target; choose the exact route'], $matches),
+            ];
+        }
+        $pageNode = $matches[0] ?? null;
 
         if ($pageNode === null) {
             return [
@@ -94,14 +103,15 @@ class SurfaceDiscovery
             ];
         }
 
-        // For style changes on a page, check if there's a shared partial
-        // that would be better to edit (e.g. header partial instead of every page)
+        // A page scope is a boundary, not permission to edit shared consumers.
+        // Disclose shared candidates without silently broadening the request.
         if ($category === 'style') {
             // Check if the page includes partials with style-related content
             $deps = $this->graph->getDependencies($pageNode['id']);
             foreach ($deps as $dep) {
                 if ($dep['type'] === 'partial' && $this->isStyleRelevant($dep, $keywords)) {
-                    $candidates[] = $this->makeCandidate($dep, 'Shared partial with style content');
+                    $skipped[] = ['path' => $dep['meta']['file_path'] ?? $dep['id'],
+                        'reason' => 'Shared partial affects other pages. Request this partial explicitly to review a global change.'];
                 }
             }
         }
@@ -165,11 +175,11 @@ class SurfaceDiscovery
             ];
         }
 
-        // Token consumers are the files that define/use the token
-        $consumers = $this->graph->getTokenConsumers($nodeId);
         $candidates = [];
-        foreach ($consumers as $consumer) {
-            $candidates[] = $this->makeCandidate($consumer, "Consumes token {$tokenName}");
+        $sourceFile = $tokenNode['meta']['sourceFile'] ?? 'assets/css/style.css';
+        $sourceNode = $this->graph->getNode('asset:' . $sourceFile);
+        if ($sourceNode !== null) {
+            $candidates[] = $this->makeCandidate($sourceNode, "Defines token {$tokenName}; consumers inherit the change");
         }
 
         // Affected pages
@@ -201,7 +211,7 @@ class SurfaceDiscovery
         $assets = $this->graph->getNodesByType('asset');
         foreach ($assets as $asset) {
             $filePath = $asset['meta']['file_path'] ?? '';
-            if (preg_match('/\.css$/i', $filePath)) {
+            if (preg_match('/\.css$/i', $filePath) && $filePath !== 'assets/css/tailwind.css') {
                 $candidates[] = $this->makeCandidate($asset, 'Global stylesheet');
             }
         }
@@ -300,7 +310,7 @@ class SurfaceDiscovery
         $partials = $this->graph->getNodesByType('partial');
         foreach ($partials as $partial) {
             $file = basename($partial['meta']['file_path'] ?? '');
-            if (preg_match('/nav|menu|header|sidebar/i', $file)) {
+            if (preg_match('/nav|menu|header|sidebar|footer/i', $file)) {
                 $candidates[] = $this->makeCandidate($partial, 'Navigation partial');
             }
         }
@@ -340,12 +350,10 @@ class SurfaceDiscovery
             }
         }
 
-        // If no partials matched, all pages are candidates
-        if (empty($candidates)) {
-            $pages = $this->graph->getNodesByType('page');
-            foreach ($pages as $page) {
-                $candidates[] = $this->makeCandidate($page, 'Page content (no matching partial found)');
-            }
+        // A matching partial does not prove that page-local occurrences are absent.
+        // Include pages for inspection; the planner still prefers one shared edit.
+        foreach ($this->graph->getNodesByType('page') as $page) {
+            $candidates[] = $this->makeCandidate($page, 'Page content; check for local occurrences');
         }
 
         $allPages = array_map(
@@ -386,25 +394,32 @@ class SurfaceDiscovery
     /**
      * Find a page node by slug (tries common patterns).
      */
-    private function findPageBySlug(string $slug): ?array
+    private function findPagesBySelector(string $slug): array
     {
+        $slug = trim($slug, '/');
+        if ($slug === '') $slug = 'index';
         // Try exact node ID match
         $node = $this->graph->getNode("page:{$slug}");
-        if ($node !== null) return $node;
+        if ($node !== null) return [$node];
 
         // Try with .php extension
         $node = $this->graph->getNode("page:{$slug}.php");
-        if ($node !== null) return $node;
+        if ($node !== null) return [$node];
 
         // Search by slug in meta
+        $matches = [];
         foreach ($this->graph->getNodesByType('page') as $page) {
             if (($page['meta']['slug'] ?? '') === $slug ||
                 ($page['meta']['slug'] ?? '') === "/{$slug}") {
-                return $page;
+                $matches[] = $page;
             }
         }
-
-        return null;
+        if ($matches !== []) return $matches;
+        // Exact labels are useful, but duplicate labels must never pick first.
+        foreach ($this->graph->getNodesByType('page') as $page) {
+            if (mb_strtolower($page['label']) === mb_strtolower($slug)) $matches[] = $page;
+        }
+        return $matches;
     }
 
     /**

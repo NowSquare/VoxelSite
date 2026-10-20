@@ -48,43 +48,25 @@ echo "=== PatchExecutor Test Suite ===\n\n";
 //  Setup — temp directory with test fixtures
 // ═══════════════════════════════════════════
 
-$liveDbPath = dirname(__DIR__) . '/data/studio.db';
-if (!file_exists($liveDbPath)) {
-    echo "ABORT: No database found at {$liveDbPath}.\n";
-    exit(1);
-}
-
-$livePreviewDir = dirname(__DIR__) . '/preview';
-if (!is_dir($livePreviewDir)) {
-    echo "ABORT: No preview directory found.\n";
-    exit(1);
-}
-
 $tempDir     = sys_get_temp_dir() . '/voxelsite_patch_test_' . uniqid();
 $tempDbPath  = $tempDir . '/studio.db';
 $tempPreview = $tempDir . '/preview';
 $tempAssets  = $tempDir . '/assets';
 
 mkdir($tempDir, 0755, true);
-copy($liveDbPath, $tempDbPath);
 
 // Minimal preview
 mkdir($tempPreview, 0755, true);
 mkdir($tempAssets . '/css', 0755, true);
 mkdir($tempAssets . '/js', 0755, true);
 
-$liveAssetsDir = dirname(__DIR__, 2) . '/assets';
-if (is_dir($liveAssetsDir)) {
-    // Copy just enough for FileManager to resolve paths
-    foreach (glob($liveAssetsDir . '/css/*.css') as $f) {
-        copy($f, $tempAssets . '/css/' . basename($f));
-    }
-}
+file_put_contents($tempAssets . '/css/style.css', ':root { --color-primary: #123456; }');
 
 putenv("VS_TEST_PREVIEW_DIR={$tempPreview}");
 putenv("VS_TEST_ASSETS_DIR={$tempAssets}");
 
 $db = Database::getInstance($tempDbPath);
+(new \VoxelSite\Migrator($db))->run();
 $fileManager = new FileManager($db);
 $fileManager->syncPageRegistry();
 
@@ -376,7 +358,7 @@ $result8 = $executor8->execute([
 ]);
 
 record($result8['success'] === false, '8a: Unanchored insert refused', $errors, $passed, $failed);
-record(str_contains($result8['error'] ?? '', 'no before_snippet'), '8b: Error mentions missing anchor', $errors, $passed, $failed);
+record(str_contains($result8['error'] ?? '', 'invalid'), '8b: Error identifies invalid plan', $errors, $passed, $failed);
 
 
 // ═══════════════════════════════════════════
@@ -493,7 +475,7 @@ record(str_contains($multiB, "'original_b'"), '11d: File B unchanged', $errors, 
 
 // Rollback events in log
 $rollbackPhases = array_filter($resultMulti['log'], fn($e) => $e['phase'] === 'rollback');
-record(count($rollbackPhases) > 0, '11e: Rollback phase events present', $errors, $passed, $failed);
+record(count($rollbackPhases) === 0, '11e: Preflight drift rejects before mutation, so rollback is unnecessary', $errors, $passed, $failed);
 record($resultMulti['rollback_clean'] === true, '11f: Rollback was clean', $errors, $passed, $failed);
 
 
@@ -512,7 +494,7 @@ $throwingFM = new class($fileManager, $throwTarget) extends FileManager {
     private string $throwFile;
 
     public function __construct(FileManager $inner, string $throwFile) {
-        // Skip parent constructor — we delegate everything
+        parent::__construct();
         $this->inner = $inner;
         $this->throwFile = $throwFile;
     }
@@ -521,11 +503,11 @@ $throwingFM = new class($fileManager, $throwTarget) extends FileManager {
         return $this->inner->readFile($path);
     }
 
-    public function writeFile(string $path, string $content): ?string {
+    public function writeExactFile(string $path, string $content): void {
         if ($path === $this->throwFile) {
             throw new \RuntimeException('Simulated disk failure on ' . $path);
         }
-        return $this->inner->writeFile($path, $content);
+        $this->inner->writeExactFile($path, $content);
     }
 };
 
@@ -613,10 +595,9 @@ record(
     $errors, $passed, $failed
 );
 
-// 12h: rollback_clean is false because ThrowingFileManager also throws during
-// rollback of test-crash-b.php — this correctly reflects real-world behavior
-// where the same disk that failed the write also fails the restore.
-record($resultCrash['rollback_clean'] === false, '12h: Rollback was partial (disk still broken)', $errors, $passed, $failed);
+// The failed file was never changed. Verify its bytes without attempting a
+// needless second write to a broken disk; the first file must be restored.
+record($resultCrash['rollback_clean'] === true, '12h: Rollback verifies untouched failed file and restores earlier write', $errors, $passed, $failed);
 
 // 12i: onEmit callback fired for partial transcript (phases logged before crash)
 record(count($emittedPhases) > 0, '12i: onEmit callback fired (partial transcript)', $errors, $passed, $failed);

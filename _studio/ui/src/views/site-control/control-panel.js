@@ -91,7 +91,7 @@ import {
   saveCardPreferences,
   isCardCollapsed,
 } from './state.js';
-import { orchState, orchPlan, orchResult, setOrchState, setOrchResult, setOrchPlan } from './orchestration-console.js';
+import { orchState, orchPlan, orchResult, isOrchBusy, setOrchState, setOrchResult, setOrchPlan } from './orchestration-console.js';
 import { renderActionLog } from './action-log.js';
 
 // ═══════════════════════════════════════════
@@ -118,12 +118,14 @@ export function renderControlPanel() {
               orchState === 'plan' ? 'Plan Ready' :
               orchState === 'plan_failed' ? 'Plan Failed' :
               orchState === 'applying' ? 'Applying' :
+              orchState === 'recovering' ? 'Checking result' :
               orchState === 'applied' ? 'Applied' :
               orchState === 'apply_failed' ? 'Apply Failed' :
               orchState === 'complete' ? 'Complete' : orchState}
           </span>
         </div>
         <div class="vs-sc-right-body" id="vs-sc-right-body">
+          ${renderAnalysisWarnings()}
           ${renderOrchReview()}
         </div>
       </div>
@@ -146,10 +148,22 @@ export function renderControlPanel() {
         `}
       </div>
       <div class="vs-sc-right-body" id="vs-sc-right-body">
+        ${renderAnalysisWarnings()}
         ${hasSelection ? renderImpactDetail() : renderSiteSummary()}
       </div>
     </div>
   `;
+}
+
+function renderAnalysisWarnings() {
+  const warnings = graphModel?.warnings || [];
+  if (!warnings.length) return '';
+  return `<div class="vs-sc-review-section">
+    <h4 class="vs-sc-review-heading">References need review</h4>
+    <p class="vs-sc-review-plan-summary">Counts cover indexed references. Dynamic PHP links and includes, or relative links in shared partials, may require manual review.</p>
+    ${warnings.slice(0, 10).map(warning => `<p class="vs-sc-review-plan-summary">${escapeHtml(warning.file || '')}${warning.line ? ':' + escapeHtml(String(warning.line)) : ''}: ${escapeHtml(warning.message || warning.reason || 'Reference could not be resolved.')}</p>`).join('')}
+    ${warnings.length > 10 ? `<p class="vs-sc-review-plan-summary">${warnings.length - 10} more items require review.</p>` : ''}
+  </div>`;
 }
 
 /**
@@ -171,6 +185,7 @@ function renderOrchReview() {
     const anchoredEdits = edits.filter(e => e.anchored !== false);
     const unanchoredEdits = edits.filter(e => e.anchored === false);
     const hasAnchoredEdits = anchoredEdits.length > 0;
+    const canApply = hasAnchoredEdits && edits.every(e => e.anchored === true) && !!orchPlan.plan_id;
 
     return `
       <div class="vs-sc-orch-review">
@@ -202,7 +217,7 @@ function renderOrchReview() {
                 <div class="vs-sc-review-edit-header">
                   <span class="vs-sc-review-edit-num">${i + 1}</span>
                   <span class="vs-sc-review-edit-strategy">${escapeHtml(edit.strategy || 'edit')}</span>
-                  <span class="vs-sc-review-file-path">${escapeHtml(edit.file || '')}</span>
+                  <button type="button" class="vs-sc-review-file-path" data-orch-open-file="${escapeHtml(edit.file || '')}" title="Open in Editor">${escapeHtml(edit.file || '')}</button>
                 </div>
                 <p class="vs-sc-review-edit-desc">${escapeHtml(edit.description || '')}</p>
                 ${edit.before_snippet || edit.after_snippet ? `
@@ -211,7 +226,7 @@ function renderOrchReview() {
                     ${edit.after_snippet ? `<div class="vs-sc-review-diff-after"><span class="vs-sc-diff-label">+</span><code>${escapeHtml(edit.after_snippet)}</code></div>` : ''}
                   </div>
                 ` : ''}
-                ${edit.verification ? `<p class="vs-sc-review-edit-verify">✓ ${escapeHtml(edit.verification)}</p>` : ''}
+                ${edit.verification ? `<p class="vs-sc-review-edit-verify">Check after apply: ${escapeHtml(edit.verification)}</p>` : ''}
               </div>
             `).join('')}
           </div>
@@ -233,7 +248,7 @@ function renderOrchReview() {
         ${unanchoredEdits.length > 0 ? `
           <div class="vs-sc-review-section">
             <h4 class="vs-sc-review-heading">Unverified Edits <span class="vs-sc-review-count">${unanchoredEdits.length}</span></h4>
-            <p class="vs-sc-review-plan-summary">These edits could not be anchored to source text and will not be applied.</p>
+            <p class="vs-sc-review-plan-summary">The whole plan is blocked until every edit can be verified. Describe the change again to build a new plan.</p>
             ${unanchoredEdits.map(e => `
               <div class="vs-sc-review-issue">
                 <span class="vs-sc-review-file-path">${escapeHtml(e.file || '')}</span>
@@ -267,7 +282,8 @@ function renderOrchReview() {
           </div>
         ` : ''}
         <div class="vs-sc-review-actions">
-          ${hasAnchoredEdits ? `<button class="vs-sc-review-approve" id="vs-sc-orch-apply">Approve &amp; Apply</button>` : ''}
+          <p class="vs-sc-review-plan-summary">Apply updates preview files. Publish is a separate step. Shared assets, including styles, can also affect the published site.</p>
+          ${canApply ? `<button class="vs-sc-review-approve" id="vs-sc-orch-apply">Approve &amp; Apply</button>` : ''}
           <button class="vs-sc-review-cancel" id="vs-sc-orch-dismiss">Dismiss</button>
         </div>
       </div>
@@ -275,17 +291,17 @@ function renderOrchReview() {
   }
 
   // Plan failed: discovery found files but edits didn't anchor
-  if (orchState === 'plan_failed' && orchPlan) {
-    const files = orchPlan.files || [];
-    const affected = orchPlan.affected_pages || [];
-    const edits = orchPlan.edits || [];
-    const planSummary = orchPlan.plan_summary || '';
+  if (orchState === 'plan_failed') {
+    const files = orchPlan?.files || [];
+    const affected = orchPlan?.affected_pages || [];
+    const edits = orchPlan?.edits || [];
+    const planSummary = orchResult?.summary || orchPlan?.plan_summary || '';
     const unanchoredEdits = edits.filter(e => !e.anchored);
 
     return `
       <div class="vs-sc-orch-review">
         <div class="vs-sc-review-section">
-          <h4 class="vs-sc-review-heading">Plan Could Not Be Anchored</h4>
+          <h4 class="vs-sc-review-heading">Plan Not Ready</h4>
           <p class="vs-sc-review-plan-summary">${escapeHtml(planSummary || 'The edit plan could not be verified against the source files.')}</p>
           ${unanchoredEdits.length > 0 ? `
             <div class="vs-sc-review-issues">
@@ -330,13 +346,13 @@ function renderOrchReview() {
   }
 
   // Applying: show progress
-  if (orchState === 'applying') {
+  if (orchState === 'applying' || orchState === 'recovering') {
     return `
       <div class="vs-sc-orch-review">
         <div class="vs-sc-review-waiting">
           <div class="vs-sc-command-spinner"></div>
-          <p class="vs-sc-review-waiting-text">Applying edits…</p>
-          <p class="vs-sc-review-waiting-hint">Each file is read, anchored, patched, and verified.</p>
+          <p class="vs-sc-review-waiting-text">${orchState === 'recovering' ? 'Checking the server result…' : 'Applying edits…'}</p>
+          <p class="vs-sc-review-waiting-hint">${orchState === 'recovering' ? 'The request may still be running. This check does not apply the plan again.' : 'Each file is read, anchored, patched, and verified.'}</p>
         </div>
       </div>
     `;
@@ -344,9 +360,10 @@ function renderOrchReview() {
 
   // Applied: show verification report
   if (orchState === 'applied') {
-    const filesChanged = orchResult?.filesChanged || 0;
+    const filesChanged = orchResult?.filesChanged;
     const verification = orchResult?.verification || [];
     const duration = orchResult?.duration_ms;
+    const hasVerification = verification.length > 0;
 
     // Count total checks passed
     let totalChecks = 0;
@@ -377,10 +394,12 @@ function renderOrchReview() {
     return `
       <div class="vs-sc-orch-review">
         <div class="vs-sc-review-section">
-          <h4 class="vs-sc-review-heading">Verification Report</h4>
+          <h4 class="vs-sc-review-heading">${hasVerification ? 'Verification Report' : 'Site Result'}</h4>
+          <p class="vs-sc-review-plan-summary">Preview updated. Publish pages separately. Shared assets may already affect the published site.</p>
+          ${orchResult?.summary ? `<p class="vs-sc-review-plan-summary">${escapeHtml(orchResult.summary)}</p>` : ''}
           <div class="vs-sc-verify-summary">
-            <span class="vs-sc-verify-stat">${filesChanged} file(s) patched</span>
-            <span class="vs-sc-verify-stat">${passedChecks}/${totalChecks} checks passed</span>
+            ${Number.isFinite(filesChanged) ? `<span class="vs-sc-verify-stat">${filesChanged} file(s) patched</span>` : ''}
+            ${hasVerification ? `<span class="vs-sc-verify-stat">${passedChecks}/${totalChecks} checks passed</span>` : ''}
             ${duration ? `<span class="vs-sc-verify-stat">${duration}ms</span>` : ''}
           </div>
           ${verifyRows}
@@ -395,14 +414,22 @@ function renderOrchReview() {
   // Apply failed: show error with verification context and rollback status
   if (orchState === 'apply_failed') {
     const summary = orchResult?.summary || 'Patch execution failed.';
-    const rollbackClean = orchResult?.rollback_clean !== false;
+    const rollbackClean = orchResult?.rollback_clean;
+    const resolved = orchResult?.recovery_resolved === true;
+    const unknown = rollbackClean !== true && rollbackClean !== false;
+    const changedFiles = orchResult?.remaining_changed_files || orchResult?.changed_files || [];
+    const snapshotId = orchResult?.recovery_snapshot_id;
     const verification = orchResult?.verification || [];
     const duration = orchResult?.duration_ms;
 
-    const rollbackNote = rollbackClean
-      ? 'All changes have been rolled back. No files were modified.'
-      : 'Rollback was attempted but may not have fully succeeded. Check the console log.';
-    const rollbackClass = rollbackClean ? 'is-clean' : 'is-dirty';
+    const rollbackNote = resolved
+      ? `Recovery completed from snapshot #${escapeHtml(String(orchResult.recovery_resolved_by_snapshot))}. The original change was not retried.`
+      : rollbackClean === true
+      ? 'The attempted changes were restored and verified.'
+      : rollbackClean === false
+        ? 'Some changes remain. Review the files below before continuing.'
+        : 'The result is unconfirmed. Files may have changed. Check the server result before retrying or editing these files.';
+    const rollbackClass = resolved || rollbackClean === true ? 'is-clean' : 'is-dirty';
 
     const verifyRows = verification.map(v => {
       const checks = v.checks.map(c => {
@@ -423,17 +450,20 @@ function renderOrchReview() {
     return `
       <div class="vs-sc-orch-review">
         <div class="vs-sc-review-section">
-          <h4 class="vs-sc-review-heading">Apply Failed</h4>
+          <h4 class="vs-sc-review-heading">${unknown ? 'Apply Result Unconfirmed' : 'Apply Failed'}</h4>
           <p class="vs-sc-review-plan-summary">${escapeHtml(summary)}</p>
           <div class="vs-sc-verify-rollback ${rollbackClass}">
-            <span class="vs-sc-verify-icon">${rollbackClean ? '↺' : '⚠'}</span>
+            <span class="vs-sc-verify-icon">${resolved || rollbackClean === true ? '↺' : '⚠'}</span>
             ${rollbackNote}
           </div>
+          ${changedFiles.length ? `<p class="vs-sc-review-plan-summary">${resolved ? 'Files reported by the failed attempt' : 'Files requiring review'}: ${changedFiles.map(f => escapeHtml(f)).join(', ')}</p>` : ''}
+          ${snapshotId && !resolved ? `<p class="vs-sc-review-plan-summary">Snapshots are in Designs → History. Restore snapshot #${escapeHtml(String(snapshotId))} if recovery is needed. Snapshot restore replaces preview files and shared assets.</p>` : ''}
           ${duration ? `<p class="vs-sc-verify-timing">${duration}ms elapsed</p>` : ''}
           ${verifyRows}
         </div>
         <div class="vs-sc-review-actions">
-          <button class="vs-sc-review-cancel" id="vs-sc-orch-dismiss">Dismiss</button>
+          ${(orchPlan?.plan_id || orchResult?.mutation_id) && unknown ? '<button class="vs-sc-review-approve" id="vs-sc-orch-check">Check result</button>' : ''}
+          ${orchResult?.mutation_id && unknown ? '' : '<button class="vs-sc-review-cancel" id="vs-sc-orch-dismiss">Dismiss</button>'}
         </div>
       </div>
     `;
@@ -458,7 +488,7 @@ function renderOrchReview() {
       <div class="vs-sc-orch-review">
         <div class="vs-sc-review-section">
           <h4 class="vs-sc-review-heading">Results</h4>
-          <p class="vs-sc-review-summary">Orchestration complete.</p>
+          <p class="vs-sc-review-summary">${escapeHtml(orchResult?.summary || 'No edits were proposed.')}</p>
         </div>
         <div class="vs-sc-review-actions">
           <button class="vs-sc-review-cancel" id="vs-sc-orch-dismiss">Done</button>
@@ -605,6 +635,7 @@ export function renderImpactDetail() {
  * @param {function} refreshCallback — injected refreshView from index.js
  */
 export function enterProposalMode(nodeId, refreshCallback) {
+  if (mutationInProgress()) return;
   const node = graphModel?.nodes.get(nodeId);
   if (!node) return;
 
@@ -649,6 +680,7 @@ export function enterProposalMode(nodeId, refreshCallback) {
  * Caller-driven: only mutates state. Caller must call refreshView().
  */
 export function exitProposalMode() {
+  if (mutationInProgress()) return;
   setProposalRouteId(null);
   setProposalOriginNodeId(null);
   setProposalInputValue('');
@@ -666,6 +698,7 @@ export function exitProposalMode() {
  * @param {string} nodeId
  */
 export function enterMoveProposalMode(nodeId) {
+  if (mutationInProgress()) return;
   const node = graphModel?.nodes.get(nodeId);
   if (!node || node.type !== 'page') return;
 
@@ -690,6 +723,7 @@ export function enterMoveProposalMode(nodeId) {
  * Caller-driven: only mutates state. Caller must call refreshView().
  */
 export function exitMoveProposalMode() {
+  if (mutationInProgress()) return;
   resetMoveState();
   setProposalApplyState('idle');
   setProposalApplyError(null);
@@ -704,6 +738,7 @@ export function exitMoveProposalMode() {
  * @param {string} nodeId
  */
 export function enterRenameMode(nodeId) {
+  if (mutationInProgress()) return;
   const node = graphModel?.nodes.get(nodeId);
   if (!node || node.type !== 'page') return;
 
@@ -725,6 +760,7 @@ export function enterRenameMode(nodeId) {
  * Caller-driven: only mutates state. Caller must call refreshView().
  */
 export function exitRenameMode() {
+  if (mutationInProgress()) return;
   resetRenameState();
 }
 
@@ -736,6 +772,7 @@ export function exitRenameMode() {
  * @param {string} nodeId
  */
 export function enterDeleteMode(nodeId) {
+  if (mutationInProgress()) return;
   const node = graphModel?.nodes.get(nodeId);
   if (!node || node.type !== 'page') return;
 
@@ -759,7 +796,29 @@ export function enterDeleteMode(nodeId) {
  * Caller-driven: only mutates state. Caller must call refreshView().
  */
 export function exitDeleteMode() {
+  if (mutationInProgress()) return;
   resetDeleteState();
+}
+
+function mutationInProgress() {
+  return isOrchBusy() || proposalApplyState === 'applying' || renameApplyState === 'applying' || deleteApplyState === 'applying';
+}
+
+function renderMutationRecovery(error) {
+  if (!error || typeof error !== 'object') return '';
+  const note = error.recovery_resolved
+    ? `Recovery completed from snapshot #${escapeHtml(String(error.recovery_resolved_by_snapshot))}. The original change was not retried.`
+    : error.restored === true
+    ? 'The attempted changes were restored and verified.'
+    : error.restored === false
+      ? 'Restoration is incomplete. Review your files before continuing.'
+      : error.code === 'network_error'
+        ? 'The result is unconfirmed. Reload Site and inspect your files before retrying.'
+        : '';
+  const recovery = error.snapshotId && !error.recovery_resolved
+    ? ` Snapshots are in Designs → History. Recovery snapshot: #${escapeHtml(String(error.snapshotId))}. Snapshot restore replaces preview files and shared assets.`
+    : '';
+  return note || recovery ? `<p class="vs-sc-form-result-detail">${note}${recovery}</p>` : '';
 }
 
 
@@ -827,6 +886,7 @@ function renderProposalPanel() {
           <div class="vs-sc-form-result-text">
             <p class="vs-sc-form-result-title">Rename failed</p>
             <p class="vs-sc-form-result-detail">${escapeHtml(proposalApplyError.message || 'Unknown error')}</p>
+            ${renderMutationRecovery(proposalApplyError)}
           </div>
         </div>
         <div class="vs-sc-form-actions">
@@ -895,7 +955,7 @@ function renderProposalPanel() {
   let validationHint = '';
   if (validation.message) {
     const hintClass = validation.valid ? 'is-valid' : 'is-error';
-    validationHint = `<div class="vs-sc-form-hint ${hintClass}">${validation.message}</div>`;
+    validationHint = `<div class="vs-sc-form-hint ${hintClass}">${escapeHtml(validation.message)}</div>`;
   }
 
   // ── Reference impact section ──
@@ -948,7 +1008,7 @@ function renderProposalPanel() {
  * - [^a-z0-9-] → hyphens (underscores, spaces, uppercase all become -)
  * - strip leading/trailing hyphens
  * - strip .php suffix
- * - reject multi-segment paths (Phase 2A: single segment only)
+ * - preserve the parent path; reparenting uses Move
  *
  * Exported so performApply() uses the same canonical cleanPath.
  */
@@ -964,18 +1024,14 @@ export function validateProposalUrl(input, currentPath) {
   // Strip trailing slash
   if (raw.endsWith('/')) raw = raw.slice(0, -1);
 
-  // Reject multi-segment paths (Phase 2A: single segment only)
-  if (raw.includes('/')) {
-    return { valid: false, cleanPath: '/' + raw, message: 'Nested paths (e.g. /services/web-design) are not supported yet' };
-  }
-
   // Strip .php suffix
   if (raw.endsWith('.php')) raw = raw.slice(0, -4);
 
   // Normalize to match backend: lowercase + replace non-alphanumeric-hyphen with hyphens
-  let slug = raw.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  const segments = raw.split('/').map(segment => segment.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, ''));
+  const slug = segments.join('/');
 
-  if (!slug) {
+  if (!slug || segments.some(segment => !segment)) {
     return { valid: false, cleanPath: '/', message: 'Path cannot be empty after normalization' };
   }
 
@@ -987,6 +1043,9 @@ export function validateProposalUrl(input, currentPath) {
 
   // Can't be same as current
   const currentClean = currentPath.replace(/\/$/, '') || '/';
+  if (cleanPath.slice(0, cleanPath.lastIndexOf('/')) !== currentClean.slice(0, currentClean.lastIndexOf('/'))) {
+    return { valid: false, cleanPath, message: 'Keep the current parent path. Use Move to change the parent, then Change URL to rename the page.' };
+  }
   if (cleanPath === currentClean) {
     return { valid: false, cleanPath, message: 'New path is the same as the current path' };
   }
@@ -1018,7 +1077,7 @@ function renderProposalBody(currentPath, validation) {
   const linksTo = inbound.filter(e => e.type === 'links_to');
 
   if (linksTo.length === 0) {
-    return `<div class="vs-proposal-empty">No references found to this route. The URL can be changed without affecting any links.</div>`;
+    return `<div class="vs-proposal-empty">No indexed references found to this route. Links generated dynamically in PHP may need manual review.</div>`;
   }
 
   return `
@@ -1043,7 +1102,7 @@ function renderProposalSummary(inbound) {
 
   return `
     <div class="vs-proposal-summary">
-      <span class="vs-proposal-summary-count">${count} reference${count !== 1 ? 's' : ''}</span>
+      <span class="vs-proposal-summary-count">${count} indexed reference${count !== 1 ? 's' : ''}</span>
       <span class="vs-proposal-summary-sep">across</span>
       <span class="vs-proposal-summary-count">${fileCount} file${fileCount !== 1 ? 's' : ''}</span>
     </div>
@@ -1200,6 +1259,8 @@ export function collectRelationshipCards(node, cards) {
             nodeId: e.source,
             label: nodeLabel(e.source),
             type: nodeType(e.source),
+            sourcePath: e.source.replace(/^[^:]+:/, ''),
+            lineNumber: e.meta?.lineNumber || null,
             meta: e.meta?.href ? `→ ${e.meta.href}` : null,
             context: e.meta?.context || null,
           }))));
@@ -1261,6 +1322,8 @@ export function collectRelationshipCards(node, cards) {
           nodeId: e.source,
           label: nodeLabel(e.source),
           type: nodeType(e.source),
+          sourcePath: e.source.replace(/^[^:]+:/, ''),
+          lineNumber: e.meta?.lineNumber || null,
           meta: e.meta?.href ? `→ ${e.meta.href}` : null,
           context: e.meta?.context || null,
         }))));
@@ -1323,6 +1386,7 @@ export function renderRelationCard(title, items) {
             <button class="vs-impact-ref-item" data-node-id="${escapeHtml(item.nodeId)}">
               <span class="vs-impact-ref-type ${typeClass}">${item.type}</span>
               <span class="vs-impact-ref-label">${escapeHtml(item.label)}</span>
+              ${item.sourcePath ? `<span class="vs-impact-ref-source">${escapeHtml(item.sourcePath)}${item.lineNumber ? ':' + escapeHtml(String(item.lineNumber)) : ''}</span>` : ''}
               ${item.via ? `<span class="vs-impact-transitive-via">(via ${escapeHtml(item.via)})</span>` : ''}
               ${item.meta ? `<span class="vs-impact-ref-meta">${escapeHtml(item.meta)}</span>` : ''}
             </button>
@@ -1495,6 +1559,7 @@ function renderMoveProposalPanel() {
         <div class="vs-sc-form-result-text">
           <p class="vs-sc-form-result-title">Move failed</p>
           <p class="vs-sc-form-result-detail">${escapeHtml(proposalApplyError.message || 'Unknown error')}</p>
+          ${renderMutationRecovery(proposalApplyError)}
         </div>
       </div>
     `;
@@ -1744,7 +1809,8 @@ function renderRenamePanel() {
           <div class="vs-sc-form-result-icon">${icons.alertTriangle || '⚠'}</div>
           <div class="vs-sc-form-result-text">
             <p class="vs-sc-form-result-title">Rename failed</p>
-            <p class="vs-sc-form-result-detail">${escapeHtml(renameError)}</p>
+            <p class="vs-sc-form-result-detail">${escapeHtml(renameError.message || renameError)}</p>
+            ${renderMutationRecovery(renameError)}
           </div>
         </div>
         <div class="vs-sc-form-actions">
@@ -1844,7 +1910,8 @@ function renderDeletePanel() {
           <div class="vs-sc-form-result-icon">${icons.alertTriangle || '⚠'}</div>
           <div class="vs-sc-form-result-text">
             <p class="vs-sc-form-result-title">Delete failed</p>
-            <p class="vs-sc-form-result-detail">${escapeHtml(deleteError)}</p>
+            <p class="vs-sc-form-result-detail">${escapeHtml(deleteError.message || deleteError)}</p>
+            ${renderMutationRecovery(deleteError)}
           </div>
         </div>
         <div class="vs-sc-form-actions">
@@ -1907,7 +1974,7 @@ function renderDeletePanel() {
         </button>
         <button class="vs-sc-form-cancel" data-action="close-delete">Cancel</button>
       </div>
-      <p class="vs-sc-delete-warning">This action cannot be undone.</p>
+      <p class="vs-sc-delete-warning">VoxelSite saves a safety snapshot before deleting. Recover it in Designs → History. Chat Undo does not restore this deletion.</p>
     `;
   }
 

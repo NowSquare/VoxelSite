@@ -25,13 +25,16 @@ use VoxelSite\SurfaceDiscovery;
 use VoxelSite\RegionScoper;
 use VoxelSite\PlanBuilder;
 use VoxelSite\PatchExecutor;
+use VoxelSite\SitePlanStore;
+use VoxelSite\SiteMutationLock;
+use VoxelSite\RevisionManager;
 
 $user   = $_REQUEST['_user'] ?? null;
 $method = $_REQUEST['_route_method'];
 $path   = $_REQUEST['_route_path'];
 
 // ── Role guard: owner and editor only ──
-if (($user['role'] ?? '') === 'viewer') {
+if (!in_array($user['role'] ?? '', ['owner', 'editor'], true)) {
     jsonResponse(['ok' => false, 'error' => [
         'code'    => 'forbidden',
         'message' => 'Site orchestration requires editor or owner access.',
@@ -42,17 +45,62 @@ if (($user['role'] ?? '') === 'viewer') {
 // ── Parse request body once — both handlers need it ──
 $body = ($method === 'POST') ? getJsonBody() : [];
 
+if ($method === 'GET' && preg_match('#^/site-control/mutations/([a-f0-9]{32})$#D', $path, $match)) {
+    $journal = new \VoxelSite\SiteMutationJournal(Database::getInstance());
+    $record = $journal->get($match[1],(int)$user['id']);
+    if ($record === null && !\VoxelSite\DemoMode::isActive()) {
+        try {
+            $missingLock = SiteMutationLock::acquire();
+            $record = $journal->resolveMissing($match[1],(int)$user['id']);
+        } catch (\RuntimeException) {
+            // A writer may have accepted this request but not inserted its journal row yet.
+            jsonResponse(['ok'=>true,'data'=>['mutation_id'=>$match[1],'status'=>'applying',
+                'response'=>null,'httpCode'=>null,'snapshotId'=>null,'restored'=>null]]);
+            return;
+        }
+    }
+    if ($record === null) { jsonResponse(['ok'=>false,'error'=>['code'=>'not_found','message'=>'Change result not found.']],404); return; }
+    if ($record['status'] === 'applying' && !\VoxelSite\DemoMode::isActive()) {
+        try {
+            $recoveryLock = SiteMutationLock::acquire();
+            $journal->recoverInterrupted();
+            $record = $journal->get($match[1],(int)$user['id']);
+        } catch (\RuntimeException) { /* A running request owns the mutation lock. */ }
+    }
+    jsonResponse(['ok'=>true,'data'=>$record]);
+    return;
+}
+
+if ($method === 'GET' && preg_match('#^/site-control/plans/([a-f0-9]{48})$#D', $path, $match)) {
+    $db = Database::getInstance();
+    $store = new SitePlanStore($db, new FileManager($db));
+    $record = $store->get($match[1], (int)$user['id']);
+    if ($record === null) {
+        jsonResponse(['ok'=>false,'error'=>['code'=>'not_found','message'=>'Reviewed plan not found.']],404);
+        return;
+    }
+    if ($record['status'] === 'applying' && !\VoxelSite\DemoMode::isActive()) {
+        try {
+            $recoveryLock = SiteMutationLock::acquire();
+            $store->recoverInterrupted();
+            $record = $store->get($match[1], (int)$user['id']);
+        } catch (\RuntimeException) { /* A live worker still holds the lock. */ }
+    }
+    jsonResponse(['ok'=>true,'data'=>$record]);
+    return;
+}
+
 // ═══════════════════════════════════════════
 //  POST /site-control/orchestrate
 // ═══════════════════════════════════════════
 
 if ($method === 'POST' && $path === '/site-control/orchestrate') {
-    $prompt = trim($body['prompt'] ?? '');
+    $prompt = is_string($body['prompt'] ?? null) ? trim($body['prompt']) : '';
 
-    if ($prompt === '') {
+    if ($prompt === '' || mb_strlen($prompt) > 4000) {
         jsonResponse(['ok' => false, 'error' => [
             'code'    => 'validation',
-            'message' => 'Prompt is required.',
+            'message' => 'Enter a request of up to 4,000 characters.',
         ]], 400);
         return;
     }
@@ -61,6 +109,16 @@ if ($method === 'POST' && $path === '/site-control/orchestrate') {
         'prompt' => mb_substr($prompt, 0, 200),
         'user_id' => $user['id'] ?? null,
     ]);
+
+    try {
+        $planningLock = SiteMutationLock::acquire();
+        (new \VoxelSite\SiteMutationJournal(Database::getInstance()))->recoverInterrupted();
+        (new SitePlanStore(Database::getInstance(), new FileManager()))->recoverInterrupted();
+        \VoxelSite\SiteRecovery::assertWritable(Database::getInstance());
+    } catch (\Throwable $e) {
+        jsonResponse(['ok'=>false,'error'=>['code'=>'site_busy','message'=>$e->getMessage()]],409);
+        return;
+    }
 
     // ── Begin SSE stream ──
     set_time_limit(0);
@@ -194,9 +252,10 @@ if ($method === 'POST' && $path === '/site-control/orchestrate') {
     if ($candidateCount === 0) {
         $emitSSE('done', [
             'step'         => 'orch:no_candidates',
-            'message'      => 'No candidate files found for this request.',
+            'message'      => $surfaces['message'] ?? 'No candidate files found for this request.',
             'filesChanged' => 0,
-            'summary'      => 'No candidate files found.',
+            'summary'      => $surfaces['message'] ?? 'No candidate files found.',
+            'clarification_required' => $surfaces['clarification_required'] ?? false,
             'intent'       => $intent,
             'discovery'    => $surfaces,
         ]);
@@ -277,6 +336,17 @@ if ($method === 'POST' && $path === '/site-control/orchestrate') {
         ];
     }
 
+    if (!$planFailed && ($plan['applicable'] ?? true) && !empty($plan['edits'])) {
+        try {
+            $store = new SitePlanStore($db, $fileManager);
+            $plan['plan_id'] = $store->create((int)$user['id'], $plan);
+        } catch (\Throwable $e) {
+            $planFailed = true;
+            $plan['applicable'] = false;
+            $plan['validation_errors'][] = $e->getMessage();
+            $plan['summary'] = $e->getMessage();
+        }
+    }
     $editCount = count($plan['edits']);
 
     $emitSSE('status', [
@@ -320,7 +390,24 @@ if ($method === 'POST' && $path === '/site-control/orchestrate') {
 // ═══════════════════════════════════════════
 
 if ($path === '/site-control/apply' && $method === 'POST') {
-    $edits = $body['edits'] ?? [];
+    $planId = $body['plan_id'] ?? null;
+    if (!is_string($planId) || !preg_match('/^[a-f0-9]{48}$/D', $planId) || isset($body['edits'])) {
+        jsonResponse(['ok'=>false,'error'=>['code'=>'review_required',
+            'message'=>'Apply a stored reviewed plan. Build a new plan first.']],400);
+        return;
+    }
+    try {
+        $applyLock = SiteMutationLock::acquire();
+        $db = Database::getInstance();
+        $fileManager = new FileManager($db);
+        $store = new SitePlanStore($db, $fileManager);
+        $store->recoverInterrupted();
+        $record = $store->begin($planId, (int)$user['id']);
+    } catch (\Throwable $e) {
+        jsonResponse(['ok'=>false,'error'=>['code'=>'review_conflict','message'=>$e->getMessage()]],409);
+        return;
+    }
+    $edits = $record['plan']['edits'];
 
     if (empty($edits)) {
         jsonResponse(['ok' => false, 'error' => [
@@ -367,6 +454,13 @@ if ($path === '/site-control/apply' && $method === 'POST') {
         @flush();
     };
 
+    if (in_array($record['status'], ['applied','failed'], true)) {
+        $result = $record['result'];
+        $result['message'] = $result['error'] ?? ($result['files_changed'] . ' file(s) patched and verified.');
+        $emitSSE($result['success'] ? 'done' : 'error', $result);
+        exit;
+    }
+
     $emitSSE('status', [
         'phase'   => 'start',
         'message' => 'Applying ' . count($edits) . ' edit(s)…',
@@ -374,8 +468,8 @@ if ($path === '/site-control/apply' && $method === 'POST') {
 
     // Execute with emit-time logging — each phase is persisted the instant it's created.
     // If the process crashes mid-patch, the partial transcript is already on disk.
-    $db = Database::getInstance();
-    $fileManager = new FileManager($db);
+    $before = [];
+    foreach ($edits as $edit) { $before[$edit['file']] = $fileManager->readFile($edit['file']); }
 
     $onEmit = function (array $entry) use ($emitSSE) {
         // Persist to server log at emit time
@@ -403,6 +497,18 @@ if ($path === '/site-control/apply' && $method === 'POST') {
 
     try {
         $result = $executor->execute($edits);
+        if ($result['success']) {
+            $ops = array_map(static fn($path) => ['path'=>$path,'action'=>'write'], array_keys($before));
+            $revisions = new RevisionManager($db, null, $fileManager);
+            $revisions->recordAppliedRevision($ops, 'Site: ' . ($record['plan']['summary'] ?? 'Reviewed edits'),
+                (int)$user['id'], $before, function (int $revisionId) use (&$result, $store, $planId): void {
+                    $result['revision_id'] = $revisionId;
+                    $store->finish($planId, $result);
+                });
+        } else {
+            $store->finish($planId, $result);
+        }
+        $result = $store->get($planId, (int)$user['id'])['result'];
     } catch (\Throwable $e) {
         // Unexpected crash — the partial transcript is already on disk
         // via the onEmit callback. Log the exception context as well.
@@ -414,7 +520,9 @@ if ($path === '/site-control/apply' && $method === 'POST') {
             'trace'     => mb_substr($e->getTraceAsString(), 0, 2000),
         ]);
 
-        $emitSSE('error', [
+        $store->recoverInterrupted();
+        $recovery = $store->get($planId, (int)$user['id'])['result'];
+        $emitSSE('error', $recovery + [
             'phase'          => 'crash',
             'message'        => 'Internal error during patch execution.',
             'rollback_clean' => false,
@@ -433,6 +541,10 @@ if ($path === '/site-control/apply' && $method === 'POST') {
             'filesChanged' => $result['files_changed'],
             'verification' => $result['verification'],
             'duration_ms'  => $result['duration_ms'],
+            'plan_id' => $planId,
+            'changed_files' => $result['changed_files'] ?? array_keys($before),
+            'recovery_snapshot_id' => $result['recovery_snapshot_id'],
+            'revision_id' => $result['revision_id'] ?? null,
         ]);
 
         // Persist verification summary
@@ -455,6 +567,9 @@ if ($path === '/site-control/apply' && $method === 'POST') {
             'rollback_clean' => $result['rollback_clean'] ?? true,
             'verification'   => $result['verification'],
             'duration_ms'    => $result['duration_ms'],
+            'plan_id' => $planId,
+            'remaining_changed_files' => $result['remaining_changed_files'] ?? [],
+            'recovery_snapshot_id' => $result['recovery_snapshot_id'],
         ]);
 
         // Persist failure with full context

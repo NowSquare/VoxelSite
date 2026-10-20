@@ -148,7 +148,7 @@ class PageService
         // Nav rebuild + Tailwind recompile
         $this->syncNav();
         if ($this->fileManager->pathAffectsTailwind($filePath)) {
-            $this->fileManager->compileTailwind();
+            if (!($this->fileManager->compileTailwind()['ok'] ?? false)) throw new \RuntimeException('Could not compile website styles.');
         }
 
         return ['page' => $this->getPage($slug)];
@@ -194,7 +194,9 @@ class PageService
 
         // Slug rename
         if (isset($updates['slug'])) {
-            $candidate = self::normalizeSlug($updates['slug']);
+            $candidate = $source === 'site-control'
+                ? (self::normalizePathSlug($updates['slug']) ?? '')
+                : self::normalizeSlug($updates['slug']);
             if ($candidate === '') {
                 throw new \RuntimeException('Page slug is invalid.');
             }
@@ -221,6 +223,7 @@ class PageService
                 }
 
                 $rewritten = self::updatePhpMeta($currentContent, $nextTitle, $nextSlug);
+                $rewritten = self::rebasePageIncludes($rewritten, $oldFilePath, $newFilePath);
                 $this->fileManager->writeFile($newFilePath, $rewritten);
                 $tailwindChangedPaths[] = $newFilePath;
 
@@ -267,7 +270,7 @@ class PageService
 
         // Tailwind recompile
         if ($this->fileManager->pathsAffectTailwind($tailwindChangedPaths)) {
-            $this->fileManager->compileTailwind();
+            if (!($this->fileManager->compileTailwind()['ok'] ?? false)) throw new \RuntimeException('Could not compile website styles.');
         }
 
         // Build suggested prompt for rename cleanup review
@@ -332,7 +335,7 @@ class PageService
 
         // Tailwind recompile
         if ($this->fileManager->pathsAffectTailwind($tailwindChangedPaths)) {
-            $this->fileManager->compileTailwind();
+            if (!($this->fileManager->compileTailwind()['ok'] ?? false)) throw new \RuntimeException('Could not compile website styles.');
         }
 
         $suggestedPrompt = $this->buildDeleteCleanupPrompt($slug, $pageTitle, $cleanupResult['updated_files']);
@@ -364,7 +367,8 @@ class PageService
                 continue;
             }
 
-            $rewritten = self::rewriteHrefSlug($content, $oldSlug, $newSlug);
+            $rewritten = self::rewriteHrefSlug($content, $oldSlug, $newSlug, $path);
+            $rewritten = self::rewriteCanonicalNav($rewritten, [$oldSlug => $newSlug]);
             $rewritten = self::rewritePageSlugComparisons($rewritten, $oldSlug, $newSlug);
             if ($rewritten !== $content) {
                 $this->fileManager->writeFile($path, $rewritten);
@@ -396,7 +400,7 @@ class PageService
     public function removePageReferencesAfterDelete(string $deletedSlug, string $replacementHref = '#'): array
     {
         $updatedFiles = [];
-        $hrefPattern = self::buildSlugHrefPattern($deletedSlug);
+        $hrefPattern = self::buildSlugHrefPattern($deletedSlug) . '(?:[?#][^\"\']*)?';
 
         foreach ($this->collectAllRewriteablePaths() as $path) {
             $content = $this->fileManager->readFile($path);
@@ -411,7 +415,7 @@ class PageService
                 $content = self::removeListItemsForSlug($content, $hrefPattern);
                 $content = self::removeStandaloneLinksForSlug($content, $hrefPattern);
             } else {
-                $content = self::neutralizeLinksToSlug($content, $hrefPattern, $replacementHref);
+                $content = self::rewriteHrefSlug($content, $deletedSlug, $replacementHref, $path, false);
             }
 
             $content = self::removeSlugConditionals($content, $deletedSlug);
@@ -639,44 +643,19 @@ class PageService
         return $content;
     }
 
-    public static function rewriteHrefSlug(string $content, string $oldSlug, string $replacement): string
+    public static function rewriteHrefSlug(string $content, string $oldSlug, string $replacement, string $sourceFile = '', bool $preserveTail = true): string
     {
         $normalizedOld = strtolower(trim($oldSlug));
-
-        return preg_replace_callback(
-            '/(<a\b[^>]*\bhref\s*=\s*[\'"])([^\'"]+)([\'"])/i',
-            static function (array $m) use ($normalizedOld, $replacement): string {
-                $prefix = $m[1];
-                $href = $m[2];
-                $suffix = $m[3];
-
-                $parts = preg_split('/([?#].*)/', $href, 2, PREG_SPLIT_DELIM_CAPTURE);
-                $path = $parts[0] ?? $href;
-                $tail = $parts[1] ?? '';
-
-                $normalized = strtolower(trim($path));
-                $matches = [
-                    '/' . $normalizedOld,
-                    '/' . $normalizedOld . '/',
-                    '/' . $normalizedOld . '.php',
-                    $normalizedOld,
-                    $normalizedOld . '.php',
-                    './' . $normalizedOld,
-                    './' . $normalizedOld . '.php',
-                ];
-
-                if (!in_array($normalized, $matches, true)) {
-                    return $m[0];
-                }
-
-                if ($replacement === '#') {
-                    return $prefix . '#' . $suffix;
-                }
-
-                return $prefix . '/' . ltrim($replacement, '/') . $tail . $suffix;
-            },
-            $content
-        ) ?? $content;
+        foreach (array_reverse(self::hrefAttributes($content)) as $attribute) {
+            if ($attribute['tag'] !== 'a' || !$attribute['quoted']) continue;
+            $href = $attribute['href'];
+            if (self::resolveInternalRoute($href, $sourceFile) !== '/' . $normalizedOld) continue;
+            $tail = preg_match('/[?#].*$/', $href, $match) ? $match[0] : '';
+            $nextHref = $replacement === '#' ? '#' : '/' . ltrim($replacement, '/') . ($preserveTail ? $tail : '');
+            $nextHref = htmlspecialchars(html_entity_decode($nextHref, ENT_QUOTES | ENT_HTML5, 'UTF-8'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $content = substr_replace($content, $nextHref, $attribute['offset'], strlen($href));
+        }
+        return $content;
     }
 
     public static function rewritePageSlugComparisons(string $content, string $oldSlug, string $newSlug): string
@@ -722,17 +701,17 @@ class PageService
      * @param array  $slugMap    ['old/slug' => 'new/slug', ...] — will be sorted longest-first
      * @return string            Rewritten content
      */
-    public static function batchRewriteSlugReferences(string $content, array $slugMap): string
+    public static function batchRewriteSlugReferences(string $content, array $slugMap, string $sourceFile = ''): string
     {
         // Sort by old slug length descending (longest-path-first)
         uksort($slugMap, fn($a, $b) => strlen($b) - strlen($a));
 
         foreach ($slugMap as $oldSlug => $newSlug) {
-            $content = self::rewriteHrefSlug($content, $oldSlug, $newSlug);
+            $content = self::rewriteHrefSlug($content, $oldSlug, $newSlug, $sourceFile);
             $content = self::rewritePageSlugComparisons($content, $oldSlug, $newSlug);
         }
 
-        return $content;
+        return self::rewriteCanonicalNav($content, $slugMap);
     }
 
     /**
@@ -754,7 +733,7 @@ class PageService
                 continue;
             }
 
-            $rewritten = self::batchRewriteSlugReferences($content, $slugMap);
+            $rewritten = self::batchRewriteSlugReferences($content, $slugMap, $path);
             if ($rewritten !== $content) {
                 $this->fileManager->writeFile($path, $rewritten);
                 $updatedFiles[] = $path;
@@ -762,6 +741,140 @@ class PageService
         }
 
         return $updatedFiles;
+    }
+
+    /** Quoted attributes treat embedded PHP as opaque, preserving attribute boundaries. */
+    public static function hrefAttributes(string $content): array
+    {
+        $tagPattern = '~<([a-z][a-z0-9:-]*)\b(?:<\?[\s\S]*?\?>|"(?:<\?[\s\S]*?\?>|[^"])*"|\'(?:<\?[\s\S]*?\?>|[^\'])*\'|[^\'">])*>~i';
+        $attributePattern = '~<\?[\s\S]*?\?>(*SKIP)(*F)|([^\s\'"<>/=]+)(?:\s*=\s*(?:"((?:<\?[\s\S]*?\?>|[^"])*)"|\'((?:<\?[\s\S]*?\?>|[^\'])*)\'|([^\s>]+)))?~i';
+        preg_match_all($tagPattern, $content, $tags, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+        $attributes = [];
+        foreach ($tags as $tag) {
+            preg_match_all($attributePattern, $tag[0][0], $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE | PREG_UNMATCHED_AS_NULL);
+            foreach ($matches as $match) {
+                if (strtolower($match[1][0]) !== 'href') continue;
+                $group = $match[2][1] >= 0 ? 2 : ($match[3][1] >= 0 ? 3 : 4);
+                if ($match[$group][1] < 0) continue;
+                $attributes[] = [
+                    'tag' => strtolower($tag[1][0]), 'href' => $match[$group][0],
+                    'quoted' => $group !== 4,
+                    'offset' => $tag[0][1] + $match[$group][1],
+                    'attributeOffset' => $tag[0][1] + $match[0][1],
+                ];
+            }
+        }
+        return $attributes;
+    }
+
+    /** Resolve a literal internal href using the source page's browser URL. */
+    public static function resolveInternalRoute(string $href, string $sourceFile = ''): ?string
+    {
+        $href = html_entity_decode(trim($href), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if ($href === '' || $href[0] === '#' || $href[0] === '?' || str_starts_with($href, '//')
+            || preg_match('/^[a-z][a-z0-9+.-]*:/i', $href) || str_contains($href, '<?')) {
+            return null;
+        }
+        $path = preg_split('/[?#]/', $href, 2)[0];
+        $base = dirname($sourceFile);
+        if (str_starts_with($path, '/')) {
+            $base = '';
+        } elseif (str_starts_with($sourceFile, '_partials/')) {
+            // Relative URLs in shared markup depend on the consuming page.
+            return null;
+        }
+        $parts = [];
+        foreach (explode('/', ($base === '.' ? '' : $base) . '/' . ltrim($path, '/')) as $part) {
+            if ($part === '' || $part === '.') continue;
+            if ($part === '..') { array_pop($parts); continue; }
+            $parts[] = $part;
+        }
+        $route = '/' . implode('/', $parts);
+        $route = preg_replace('/\.php$/i', '', $route) ?? $route;
+        return $route === '/index' ? '/' : $route;
+    }
+
+    /** Keep the canonical PHP navigation declaration in the same rewrite surface. */
+    public static function rewriteCanonicalNav(string $content, array $slugMap): string
+    {
+        $links = NavLinksParser::parse($content);
+        if ($links === null) return $content;
+        $changed = false;
+        $walk = static function (array $entries) use (&$walk, &$changed, $slugMap): array {
+            foreach ($entries as &$entry) {
+                $route = self::resolveInternalRoute($entry['href'] ?? '');
+                $slug = $route === '/' ? 'index' : ltrim($route ?? '', '/');
+                if (isset($slugMap[$slug])) {
+                    $tail = preg_match('/[?#].*$/', $entry['href'], $m) ? $m[0] : '';
+                    $entry['href'] = '/' . $slugMap[$slug] . $tail;
+                    if (isset($entry['slug'])) $entry['slug'] = $slugMap[$slug];
+                    $changed = true;
+                }
+                if (isset($entry['children'])) $entry['children'] = $walk($entry['children']);
+            }
+            unset($entry);
+            return $entries;
+        };
+        $links = $walk($links);
+        return $changed ? (NavLinksParser::replaceNavBlock($content, NavLinksParser::serialize($links)) ?? $content) : $content;
+    }
+
+    /** Static include forms supported by generated pages, without executing PHP. */
+    public static function includePattern(): string
+    {
+        return '~\b(include_once|require_once|include|require)\s*(?:\(\s*)?(?:(__DIR__|dirname\s*\(\s*__DIR__\s*(?:,\s*(\d+)\s*)?\))\s*\.\s*)?([\'"])([^\'"]+\.php)\4~i';
+    }
+
+    public static function resolveIncludeTarget(string $sourceFile, array $match): ?string
+    {
+        $path = $match[5];
+        $base = dirname($sourceFile);
+        if (str_starts_with($match[2] ?? '', 'dirname')) {
+            $base = dirname($base, max(1, (int) ($match[3] ?: 1)));
+        } elseif (($match[2] ?? '') === '' && str_starts_with($path, '_partials/')) {
+            $base = '.'; // Existing generated root-relative include convention.
+        }
+        $parts = [];
+        foreach (explode('/', ($base === '.' ? '' : $base) . '/' . ltrim($path, '/')) as $part) {
+            if ($part === '' || $part === '.') continue;
+            if ($part === '..') { if (!$parts) return null; array_pop($parts); continue; }
+            $parts[] = $part;
+        }
+        return implode('/', $parts);
+    }
+
+    /** Preserve included file identities when a page changes directory. */
+    public static function rebasePageIncludes(string $content, string $oldFile, string $newFile): string
+    {
+        if (dirname($oldFile) === dirname($newFile)) return $content;
+        $offset = 0;
+        foreach (token_get_all($content) as $token) {
+            $text = is_array($token) ? $token[1] : $token;
+            if (is_array($token) && in_array($token[0], [T_INCLUDE, T_INCLUDE_ONCE, T_REQUIRE, T_REQUIRE_ONCE], true)) {
+                if (!preg_match(self::includePattern(), substr($content, $offset), $match, PREG_OFFSET_CAPTURE) || $match[0][1] !== 0) {
+                    throw new \RuntimeException('This page uses a dynamic PHP include. Review its include paths in Editor before moving it.');
+                }
+            }
+            $offset += strlen($text);
+        }
+        foreach (array_reverse(self::hrefAttributes($content)) as $attribute) {
+            if ($attribute['tag'] !== 'a' || !$attribute['quoted'] || str_starts_with($attribute['href'], '/')) continue;
+            $route = self::resolveInternalRoute($attribute['href'], $oldFile);
+            if ($route === null) continue;
+            $tail = preg_match('/[?#].*$/', $attribute['href'], $suffix) ? $suffix[0] : '';
+            $content = substr_replace($content, $route . $tail, $attribute['offset'], strlen($attribute['href']));
+        }
+        return preg_replace_callback(self::includePattern(), static function (array $match) use ($oldFile, $newFile): string {
+            $target = self::resolveIncludeTarget($oldFile, $match);
+            if ($target === null) throw new \RuntimeException('Cannot safely relocate include in ' . $oldFile);
+            $from = dirname($newFile) === '.' ? [] : explode('/', dirname($newFile));
+            $to = explode('/', $target);
+            while ($from && $to && $from[0] === $to[0]) { array_shift($from); array_shift($to); }
+            $relative = str_repeat('../', count($from)) . implode('/', $to);
+            $expression = ($match[2] ?? '') !== '' ? $match[2] : $match[4];
+            $prefix = substr($match[0], 0, strpos($match[0], $expression));
+            return $prefix . "__DIR__ . '/" . $relative . "'";
+        }, $content) ?? $content;
     }
 
     // ═══════════════════════════════════════════
@@ -823,26 +936,13 @@ class PageService
      */
     public static function updatePhpMeta(string $content, string $title, string $slug): string
     {
-        $escapedTitle = addslashes($title);
-        $escapedSlug = addslashes($slug);
-
-        $updated = preg_replace(
-            '/([\'"]title[\'\"]\\s*=>\\s*[\'"])(.*?)([\'"])/i',
-            '$1' . $escapedTitle . '$3',
-            $content,
-            1
-        );
-        if ($updated === null) {
-            $updated = $content;
+        foreach (['title' => $title, 'slug' => $slug] as $key => $value) {
+            $pattern = '/([\'"]' . $key . '[\'"]\s*=>\s*)([\'"])(?:\\\\.|(?!\2).)*?\2/s';
+            $content = preg_replace_callback($pattern, static function (array $match) use ($value): string {
+                // PHP single-quoted literals do not interpolate dollars or backreferences.
+                return $match[1] . "'" . str_replace(['\\', "'"], ['\\\\', "\\'"], $value) . "'";
+            }, $content, 1) ?? $content;
         }
-
-        $updated = preg_replace(
-            '/([\'"]slug[\'\"]\\s*=>\\s*[\'"])(.*?)([\'"])/i',
-            '$1' . $escapedSlug . '$3',
-            $updated,
-            1
-        );
-
-        return $updated ?? $content;
+        return $content;
     }
 }

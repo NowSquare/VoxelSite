@@ -72,7 +72,7 @@ const NAV_GROUPS = [
     defaultRoute: 'chat',
     routes: [
       { route: 'chat',     label: 'Chat',   roles: ['owner', 'editor'] },
-      { route: 'site-map', label: 'Site',   roles: ['owner', 'editor'], badge: 'Beta' },
+      { route: 'site-map', label: 'Site',   roles: ['owner', 'editor'] },
       { route: 'editor',   label: 'Editor', roles: ['owner', 'editor'] },
     ],
   },

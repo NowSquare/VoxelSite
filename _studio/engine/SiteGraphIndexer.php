@@ -311,7 +311,7 @@ class SiteGraphIndexer
      */
     private function indexIncludes(SiteGraph $graph): void
     {
-        $pattern = '/(?:include|include_once|require|require_once)\s*(?:\(?\s*(?:__DIR__\s*\.\s*)?[\'"]([^\'"]+\.php)[\'"]\s*\)?)/i';
+        $pattern = PageService::includePattern();
 
         // Scan all pages and partials
         $contentNodes = array_merge(
@@ -330,22 +330,32 @@ class SiteGraphIndexer
                 continue;
             }
 
-            if (!preg_match_all($pattern, $content, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
-                continue;
+            preg_match_all($pattern, $content, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+            $includeOffsets = [];
+            $offset = 0;
+            foreach (token_get_all($content) as $token) {
+                $text = is_array($token) ? $token[1] : $token;
+                if (is_array($token) && in_array($token[0], [T_INCLUDE, T_INCLUDE_ONCE, T_REQUIRE, T_REQUIRE_ONCE], true)) {
+                    $includeOffsets[$offset] = $token[2];
+                }
+                $offset += strlen($text);
             }
-
+            $resolvedOffsets = [];
             foreach ($matches as $match) {
-                $includePath = $match[1][0] ?? '';
+                if (!isset($includeOffsets[$match[0][1]])) continue; // Comments and strings are not execution.
+                $resolvedOffsets[$match[0][1]] = true;
+                $includePath = $match[5][0] ?? '';
                 if ($includePath === '') {
                     continue;
                 }
 
                 // Resolve relative path: normalize from the file's directory
-                $resolvedPath = $this->resolveIncludePath($filePath, $includePath);
+                $resolvedPath = PageService::resolveIncludeTarget($filePath, array_map(static fn(array $part) => $part[0], $match));
                 $targetId = 'partial:' . $resolvedPath;
 
                 // Only add edge if target node exists in graph
                 if ($graph->getNode($targetId) === null) {
+                    $graph->addWarning($filePath, 'Include target is outside the indexed partials or cannot be resolved: ' . $includePath, $includeOffsets[$match[0][1]]);
                     continue;
                 }
 
@@ -368,12 +378,16 @@ class SiteGraphIndexer
                     'lineNumber'  => $lineNumber,
                 ]);
             }
+            foreach ($includeOffsets as $offset => $line) {
+                if (!isset($resolvedOffsets[$offset])) $graph->addWarning($filePath, 'Dynamic PHP include needs manual review; its consumers are not counted.', $line);
+            }
         }
 
         // Tag shared partials: any partial with 2+ incoming `includes` edges
         foreach ($graph->getNodesByType('partial') as $partial) {
             $consumers = $graph->getConsumers($partial['id']);
-            if (count($consumers) >= 2) {
+            $affectedPages = $graph->getBlastRadius($partial['id']);
+            if (count($affectedPages) >= 2) {
                 $graph->updateNodeMeta($partial['id'], [
                     'isShared'     => true,
                     'includeCount' => count($consumers),
@@ -385,33 +399,6 @@ class SiteGraphIndexer
                 ]);
             }
         }
-    }
-
-    /**
-     * Resolve an include path relative to the source file's directory.
-     *
-     * Examples:
-     *   resolveIncludePath('index.php', '_partials/header.php') → '_partials/header.php'
-     *   resolveIncludePath('_partials/header.php', 'nav.php') → '_partials/nav.php'
-     *   resolveIncludePath('_partials/header.php', '_partials/nav.php') → '_partials/nav.php'
-     */
-    private function resolveIncludePath(string $sourceFile, string $includePath): string
-    {
-        // Strip leading / from __DIR__-relative includes like __DIR__ . '/nav.php'
-        $includePath = ltrim($includePath, '/');
-
-        // If the include path already starts with _partials/, it's absolute-ish
-        if (str_starts_with($includePath, '_partials/')) {
-            return $includePath;
-        }
-
-        // Otherwise resolve relative to the source file's directory
-        $sourceDir = dirname($sourceFile);
-        if ($sourceDir === '.') {
-            return $includePath;
-        }
-
-        return $sourceDir . '/' . $includePath;
     }
 
     // ═══════════════════════════════════════════
@@ -432,7 +419,6 @@ class SiteGraphIndexer
     private function indexLinks(SiteGraph $graph): void
     {
         // Capture all href values — we'll filter in code
-        $hrefPattern = '/href=["\']([^"\']*?)["\']/i';
 
         // Patterns to skip
         $skipPrefixes = ['http://', 'https://', 'mailto:', 'tel:', 'javascript:', '<?'];
@@ -456,12 +442,43 @@ class SiteGraphIndexer
             // Determine file-level base context
             $baseContext = $this->classifyFileContext($filePath, $content);
 
-            if (!preg_match_all($hrefPattern, $content, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
-                continue;
+            $attributes = PageService::hrefAttributes($content);
+
+            // Canonical navigation is PHP data; its literal href entries are file truth.
+            $navLinks = NavLinksParser::parse($content);
+            if ($navLinks !== null) {
+                $walk = function (array $entries) use (&$walk, $graph, $node, $filePath): void {
+                    foreach ($entries as $entry) {
+                        $href = (string) ($entry['href'] ?? '');
+                        $routePath = PageService::resolveInternalRoute($href, $filePath);
+                        if ($routePath !== null && $graph->getNode('route:' . $routePath) !== null) {
+                            $graph->addEdge($node['id'], 'route:' . $routePath, 'links_to', [
+                                'href' => $href, 'context' => 'nav', 'sourceKind' => 'nav_entry',
+                            ]);
+                        }
+                        if (isset($entry['children'])) $walk($entry['children']);
+                    }
+                };
+                $walk($navLinks);
             }
 
-            foreach ($matches as $match) {
-                $href = $match[1][0] ?? '';
+            foreach ($attributes as $attribute) {
+                $href = $attribute['href'];
+                $offset = $attribute['attributeOffset'];
+                if (!$attribute['quoted']) {
+                    $graph->addWarning($filePath, 'Unquoted href needs manual review; use a quoted link before changing page routes.', substr_count($content, "\n", 0, $offset) + 1);
+                    continue;
+                }
+                if (str_contains($href, '<?')) {
+                    if ($navLinks === null || !preg_match('~^<\?=\s*\$(?:link|child)\s*\[\s*([\'"])href\1\s*\]\s*\?>$~', $href)) {
+                        $graph->addWarning($filePath, 'Dynamic PHP link needs manual review; it is not counted.', substr_count($content, "\n", 0, $offset) + 1);
+                    }
+                    continue;
+                }
+                if (str_starts_with($filePath, '_partials/') && $href !== '' && $href[0] !== '/' && $href[0] !== '#' && $href[0] !== '?' && !preg_match('/^[a-z][a-z0-9+.-]*:/i', $href)) {
+                    $graph->addWarning($filePath, 'Relative link in shared markup depends on the consuming page; it is not counted.', substr_count($content, "\n", 0, $offset) + 1);
+                    continue;
+                }
 
                 // Skip empty, anchor-only, or external
                 if ($href === '' || $href === '#') {
@@ -484,21 +501,8 @@ class SiteGraphIndexer
                     continue;
                 }
 
-                // Must start with / to be an internal path link
-                if (!str_starts_with($href, '/')) {
-                    continue;
-                }
-
-                // Normalize: strip query string and anchor
-                $routePath = strtok($href, '?#');
-                if ($routePath === false || $routePath === '') {
-                    $routePath = '/';
-                }
-
-                // Remove trailing slash (except for root)
-                if ($routePath !== '/' && str_ends_with($routePath, '/')) {
-                    $routePath = rtrim($routePath, '/');
-                }
+                $routePath = PageService::resolveInternalRoute($href, $filePath);
+                if ($routePath === null) continue;
 
                 $routeId = 'route:' . $routePath;
 
@@ -506,13 +510,17 @@ class SiteGraphIndexer
                 if ($graph->getNode($routeId) === null) {
                     continue;
                 }
+                if ($attribute['tag'] !== 'a') {
+                    $graph->addWarning($filePath, 'Internal href on <' . $attribute['tag'] . '> needs manual review before changing page routes.', substr_count($content, "\n", 0, $offset) + 1);
+                    continue;
+                }
 
                 // Calculate approximate line number
-                $lineNumber = substr_count($content, "\n", 0, (int) $match[0][1]) + 1;
+                $lineNumber = substr_count($content, "\n", 0, $offset) + 1;
 
                 $graph->addEdge($node['id'], $routeId, 'links_to', [
                     'href'       => $href,
-                    'context'    => $this->classifyLinkContext($baseContext, $content, (int) $match[0][1]),
+                    'context'    => $this->classifyLinkContext($baseContext, $content, $offset),
                     'lineNumber' => $lineNumber,
                 ]);
             }
@@ -619,6 +627,10 @@ class SiteGraphIndexer
             $propValue = trim($match[2]);
             $tokenId   = 'token:' . $propName;
 
+            if ($graph->getNode($tokenId) !== null) {
+                $graph->updateNodeMeta($tokenId, ['value' => $propValue]);
+                continue;
+            }
             $graph->addNode($tokenId, 'token', $propName, [
                 'name'       => $propName,
                 'value'      => $propValue,
@@ -626,8 +638,14 @@ class SiteGraphIndexer
             ]);
         }
 
-        // Scan all content files for var(--xxx) usage
-        $varPattern = '/var\(--([a-z][a-z0-9-]*)\)/i';
+        // Resolve utility consumers through the same compiler that produces
+        // the site's CSS. This keeps token aliases, variants and opacity
+        // modifiers in one mapping instead of reimplementing Tailwind here.
+        $themePath = (getenv('VS_TEST_ASSETS_DIR') ?: dirname(__DIR__, 2) . '/assets') . '/css';
+        $compiler = new TailwindCompiler($themePath);
+
+        // Scan literal var() references and compiled utility declarations.
+        $varPattern = '/var\(\s*--([a-z][a-z0-9-]*)\s*(?=[,)])/i';
 
         $contentNodes = array_merge(
             $graph->getNodesByType('page'),
@@ -645,7 +663,20 @@ class SiteGraphIndexer
                 continue;
             }
 
-            if (!preg_match_all($varPattern, $content, $varMatches)) {
+            // PHP blocks are opaque, as in TailwindCompiler's attribute
+            // scanner. Keep surrounding static classes, without treating
+            // PHP comments or string literals as rendered class attributes.
+            $markup = '';
+            foreach (token_get_all($content) as $token) {
+                if (is_array($token) && $token[0] === T_INLINE_HTML) $markup .= $token[1];
+                elseif (is_array($token) && in_array($token[0], [T_OPEN_TAG, T_OPEN_TAG_WITH_ECHO], true)) $markup .= ' ';
+            }
+            $classes = [];
+            if (preg_match_all('/(?<![\w:\-])class\s*=\s*(["\'])(.*?)\1/is', $markup, $classMatches)) {
+                $classes = preg_split('/\s+/', trim(implode(' ', $classMatches[2])), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+            }
+            $consumerSource = $content . "\n" . $compiler->compileClasses(array_values(array_unique($classes)));
+            if (!preg_match_all($varPattern, $consumerSource, $varMatches)) {
                 continue;
             }
 

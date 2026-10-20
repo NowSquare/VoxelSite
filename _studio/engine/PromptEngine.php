@@ -109,6 +109,16 @@ class PromptEngine
             $this->beginSSE();
         }
 
+        try {
+            $websiteMutationLock = SiteMutationLock::acquire();
+            (new SiteMutationJournal($this->db))->recoverInterrupted();
+            (new SitePlanStore($this->db, $this->fileManager ?? new FileManager($this->db)))->recoverInterrupted();
+            SiteRecovery::assertWritable($this->db);
+        } catch (\Throwable $e) {
+            $this->handleStreamError($e instanceof RuntimeException ? $e : new RuntimeException($e->getMessage(), 0, $e), $userId, $conversationId, $promptLogId, $userPrompt);
+            return;
+        }
+
         // Route before constructing generation context or installing write recovery.
         // Routing is optional: configuration/provider failures use normal editing.
         $routing = null;

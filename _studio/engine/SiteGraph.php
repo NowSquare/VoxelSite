@@ -35,6 +35,13 @@ class SiteGraph
     /** @var array<string, list<array{source: string, target: string, type: string, meta: array}>> */
     private array $inEdges = [];
 
+    private array $warnings = [];
+
+    public function addWarning(string $file, string $message, ?int $line = null): void
+    {
+        $this->warnings[] = ['file' => $file, 'message' => $message, 'line' => $line];
+    }
+
     // ═══════════════════════════════════════════
     //  Build (used by SiteGraphIndexer only)
     // ═══════════════════════════════════════════
@@ -167,10 +174,10 @@ class SiteGraph
         foreach ($this->getInEdges($partialId, 'includes') as $edge) {
             $node = $this->getNode($edge['source']);
             if ($node !== null) {
-                $result[] = $node;
+                $result[$node['id']] = $node;
             }
         }
-        return $result;
+        return array_values($result);
     }
 
     /**
@@ -185,10 +192,10 @@ class SiteGraph
         foreach ($this->getOutEdges($pageId, 'includes') as $edge) {
             $node = $this->getNode($edge['target']);
             if ($node !== null) {
-                $result[] = $node;
+                $result[$node['id']] = $node;
             }
         }
-        return $result;
+        return array_values($result);
     }
 
     /**
@@ -202,7 +209,7 @@ class SiteGraph
      */
     public function getTransitiveConsumers(string $nodeId): array
     {
-        $visited = [];
+        $visited = [$nodeId => true];
         $queue = [$nodeId];
         $result = [];
 
@@ -238,10 +245,10 @@ class SiteGraph
         foreach ($this->getInEdges($routeNodeId, 'links_to') as $edge) {
             $node = $this->getNode($edge['source']);
             if ($node !== null) {
-                $result[] = $node;
+                $result[$node['id']] = $node;
             }
         }
-        return $result;
+        return array_values($result);
     }
 
     /**
@@ -256,10 +263,10 @@ class SiteGraph
         foreach ($this->getInEdges($tokenId, 'consumes_token') as $edge) {
             $node = $this->getNode($edge['source']);
             if ($node !== null) {
-                $result[] = $node;
+                $result[$node['id']] = $node;
             }
         }
-        return $result;
+        return array_values($result);
     }
 
     /**
@@ -361,6 +368,7 @@ class SiteGraph
         return [
             'nodes' => array_values($this->nodes),
             'edges' => $allEdges,
+            'warnings' => $this->warnings,
         ];
     }
 
@@ -397,6 +405,7 @@ class SiteGraph
             $edgeCount += count($edges);
         }
         $counts['edges'] = $edgeCount;
+        $counts['warnings'] = count($this->warnings);
 
         return $counts;
     }

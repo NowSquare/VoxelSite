@@ -47,7 +47,7 @@ $schema = [
         'x-capabilities' => [
             'prompt_execution' => [
                 'available'   => function_exists('exec'),
-                'description' => 'AI prompt execution via background CLI worker. Requires exec() on the server.',
+                'description' => 'AI prompt execution via background CLI worker. Requires exec() and a usable PHP CLI executable on the server.',
                 'scope'       => 'prompt:execute',
                 'note'        => 'This scope is opt-in — not included in any role defaults.',
             ],
@@ -539,7 +539,7 @@ function schema_buildPaths(): array
         'post' => [
             'operationId' => 'queuePrompt',
             'summary'     => 'Queue an AI prompt for background execution',
-            'description' => 'Submits a prompt for AI processing. The prompt runs in a detached background worker. Returns immediately with a 202 Accepted and a poll URL. Requires the opt-in `prompt:execute` scope.',
+            'description' => 'Submits a prompt for AI processing. The prompt runs in a detached background worker. Verifies PHP CLI access before allocating a conversation or job, then returns 202 Accepted and a poll URL. Requires the opt-in `prompt:execute` scope.',
             'tags'        => ['Prompt'],
             'requestBody' => schema_jsonBody([
                 'prompt'      => ['type' => 'string', 'description' => 'The user prompt text. This is what the AI will process.'],
@@ -566,7 +566,7 @@ function schema_buildPaths(): array
                     ],
                 ]),
                 '422' => schema_errorRef('Validation error'),
-                '503' => schema_errorRef('exec() not available'),
+                '503' => schema_errorRef('exec() unavailable (exec_unavailable) or no usable PHP CLI executable (php_cli_unavailable)'),
             ],
         ],
     ];

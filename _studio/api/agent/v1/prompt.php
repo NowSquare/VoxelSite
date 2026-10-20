@@ -104,6 +104,16 @@ if ($method === 'POST') {
         return;
     }
 
+    // Verify CLI access before creating a conversation or queuing a job.
+    $phpBinary = \VoxelSite\PhpCliResolver::resolve();
+    if ($phpBinary === null) {
+        \VoxelSite\Logger::error('agent-api', 'No usable PHP CLI found for prompt execution', [
+            'key_label' => $keyData['label'] ?? 'unknown',
+        ]);
+        agentError(503, 'php_cli_unavailable', 'No usable PHP CLI executable was found. Ask your host to enable PHP CLI access.');
+        return;
+    }
+
     // ── Resolve the site owner for the prompt ──
     $owner = $db->queryOne(
         "SELECT id FROM users WHERE role = 'owner' ORDER BY id ASC LIMIT 1"
@@ -156,7 +166,6 @@ if ($method === 'POST') {
     ]);
 
     // ── Spawn the background worker ──
-    $phpBinary   = PHP_BINARY ?: '/usr/bin/php';
     $workerScript = dirname(__DIR__, 3) . '/worker/prompt-runner.php';
     $siteRoot    = dirname(__DIR__, 4);
     $logDir      = dirname(__DIR__, 3) . '/logs';

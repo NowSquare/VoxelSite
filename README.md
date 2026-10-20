@@ -42,6 +42,8 @@ VoxelSite is open source under the GNU Affero General Public License v3.0 — se
 
 Anthropic Claude (recommended), OpenAI, Google Gemini, DeepSeek, or any OpenAI-compatible endpoint. You bring your own key; keys are encrypted at rest.
 
+**Output limits:** Settings shows your configured ceiling, the effective generation limit, and the model's context window. Section edits use at most 16,000 tokens. Compatible endpoints can use documented output/context overrides for each exact model ID and server URL. Empty responses report an error; responses that reach their limit after saving files report partial completion.
+
 ### AI Router
 
 AI Router uses TypeSafe's Jev model to assess each request, then selects the
@@ -90,6 +92,8 @@ The websites VoxelSite generates are standard HTML, CSS, PHP, and vanilla JavaSc
 **Required PHP extensions:** `pdo_sqlite` `openssl` `json` `curl` `mbstring` `gd` `zip`
 
 Most shared hosts include all of these. The installer's system check confirms every requirement before you continue.
+
+Background prompts through the Agent API also require `exec()` and a working PHP CLI. The API checks both before accepting a job.
 
 ---
 

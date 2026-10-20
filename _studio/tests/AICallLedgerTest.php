@@ -55,6 +55,7 @@ final class LedgerTestProvider implements AIProviderInterface
     public function getConfigFields(): array { return [['key' => 'api_key']]; }
     public function validateConfig(array $config): bool { $this->calls[] = ['validateConfig', $config]; return true; }
     public function estimateTokens(string $text): int { $this->calls[] = ['estimateTokens', $text]; return 11; }
+    public function resolveMaxTokens(int $requested, string $model): int { return max(1, $requested); }
     public function getContextWindow(string $model): int { $this->calls[] = ['getContextWindow', $model]; return 12345; }
     public function estimateCost(int $inputTokens, int $outputTokens, string $model): array { $this->calls[] = ['estimateCost', $inputTokens, $outputTokens, $model]; return ['total_cost' => 0.5]; }
     public function complete(string $systemPrompt, array $messages, array $options = []): string {

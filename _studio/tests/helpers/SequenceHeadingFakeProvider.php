@@ -27,6 +27,7 @@ final class SequenceHeadingFakeProvider implements \VoxelSite\AIProviderInterfac
     public function testConnection(): array { return []; }
     public function getConfigFields(): array { return []; }
     public function validateConfig(array $config): bool { return true; }
+    public function resolveMaxTokens(int $requested, string $model): int { return $this->delegate->resolveMaxTokens($requested, $model); }
     public function getContextWindow(string $model): int { return $this->delegate->getContextWindow($model); }
     public function estimateTokens(string $text): int { return $this->delegate->estimateTokens($text); }
     public function estimateCost(int $inputTokens, int $outputTokens, string $model): array { return $this->delegate->estimateCost($inputTokens,$outputTokens,$model); }

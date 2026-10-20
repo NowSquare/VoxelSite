@@ -57,7 +57,7 @@ if (($input['surface'] ?? 'studio') === 'agent') {
     require dirname(__DIR__, 2) . '/api/agent/v1/settings.php';
 } else {
     $_REQUEST['_route_method'] = $input['method'] ?? 'GET';
-    $_REQUEST['_route_path'] = '/settings';
+    $_REQUEST['_route_path'] = $input['path'] ?? '/settings';
     $_REQUEST['_user'] = ['role' => $input['role'] ?? '', 'id' => 1];
     require dirname(__DIR__, 2) . '/api/endpoints/settings.php';
 }

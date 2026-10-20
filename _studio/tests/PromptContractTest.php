@@ -250,6 +250,7 @@ $fake = new class implements AIProviderInterface {
         return $this->reply;
     }
     public function estimateTokens(string $text): int { return intdiv(strlen($text), 4); }
+    public function resolveMaxTokens(int $requested, string $model): int { return max(1, $requested); }
     public function getContextWindow(string $model): int { return 128000; }
     public function estimateCost(int $inputTokens, int $outputTokens, string $model): array { return ['input_cost' => 0.0, 'output_cost' => 0.0, 'total_cost' => 0.0]; }
 };

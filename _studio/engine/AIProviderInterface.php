@@ -45,7 +45,7 @@ interface AIProviderInterface
      * Requires a valid API key. Returns models sorted by relevance
      * (newest/recommended first). Falls back to getModels() on failure.
      *
-     * @return array<int, array{id: string, name: string, created_at?: string}>
+     * @return array<int, array{id: string, name: string, created_at?: string, max_output_tokens?: int, context_window?: int}>
      */
     public function listModels(): array;
 
@@ -56,7 +56,7 @@ interface AIProviderInterface
      * defaults, this method THROWS on failure so the error can be
      * surfaced to the user (in Settings → Test Connection).
      *
-     * @return array<int, array{id: string, name: string, created_at?: string}> Models on success
+     * @return array<int, array{id: string, name: string, created_at?: string, max_output_tokens?: int, context_window?: int}> Models on success
      * @throws \RuntimeException On auth, rate-limit, or connection errors
      */
     public function testConnection(): array;
@@ -91,7 +91,7 @@ interface AIProviderInterface
      * @param string   $systemPrompt The complete system prompt
      * @param array    $messages     Conversation history [{role, content}]
      * @param callable $onToken      Called with each text chunk: fn(string $token)
-     * @param callable $onComplete   Called when done: fn(string $fullResponse, array $usage)
+     * @param callable $onComplete   Called when done: fn(string $fullResponse, array $usage); usage includes finish_reason when supplied by the provider
      * @param array    $options      Provider-specific options (model, max_tokens, etc.)
      */
     public function stream(
@@ -119,6 +119,12 @@ interface AIProviderInterface
      * Doesn't need to be exact — used for context size management.
      */
     public function estimateTokens(string $text): int;
+
+    /**
+     * Resolve a positive output budget against this model's known capacity.
+     * The same value must be used for input reservation and outgoing requests.
+     */
+    public function resolveMaxTokens(int $requested, string $model): int;
 
     /**
      * Get the context window size (in tokens) for a specific model.

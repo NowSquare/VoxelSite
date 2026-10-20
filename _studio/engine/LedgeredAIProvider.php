@@ -95,6 +95,7 @@ final class LedgeredAIProvider implements AIProviderInterface
     public function getConfigFields(): array { return $this->provider->getConfigFields(); }
     public function validateConfig(array $config): bool { return $this->provider->validateConfig($config); }
     public function estimateTokens(string $text): int { return $this->provider->estimateTokens($text); }
+    public function resolveMaxTokens(int $requested, string $model): int { return $this->provider->resolveMaxTokens($requested, $model); }
     public function getContextWindow(string $model): int { return $this->provider->getContextWindow($model); }
     public function estimateCost(int $inputTokens, int $outputTokens, string $model): array
     { return $this->provider->estimateCost($inputTokens, $outputTokens, $model); }

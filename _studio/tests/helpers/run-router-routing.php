@@ -47,10 +47,13 @@ $response .= '<message>Updated the requested content.</message>';
 if (($scenario['intent'] ?? '') === 'question') {
     $response = '<file path="index.php">' . "\n" . str_replace($selection, '<p>MALICIOUS_QUESTION_WRITE</p>', $original) . "\n</file>\n<message>The bakery sells sourdough.</message>";
 }
+if (array_key_exists('response', $scenario)) {
+    $response = $scenario['response'];
+}
 final class RoutingProvider implements \VoxelSite\AIProviderInterface
 {
     public \VoxelSite\Tests\HeadingFakeProvider $inner;
-    public function __construct(string $response) { $this->inner = new \VoxelSite\Tests\HeadingFakeProvider($response); }
+    public function __construct(string $response, private array $scenario = []) { $this->inner = new \VoxelSite\Tests\HeadingFakeProvider($response); }
     public function getId(): string { return 'claude'; }
     public function getName(): string { return 'Routing fixture'; }
     public function getModels(): array { return array_map(fn($id) => ['id' => $id, 'name' => $id, 'tier' => 'fast'], ['routing-default', 'routing-cheap', 'routing-frontier']); }
@@ -58,7 +61,8 @@ final class RoutingProvider implements \VoxelSite\AIProviderInterface
     public function testConnection(): array { return $this->getModels(); }
     public function getConfigFields(): array { return []; }
     public function validateConfig(array $config): bool { return true; }
-    public function getContextWindow(string $model): int { return 200000; }
+    public function getContextWindow(string $model): int { return $this->scenario['context_window'] ?? 200000; }
+    public function resolveMaxTokens(int $requested, string $model): int { return min(max(1, $requested), $this->scenario['output_cap'] ?? 128000); }
     public function estimateTokens(string $text): int { return $this->inner->estimateTokens($text); }
     public function estimateCost(int $inputTokens, int $outputTokens, string $model): array { return $this->inner->estimateCost($inputTokens, $outputTokens, $model); }
     public function complete(string $systemPrompt, array $messages, array $options = []): string {
@@ -66,7 +70,11 @@ final class RoutingProvider implements \VoxelSite\AIProviderInterface
         $this->inner->stream($systemPrompt, $messages, static function ($token) {}, function ($response) use (&$answer) { $answer = $response; }, $options);
         return $answer;
     }
-    public function stream(string $systemPrompt, array $messages, callable $onToken, callable $onComplete, array $options = []): void { $this->inner->stream($systemPrompt, $messages, $onToken, $onComplete, $options); }
+    public function stream(string $systemPrompt, array $messages, callable $onToken, callable $onComplete, array $options = []): void {
+        $this->inner->stream($systemPrompt, $messages, $onToken, function ($response, $usage) use ($onComplete) {
+            $onComplete($response, $usage + ['finish_reason' => $this->scenario['finish_reason'] ?? 'stop']);
+        }, $options);
+    }
 }
 final class RoutingTypedClient implements \VoxelSite\TypeSafeClientInterface
 {
@@ -95,7 +103,7 @@ final class RoutingTypedClient implements \VoxelSite\TypeSafeClientInterface
             'usage' => ['input_tokens' => 100, 'output_tokens' => 50]];
     }
 }
-$provider = new RoutingProvider($response);
+$provider = new RoutingProvider($response, $scenario);
 if (!empty($scenario['stale'])) {
     $provider->inner->duringChunk = function () use ($root, $original, $selection) {
         file_put_contents($root . '/_studio/preview/index.php', str_replace($selection, '<p>Concurrent owner edit.</p>', $original));

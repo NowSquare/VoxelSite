@@ -13,6 +13,9 @@ import { escapeHtml } from '../helpers.js';
 import { closeModal, showConfirmModal, onBackdropClick } from '../ui/modals.js';
 import { router } from '../../router.js';
 import { renderRouterSettings, bindRouterSettings } from './router.js';
+import { modelOptions, bindModelBudgetControls } from './settings-model-budget.js';
+
+let modelDiscoveryRequest = 0;
 
 function renderSettingsView() {
   // Load settings on render
@@ -73,6 +76,7 @@ async function loadSettings() {
   const configFields = currentProvider.config_fields || [];
   const currentModel = s[`ai_${currentProviderId}_model`] || '';
   const keyIsSet = s[`ai_${currentProviderId}_api_key_set`] || false;
+  const canEditModelLimits = store.get('user')?.role === 'owner';
 
   // Provider selector
   const providerOptions = providerIds.map(pid => {
@@ -189,16 +193,38 @@ async function loadSettings() {
         <div>
           <label for="set-ai-model" class="block text-sm font-medium text-vs-text-secondary mb-1">Default model</label>
           <select id="set-ai-model" class="vs-input">
-            <option value="">Loading models…</option>
+            ${currentModel ? modelOptions([], currentModel) : '<option value="">Loading models…</option>'}
           </select>
         </div>
 
         <div>
           <label for="set-max-tokens" class="block text-sm font-medium text-vs-text-secondary mb-1">Max Output Tokens</label>
-          <input id="set-max-tokens" type="number" value="${s.ai_max_tokens || 32000}" min="1000" max="128000" step="1000"
-            class="vs-input" />
-          <p class="text-xs text-vs-text-ghost mt-1">Higher values allow larger website generations but cost more.</p>
+          <input id="set-max-tokens" type="number" value="${s.ai_max_tokens || 32000}" min="1000" max="128000" step="1"
+            class="vs-input" aria-describedby="set-max-tokens-help set-model-budget" />
+          <p id="set-max-tokens-help" class="text-xs text-vs-text-ghost mt-1">An output ceiling, not a target. Actual usage can be lower.</p>
+          <div id="set-model-budget" class="text-xs text-vs-text-ghost mt-3" role="status" aria-live="polite">Checking model limits…</div>
         </div>
+
+        ${currentProviderId === 'openai_compatible' ? `
+        <fieldset id="set-model-limits" class="min-w-0">
+          <legend class="text-sm font-medium text-vs-text-secondary">Advanced model limits <span class="text-vs-text-ghost font-normal">(optional)</span></legend>
+          <p id="set-model-limits-help" class="text-xs text-vs-text-ghost mt-2">${canEditModelLimits
+            ? 'Set both limits for the selected model, or leave both blank to use detected limits.'
+            : 'Only the site owner can change these limits.'} Overrides apply only to this endpoint and exact model ID.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            <div>
+              <label for="set-model-output-limit" class="block text-sm font-medium text-vs-text-secondary mb-1">Model output limit</label>
+              <input id="set-model-output-limit" type="number" min="1" max="2000000" step="1" class="vs-input" ${canEditModelLimits ? '' : 'readonly'}
+                placeholder="Detected or default" aria-describedby="set-model-limits-help set-model-limits-error" />
+            </div>
+            <div>
+              <label for="set-model-context-window" class="block text-sm font-medium text-vs-text-secondary mb-1">Context window</label>
+              <input id="set-model-context-window" type="number" min="1" max="10000000" step="1" class="vs-input" ${canEditModelLimits ? '' : 'readonly'}
+                placeholder="Detected or default" aria-describedby="set-model-limits-help set-model-limits-error" />
+            </div>
+          </div>
+          <p id="set-model-limits-error" class="text-xs text-vs-error mt-2" role="alert" hidden></p>
+        </fieldset>` : ''}
 
         <div style="border-top: 1px solid var(--vs-border-subtle); padding-top: 16px; margin-top: 4px;">
           <div style="display: flex; align-items: center; gap: 10px;">
@@ -1818,20 +1844,18 @@ async function executeReset(overlay) {
 async function autoLoadModels(savedModel) {
   const modelSelect = document.getElementById('set-ai-model');
   if (!modelSelect) return;
+  const request = ++modelDiscoveryRequest;
+  const baseUrl = document.getElementById('set-base-url')?.value || '';
+  let models = [];
 
   try {
     const { ok, data } = await api.get('/settings/models');
-
-    if (ok && data?.models?.length) {
-      modelSelect.innerHTML = data.models.map(m =>
-        `<option value="${escapeHtml(m.id)}" ${m.id === savedModel ? 'selected' : ''}>${escapeHtml(m.name || m.id)}</option>`
-      ).join('');
-    } else {
-      modelSelect.innerHTML = '<option value="">Test your connection to load available models</option>';
-    }
-  } catch {
-    modelSelect.innerHTML = '<option value="">Test your connection to load available models</option>';
-  }
+    if (ok) models = data?.models || [];
+  } catch {}
+  if (!modelSelect.isConnected || request !== modelDiscoveryRequest
+    || baseUrl !== (document.getElementById('set-base-url')?.value || '')) return;
+  modelSelect.innerHTML = modelOptions(models, modelSelect.value || savedModel);
+  modelSelect.dispatchEvent(new Event('change'));
 }
 
 function renderSysRow(label, value) {
@@ -1852,12 +1876,19 @@ function formatFileSize(bytes) {
 
 function bindSettingsEvents(currentSettings, providers) {
   let selectedProvider = currentSettings.ai_provider || 'claude';
+  const budgetControls = bindModelBudgetControls(document.getElementById('settings-content'), {
+    settings: currentSettings, post: (path, body, options) => api.post(path, body, options),
+    demoMode: document.documentElement.dataset.demo === 'true',
+    canEditModelLimits: store.get('user')?.role === 'owner',
+  });
 
   // Provider change — reload the page to refresh config fields
   const providerSelect = document.getElementById('set-ai-provider');
   if (providerSelect) {
     providerSelect.addEventListener('change', async (e) => {
       if (window.demoGuard?.()) { e.target.value = selectedProvider; return; }
+      budgetControls.invalidate();
+      modelDiscoveryRequest++;
       selectedProvider = e.target.value;
       // Save the provider change immediately, then reload settings
       await api.put('/settings', { ai_provider: selectedProvider });
@@ -1883,6 +1914,8 @@ function bindSettingsEvents(currentSettings, providers) {
 
       testBtn.textContent = 'Testing...';
       testBtn.disabled = true;
+      const request = ++modelDiscoveryRequest;
+      const modelSelect = document.getElementById('set-ai-model');
 
       const { ok, data, error } = await api.post('/settings/test-api', {
         provider: selectedProvider,
@@ -1892,22 +1925,23 @@ function bindSettingsEvents(currentSettings, providers) {
 
       testBtn.textContent = 'Test Connection';
       testBtn.disabled = false;
+      if (!modelSelect?.isConnected || request !== modelDiscoveryRequest
+        || baseUrl !== (document.getElementById('set-base-url')?.value?.trim() || '')) return;
 
       if (ok) {
         showApiStatus('✓ Connected successfully!', 'success');
         // Update model dropdown with live models
         if (data?.models?.length) {
-          const modelSelect = document.getElementById('set-ai-model');
           if (modelSelect) {
-            const currentModel = currentSettings[`ai_${selectedProvider}_model`] || '';
-            modelSelect.innerHTML = data.models.map(m =>
-              `<option value="${escapeHtml(m.id)}" ${m.id === currentModel ? 'selected' : ''}>${escapeHtml(m.name || m.id)}</option>`
-            ).join('');
+            const currentModel = modelSelect.value || currentSettings[`ai_${selectedProvider}_model`] || '';
+            modelSelect.innerHTML = modelOptions(data.models, currentModel);
+            modelSelect.dispatchEvent(new Event('change'));
           }
         }
       } else {
         showApiStatus('✗ ' + (error?.message || 'Connection failed.'), 'error');
       }
+      budgetControls.refresh();
     });
   }
 
@@ -1958,6 +1992,9 @@ function bindSettingsEvents(currentSettings, providers) {
   if (saveBtn) {
     saveBtn.addEventListener('click', async () => {
       if (window.demoGuard?.()) return;
+      if (!document.getElementById('set-max-tokens')?.reportValidity()) return;
+      const modelLimits = budgetControls.collectLimits();
+      if (modelLimits === null) return;
       saveBtn.textContent = 'Saving...';
       saveBtn.disabled = true;
 
@@ -1973,6 +2010,7 @@ function bindSettingsEvents(currentSettings, providers) {
       const baseUrlInput = document.getElementById('set-base-url');
       if (baseUrlInput) {
         updates.ai_openai_compatible_base_url = baseUrlInput.value.trim();
+        if (modelLimits !== undefined) updates.ai_openai_compatible_model_limits = modelLimits;
       }
 
       // Only send API key if it was changed (not the masked value)

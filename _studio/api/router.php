@@ -218,6 +218,7 @@ $routes = [
     ['POST',   '/settings/test-api',     'settings.php',       true],
     ['GET',    '/settings/models',       'settings.php',       true],
     ['POST',   '/settings/list-models',  'settings.php',       true],
+    ['POST',   '/settings/model-budget','settings.php',       true],
     ['GET',    '/settings/system',       'settings.php',       true],
     ['GET',    '/settings/mail',         'settings.php',       true],
     ['POST',   '/settings/mail',         'settings.php',       true],

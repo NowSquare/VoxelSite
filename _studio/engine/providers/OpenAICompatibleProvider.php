@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace VoxelSite\Providers;
 
 use VoxelSite\AIProviderInterface;
+use VoxelSite\ModelCapabilities;
 use RuntimeException;
+
+if (!class_exists(ModelCapabilities::class)) { require_once dirname(__DIR__) . '/ModelCapabilities.php'; }
 
 /**
  * OpenAI-Compatible provider.
@@ -27,13 +30,15 @@ class OpenAICompatibleProvider implements AIProviderInterface
     private string $apiKey;
     private ?string $model;
     private int $maxTokens;
+    private array $modelCapabilities = [];
     private string $baseUrl;
 
-    public function __construct(string $apiKey, ?string $model = null, int $maxTokens = 16000, string $baseUrl = '')
+    public function __construct(string $apiKey, ?string $model = null, int $maxTokens = 16000, string $baseUrl = '', array $modelCapabilities = [])
     {
         $this->apiKey = $apiKey;
         $this->model = $model;
         $this->maxTokens = $maxTokens;
+        $this->modelCapabilities = $modelCapabilities;
         $this->baseUrl = self::normalizeBaseUrl($baseUrl ?: 'http://localhost:11434');
     }
 
@@ -115,6 +120,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
                     'id'         => $id,
                     'name'       => $id,
                     'created_at' => isset($model['created']) ? date('Y-m-d\TH:i:s\Z', $model['created']) : '',
+                    ...ModelCapabilities::fromModelMetadata($this->getId(), $model),
                 ];
             }
 
@@ -265,6 +271,59 @@ class OpenAICompatibleProvider implements AIProviderInterface
         $toolArgsByIndex = [];
         $toolNamesByIndex = [];
         $errorBody = '';
+        $lineBuffer = '';
+
+        $processLine = function (string $line) use (&$fullResponse, &$usage, &$toolArgsByIndex, &$toolNamesByIndex, &$errorBody, $isStructured, $onToken): void {
+            $line = trim($line);
+            if ($line === '') return;
+            if (!str_starts_with($line, 'data: ')) {
+                // Non-SSE payloads (e.g. JSON API errors) are useful for diagnostics.
+                $errorBody .= $line;
+                return;
+            }
+
+            $json = substr($line, 6);
+            if ($json === '[DONE]') return;
+
+            $event = json_decode($json, true);
+            if (!is_array($event)) return;
+
+            if (is_string($event['choices'][0]['finish_reason'] ?? null)) {
+                $usage['finish_reason'] = $event['choices'][0]['finish_reason'];
+            }
+
+            $delta = $event['choices'][0]['delta'] ?? [];
+            $text = $delta['content'] ?? '';
+            if ($text !== '') {
+                $fullResponse .= $text;
+                $onToken($text);
+            }
+
+            if ($isStructured && isset($delta['tool_calls']) && is_array($delta['tool_calls'])) {
+                foreach ($delta['tool_calls'] as $toolCall) {
+                    if (!is_array($toolCall)) {
+                        continue;
+                    }
+
+                    $index = (int) ($toolCall['index'] ?? 0);
+                    $toolName = (string) ($toolCall['function']['name'] ?? '');
+                    if ($toolName !== '') {
+                        $toolNamesByIndex[$index] = ($toolNamesByIndex[$index] ?? '') . $toolName;
+                    }
+
+                    $argDelta = (string) ($toolCall['function']['arguments'] ?? '');
+                    if ($argDelta !== '') {
+                        $toolArgsByIndex[$index] = ($toolArgsByIndex[$index] ?? '') . $argDelta;
+                        $onToken($argDelta);
+                    }
+                }
+            }
+
+            if (isset($event['usage'])) {
+                $usage['input_tokens'] = $event['usage']['prompt_tokens'] ?? 0;
+                $usage['output_tokens'] = $event['usage']['completion_tokens'] ?? 0;
+            }
+        };
 
         $headers = [
             'Content-Type: application/json',
@@ -305,56 +364,14 @@ class OpenAICompatibleProvider implements AIProviderInterface
                 return 0;
             },
 
-            CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$fullResponse, &$usage, &$lastActivityTime, &$toolArgsByIndex, &$toolNamesByIndex, &$errorBody, $isStructured, $onToken) {
+            CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$lineBuffer, &$lastActivityTime, $processLine) {
                 $lastActivityTime = microtime(true);
-                $lines = explode("\n", $data);
-
-                foreach ($lines as $line) {
-                    $line = trim($line);
-                    if (empty($line)) continue;
-                    if (!str_starts_with($line, 'data: ')) {
-                        // Non-SSE payloads (e.g. JSON API errors) are useful for diagnostics.
-                        $errorBody .= $line;
-                        continue;
-                    }
-
-                    $json = substr($line, 6);
-                    if ($json === '[DONE]') continue;
-
-                    $event = json_decode($json, true);
-                    if (!is_array($event)) continue;
-
-                    $delta = $event['choices'][0]['delta'] ?? [];
-                    $text = $delta['content'] ?? '';
-                    if ($text !== '') {
-                        $fullResponse .= $text;
-                        $onToken($text);
-                    }
-
-                    if ($isStructured && isset($delta['tool_calls']) && is_array($delta['tool_calls'])) {
-                        foreach ($delta['tool_calls'] as $toolCall) {
-                            if (!is_array($toolCall)) {
-                                continue;
-                            }
-
-                            $index = (int) ($toolCall['index'] ?? 0);
-                            $toolName = (string) ($toolCall['function']['name'] ?? '');
-                            if ($toolName !== '') {
-                                $toolNamesByIndex[$index] = $toolName;
-                            }
-
-                            $argDelta = (string) ($toolCall['function']['arguments'] ?? '');
-                            if ($argDelta !== '') {
-                                $toolArgsByIndex[$index] = ($toolArgsByIndex[$index] ?? '') . $argDelta;
-                                $onToken($argDelta);
-                            }
-                        }
-                    }
-
-                    if (isset($event['usage'])) {
-                        $usage['input_tokens'] = $event['usage']['prompt_tokens'] ?? 0;
-                        $usage['output_tokens'] = $event['usage']['completion_tokens'] ?? 0;
-                    }
+                // Network chunks can end anywhere, including inside JSON or UTF-8.
+                $lineBuffer .= $data;
+                while (($newline = strpos($lineBuffer, "\n")) !== false) {
+                    $line = substr($lineBuffer, 0, $newline);
+                    $lineBuffer = substr($lineBuffer, $newline + 1);
+                    $processLine($line);
                 }
 
                 return strlen($data);
@@ -410,6 +427,11 @@ class OpenAICompatibleProvider implements AIProviderInterface
         $error = curl_error($ch);
         curl_close($ch);
 
+        // Providers may omit the trailing newline, including on JSON error bodies.
+        if ($lineBuffer !== '') {
+            $processLine($lineBuffer);
+        }
+
         $durationMs = (int) ((microtime(true) - $startTime) * 1000);
 
         // Structured mode fallback for compatible servers that reject tools.
@@ -459,6 +481,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
         }
 
         $onComplete($fullResponse, [
+            'finish_reason' => $usage['finish_reason'] ?? null,
             'input_tokens'  => $usage['input_tokens'],
             'output_tokens' => $usage['output_tokens'],
             'duration_ms'   => $durationMs,
@@ -604,21 +627,10 @@ class OpenAICompatibleProvider implements AIProviderInterface
      * We don't know the target model's true output limit, so prefer
      * compatibility over aggressively large defaults (global default is 32000).
      */
-    private function resolveMaxTokens(int $requested, string $model): int
+    public function resolveMaxTokens(int $requested, string $model): int
     {
-        $requested = max(1, $requested);
-        $id = strtolower($model);
-
-        if (preg_match('/^o\d/', $id) === 1) {
-            return min($requested, 32000);
-        }
-
-        if (str_starts_with($id, 'gpt-') || str_starts_with($id, 'chatgpt-')) {
-            return min($requested, 16384);
-        }
-
-        // Many local/open-source models expose much smaller generation limits.
-        return min($requested, 8192);
+        $capabilities = ModelCapabilities::resolve($this->getId(), $model, $this->modelCapabilities);
+        return min(max(1, $requested), $capabilities['max_output_tokens']);
     }
 
     private function extractApiErrorMessage(string $raw): string
@@ -693,7 +705,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
      */
     public function getContextWindow(string $model): int
     {
-        return 32_000;
+        return ModelCapabilities::resolve($this->getId(), $model, $this->modelCapabilities)['context_window'];
     }
 
     public function estimateCost(int $inputTokens, int $outputTokens, string $model): array

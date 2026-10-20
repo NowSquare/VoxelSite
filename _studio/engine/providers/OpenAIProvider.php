@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace VoxelSite\Providers;
 
 use VoxelSite\AIProviderInterface;
+use VoxelSite\ModelCapabilities;
 use RuntimeException;
+
+if (!class_exists(ModelCapabilities::class)) { require_once dirname(__DIR__) . '/ModelCapabilities.php'; }
 
 /**
  * OpenAI GPT provider.
@@ -26,12 +29,14 @@ class OpenAIProvider implements AIProviderInterface
     private string $apiKey;
     private ?string $model;
     private int $maxTokens;
+    private array $modelCapabilities = [];
 
-    public function __construct(string $apiKey, ?string $model = null, int $maxTokens = 16000)
+    public function __construct(string $apiKey, ?string $model = null, int $maxTokens = 16000, array $modelCapabilities = [])
     {
         $this->apiKey = $apiKey;
         $this->model = $model;
         $this->maxTokens = $maxTokens;
+        $this->modelCapabilities = $modelCapabilities;
     }
 
     public function getId(): string
@@ -235,6 +240,60 @@ class OpenAIProvider implements AIProviderInterface
         $toolArgsByIndex = [];
         $toolNamesByIndex = [];
         $errorBody = '';
+        $lineBuffer = '';
+
+        $processLine = function (string $line) use (&$fullResponse, &$usage, &$toolArgsByIndex, &$toolNamesByIndex, &$errorBody, $isStructured, $onToken): void {
+            $line = trim($line);
+            if ($line === '') return;
+            if (!str_starts_with($line, 'data: ')) {
+                $errorBody .= $line;
+                return;
+            }
+
+            $json = substr($line, 6);
+            if ($json === '[DONE]') return;
+
+            $event = json_decode($json, true);
+            if (!is_array($event)) return;
+
+            if (is_string($event['choices'][0]['finish_reason'] ?? null)) {
+                $usage['finish_reason'] = $event['choices'][0]['finish_reason'];
+            }
+
+            $delta = $event['choices'][0]['delta'] ?? [];
+            $text = $delta['content'] ?? '';
+            if ($text !== '') {
+                $fullResponse .= $text;
+                $onToken($text);
+            }
+
+            // Structured mode: collect tool call argument chunks.
+            if ($isStructured && isset($delta['tool_calls']) && is_array($delta['tool_calls'])) {
+                foreach ($delta['tool_calls'] as $toolCall) {
+                    if (!is_array($toolCall)) {
+                        continue;
+                    }
+
+                    $index = (int) ($toolCall['index'] ?? 0);
+                    $toolName = (string) ($toolCall['function']['name'] ?? '');
+                    if ($toolName !== '') {
+                        $toolNamesByIndex[$index] = ($toolNamesByIndex[$index] ?? '') . $toolName;
+                    }
+
+                    $argDelta = (string) ($toolCall['function']['arguments'] ?? '');
+                    if ($argDelta !== '') {
+                        $toolArgsByIndex[$index] = ($toolArgsByIndex[$index] ?? '') . $argDelta;
+                        $onToken($argDelta);
+                    }
+                }
+            }
+
+            // Usage info (OpenAI includes it in the final chunk)
+            if (isset($event['usage'])) {
+                $usage['input_tokens'] = $event['usage']['prompt_tokens'] ?? 0;
+                $usage['output_tokens'] = $event['usage']['completion_tokens'] ?? 0;
+            }
+        };
 
         $ch = curl_init(self::API_URL);
         curl_setopt_array($ch, [
@@ -249,57 +308,13 @@ class OpenAIProvider implements AIProviderInterface
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_LOW_SPEED_LIMIT => 1,
             CURLOPT_LOW_SPEED_TIME  => 180,
-            CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$fullResponse, &$usage, &$toolArgsByIndex, &$toolNamesByIndex, &$errorBody, $isStructured, $onToken) {
-                $lines = explode("\n", $data);
-
-                foreach ($lines as $line) {
-                    $line = trim($line);
-                    if ($line === '') continue;
-                    if (!str_starts_with($line, 'data: ')) {
-                        $errorBody .= $line;
-                        continue;
-                    }
-
-                    $json = substr($line, 6);
-                    if ($json === '[DONE]') continue;
-
-                    $event = json_decode($json, true);
-                    if (!is_array($event)) continue;
-
-                    // Extract text from delta
-                    $delta = $event['choices'][0]['delta'] ?? [];
-                    $text = $delta['content'] ?? '';
-                    if ($text !== '') {
-                        $fullResponse .= $text;
-                        $onToken($text);
-                    }
-
-                    // Structured mode: collect tool call argument chunks.
-                    if ($isStructured && isset($delta['tool_calls']) && is_array($delta['tool_calls'])) {
-                        foreach ($delta['tool_calls'] as $toolCall) {
-                            if (!is_array($toolCall)) {
-                                continue;
-                            }
-
-                            $index = (int) ($toolCall['index'] ?? 0);
-                            $toolName = (string) ($toolCall['function']['name'] ?? '');
-                            if ($toolName !== '') {
-                                $toolNamesByIndex[$index] = $toolName;
-                            }
-
-                            $argDelta = (string) ($toolCall['function']['arguments'] ?? '');
-                            if ($argDelta !== '') {
-                                $toolArgsByIndex[$index] = ($toolArgsByIndex[$index] ?? '') . $argDelta;
-                                $onToken($argDelta);
-                            }
-                        }
-                    }
-
-                    // Usage info (OpenAI includes it in the final chunk)
-                    if (isset($event['usage'])) {
-                        $usage['input_tokens'] = $event['usage']['prompt_tokens'] ?? 0;
-                        $usage['output_tokens'] = $event['usage']['completion_tokens'] ?? 0;
-                    }
+            CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$lineBuffer, $processLine) {
+                // Network chunks can end anywhere, including inside JSON or UTF-8.
+                $lineBuffer .= $data;
+                while (($newline = strpos($lineBuffer, "\n")) !== false) {
+                    $line = substr($lineBuffer, 0, $newline);
+                    $lineBuffer = substr($lineBuffer, $newline + 1);
+                    $processLine($line);
                 }
 
                 return strlen($data);
@@ -312,6 +327,11 @@ class OpenAIProvider implements AIProviderInterface
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
         curl_close($ch);
+
+        // Providers may omit the trailing newline, including on JSON error bodies.
+        if ($lineBuffer !== '') {
+            $processLine($lineBuffer);
+        }
 
         $durationMs = (int) ((microtime(true) - $startTime) * 1000);
 
@@ -354,6 +374,7 @@ class OpenAIProvider implements AIProviderInterface
         }
 
         $onComplete($fullResponse, [
+            'finish_reason' => $usage['finish_reason'] ?? null,
             'input_tokens'  => $usage['input_tokens'],
             'output_tokens' => $usage['output_tokens'],
             'duration_ms'   => $durationMs,
@@ -441,35 +462,10 @@ class OpenAIProvider implements AIProviderInterface
      * Limits vary by model family and change over time, so these are
      * conservative values that are known-safe for chat completions.
      */
-    private function resolveMaxTokens(int $requested, string $model): int
+    public function resolveMaxTokens(int $requested, string $model): int
     {
-        $requested = max(1, $requested);
-        $id = strtolower($model);
-
-        if ($this->isGpt5Family($id)) {
-            // All GPT-5 models support 128K max output via max_completion_tokens,
-            // except -chat-latest variants which are capped at 16K.
-            if (str_contains($id, '-chat-latest')) {
-                return min($requested, 16384);
-            }
-            return min($requested, 128000);
-        }
-
-        // Reasoning models often allow large outputs, but cap conservatively.
-        if (preg_match('/^o\d/i', $id) === 1) {
-            return min($requested, 32000);
-        }
-
-        // GPT-4o / 4.1 family commonly reject values above ~16K on chat completions.
-        if (str_starts_with($id, 'gpt-') || str_starts_with($id, 'chatgpt-')) {
-            return min($requested, 16384);
-        }
-
-        if (str_starts_with($id, 'gpt-3.5')) {
-            return min($requested, 4096);
-        }
-
-        return min($requested, 16384);
+        $capabilities = ModelCapabilities::resolve($this->getId(), $model, $this->modelCapabilities);
+        return min(max(1, $requested), $capabilities['max_output_tokens']);
     }
 
     /**
@@ -477,39 +473,7 @@ class OpenAIProvider implements AIProviderInterface
      */
     public function getContextWindow(string $model): int
     {
-        // Ordered most-specific first so prefix matching picks the right entry.
-        // '-mini' and '-nano' variants must appear before their parent prefix.
-        $windows = [
-            'gpt-5.4-mini' => 400_000,
-            'gpt-5.4-nano' => 400_000,
-            'gpt-5.4'      => 1_050_000,
-            'gpt-5.5'      => 1_050_000,
-            'gpt-5-chat'   => 128_000,
-            'gpt-5.1-chat' => 128_000,
-            'gpt-5-mini'   => 400_000,
-            'gpt-5-nano'   => 400_000,
-            'gpt-5'        => 400_000,
-            'gpt-4o-mini'  => 128_000,
-            'gpt-4o'       => 128_000,
-            'gpt-4-turbo'  => 128_000,
-            'o1-mini'      => 128_000,
-            'o1'           => 200_000,
-            'o3-mini'      => 200_000,
-        ];
-
-        // Exact match first
-        if (isset($windows[$model])) {
-            return $windows[$model];
-        }
-
-        // Longest prefix match for versioned model IDs
-        foreach ($windows as $prefix => $size) {
-            if (str_starts_with($model, $prefix)) {
-                return $size;
-            }
-        }
-
-        return 128_000;
+        return ModelCapabilities::resolve($this->getId(), $model, $this->modelCapabilities)['context_window'];
     }
 
     public function estimateCost(int $inputTokens, int $outputTokens, string $model): array
@@ -660,13 +624,13 @@ class OpenAIProvider implements AIProviderInterface
     private function usesDeveloperRole(string $model): bool
     {
         $id = strtolower($model);
-        return preg_match('/^o\d/', $id) === 1 || $this->isGpt5Family($id);
+        return preg_match('/^o\d/', $id) === 1 || $this->isGpt5Family($id) || $id === 'gpt-6.1-sol';
     }
 
     private function usesMaxCompletionTokens(string $model): bool
     {
         $id = strtolower($model);
-        return preg_match('/^o\d/', $id) === 1 || $this->isGpt5Family($id);
+        return preg_match('/^o\d/', $id) === 1 || $this->isGpt5Family($id) || $id === 'gpt-6.1-sol';
     }
 
     /**

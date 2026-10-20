@@ -123,6 +123,7 @@ class FakeProvider implements \VoxelSite\AIProviderInterface
     public function getConfigFields(): array { return []; }
     public function validateConfig(array $config): bool { return true; }
     public function estimateTokens(string $text): int { return (int) ceil(strlen($text) / 4); }
+    public function resolveMaxTokens(int $requested, string $model): int { return max(1, $requested); }
     public function getContextWindow(string $model): int { return 128000; }
     public function estimateCost(int $inputTokens, int $outputTokens, string $model): array
     {
@@ -463,6 +464,7 @@ $fakeProviderThrow = new class implements \VoxelSite\AIProviderInterface {
     public function getConfigFields(): array { return []; }
     public function validateConfig(array $config): bool { return false; }
     public function estimateTokens(string $text): int { return 0; }
+    public function resolveMaxTokens(int $requested, string $model): int { return max(1, $requested); }
     public function getContextWindow(string $model): int { return 0; }
     public function estimateCost(int $it, int $ot, string $m): array { return ['input_cost' => 0, 'output_cost' => 0, 'total_cost' => 0]; }
     public function stream(string $sp, array $m, callable $ot, callable $oc, array $o = []): void { throw new \RuntimeException('boom'); }

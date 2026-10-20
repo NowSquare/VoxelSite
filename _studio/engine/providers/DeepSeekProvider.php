@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace VoxelSite\Providers;
 
 use VoxelSite\AIProviderInterface;
+use VoxelSite\ModelCapabilities;
 use RuntimeException;
+
+if (!class_exists(ModelCapabilities::class)) { require_once dirname(__DIR__) . '/ModelCapabilities.php'; }
 
 /**
  * DeepSeek AI provider.
@@ -26,12 +29,14 @@ class DeepSeekProvider implements AIProviderInterface
     private string $apiKey;
     private ?string $model;
     private int $maxTokens;
+    private array $modelCapabilities = [];
 
-    public function __construct(string $apiKey, ?string $model = null, int $maxTokens = 16000)
+    public function __construct(string $apiKey, ?string $model = null, int $maxTokens = 16000, array $modelCapabilities = [])
     {
         $this->apiKey = $apiKey;
         $this->model = $model;
         $this->maxTokens = $maxTokens;
+        $this->modelCapabilities = $modelCapabilities;
     }
 
     public function getId(): string
@@ -222,6 +227,59 @@ class DeepSeekProvider implements AIProviderInterface
         $toolArgsByIndex = [];
         $toolNamesByIndex = [];
         $errorBody = '';
+        $lineBuffer = '';
+        $finishReason = null;
+
+        $processLine = function (string $line) use (&$fullResponse, &$usage, &$toolArgsByIndex, &$toolNamesByIndex, &$errorBody, &$finishReason, $isStructured, $onToken): void {
+            $line = trim($line);
+            if ($line === '') return;
+            if (!str_starts_with($line, 'data: ')) {
+                $errorBody .= $line;
+                return;
+            }
+
+            $json = substr($line, 6);
+            if ($json === '[DONE]') return;
+
+            $event = json_decode($json, true);
+            if (!is_array($event)) return;
+
+            $delta = $event['choices'][0]['delta'] ?? [];
+            $text = $delta['content'] ?? '';
+            if ($text !== '') {
+                $fullResponse .= $text;
+                $onToken($text);
+            }
+
+            if ($isStructured && isset($delta['tool_calls']) && is_array($delta['tool_calls'])) {
+                foreach ($delta['tool_calls'] as $toolCall) {
+                    if (!is_array($toolCall)) {
+                        continue;
+                    }
+
+                    $index = (int) ($toolCall['index'] ?? 0);
+                    $toolName = (string) ($toolCall['function']['name'] ?? '');
+                    if ($toolName !== '') {
+                        $toolNamesByIndex[$index] = ($toolNamesByIndex[$index] ?? '') . $toolName;
+                    }
+
+                    $argDelta = (string) ($toolCall['function']['arguments'] ?? '');
+                    if ($argDelta !== '') {
+                        $toolArgsByIndex[$index] = ($toolArgsByIndex[$index] ?? '') . $argDelta;
+                        $onToken($argDelta);
+                    }
+                }
+            }
+
+            if (isset($event['choices'][0]['finish_reason'])) {
+                $finishReason = $event['choices'][0]['finish_reason'];
+            }
+
+            if (isset($event['usage'])) {
+                $usage['input_tokens'] = $event['usage']['prompt_tokens'] ?? 0;
+                $usage['output_tokens'] = $event['usage']['completion_tokens'] ?? 0;
+            }
+        };
 
         $ch = curl_init(self::API_URL);
         curl_setopt_array($ch, [
@@ -236,54 +294,13 @@ class DeepSeekProvider implements AIProviderInterface
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_LOW_SPEED_LIMIT => 1,
             CURLOPT_LOW_SPEED_TIME  => 180,
-            CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$fullResponse, &$usage, &$toolArgsByIndex, &$toolNamesByIndex, &$errorBody, $isStructured, $onToken) {
-                $lines = explode("\n", $data);
-
-                foreach ($lines as $line) {
-                    $line = trim($line);
-                    if ($line === '') continue;
-                    if (!str_starts_with($line, 'data: ')) {
-                        $errorBody .= $line;
-                        continue;
-                    }
-
-                    $json = substr($line, 6);
-                    if ($json === '[DONE]') continue;
-
-                    $event = json_decode($json, true);
-                    if (!is_array($event)) continue;
-
-                    $delta = $event['choices'][0]['delta'] ?? [];
-                    $text = $delta['content'] ?? '';
-                    if ($text !== '') {
-                        $fullResponse .= $text;
-                        $onToken($text);
-                    }
-
-                    if ($isStructured && isset($delta['tool_calls']) && is_array($delta['tool_calls'])) {
-                        foreach ($delta['tool_calls'] as $toolCall) {
-                            if (!is_array($toolCall)) {
-                                continue;
-                            }
-
-                            $index = (int) ($toolCall['index'] ?? 0);
-                            $toolName = (string) ($toolCall['function']['name'] ?? '');
-                            if ($toolName !== '') {
-                                $toolNamesByIndex[$index] = $toolName;
-                            }
-
-                            $argDelta = (string) ($toolCall['function']['arguments'] ?? '');
-                            if ($argDelta !== '') {
-                                $toolArgsByIndex[$index] = ($toolArgsByIndex[$index] ?? '') . $argDelta;
-                                $onToken($argDelta);
-                            }
-                        }
-                    }
-
-                    if (isset($event['usage'])) {
-                        $usage['input_tokens'] = $event['usage']['prompt_tokens'] ?? 0;
-                        $usage['output_tokens'] = $event['usage']['completion_tokens'] ?? 0;
-                    }
+            CURLOPT_WRITEFUNCTION  => function ($ch, $data) use (&$lineBuffer, $processLine) {
+                // Network chunks can end anywhere, including inside JSON or UTF-8.
+                $lineBuffer .= $data;
+                while (($newline = strpos($lineBuffer, "\n")) !== false) {
+                    $line = substr($lineBuffer, 0, $newline);
+                    $lineBuffer = substr($lineBuffer, $newline + 1);
+                    $processLine($line);
                 }
 
                 return strlen($data);
@@ -296,6 +313,11 @@ class DeepSeekProvider implements AIProviderInterface
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
         curl_close($ch);
+
+        // Providers may omit the trailing newline, including on JSON error bodies.
+        if ($lineBuffer !== '') {
+            $processLine($lineBuffer);
+        }
 
         $durationMs = (int) ((microtime(true) - $startTime) * 1000);
 
@@ -339,6 +361,7 @@ class DeepSeekProvider implements AIProviderInterface
             'output_tokens' => $usage['output_tokens'],
             'duration_ms'   => $durationMs,
             'model'         => $model,
+            'finish_reason' => $finishReason,
         ]);
     }
 
@@ -422,20 +445,10 @@ class DeepSeekProvider implements AIProviderInterface
     /**
      * Conservative output caps to avoid max_tokens 400s on future model variants.
      */
-    private function resolveMaxTokens(int $requested, string $model): int
+    public function resolveMaxTokens(int $requested, string $model): int
     {
-        $requested = max(1, $requested);
-        $id = strtolower($model);
-
-        if (str_contains($id, 'reasoner') || str_contains($id, 'r1')) {
-            return min($requested, 16384);
-        }
-
-        if (str_contains($id, 'chat') || str_contains($id, 'v3')) {
-            return min($requested, 16384);
-        }
-
-        return min($requested, 8192);
+        $capabilities = ModelCapabilities::resolve($this->getId(), $model, $this->modelCapabilities);
+        return min(max(1, $requested), $capabilities['max_output_tokens']);
     }
 
     /**
@@ -443,8 +456,7 @@ class DeepSeekProvider implements AIProviderInterface
      */
     public function getContextWindow(string $model): int
     {
-        // Both DeepSeek V3 and R1 have 64K context windows
-        return 64_000;
+        return ModelCapabilities::resolve($this->getId(), $model, $this->modelCapabilities)['context_window'];
     }
 
     public function estimateCost(int $inputTokens, int $outputTokens, string $model): array

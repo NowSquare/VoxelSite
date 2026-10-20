@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace VoxelSite\Providers;
 
 use VoxelSite\AIProviderInterface;
+use VoxelSite\ModelCapabilities;
 use RuntimeException;
+
+if (!class_exists(ModelCapabilities::class)) { require_once dirname(__DIR__) . '/ModelCapabilities.php'; }
 
 /**
  * Google Gemini AI provider.
@@ -23,12 +26,14 @@ class GeminiProvider implements AIProviderInterface
     private string $apiKey;
     private ?string $model;
     private int $maxTokens;
+    private array $modelCapabilities = [];
 
-    public function __construct(string $apiKey, ?string $model = null, int $maxTokens = 16000)
+    public function __construct(string $apiKey, ?string $model = null, int $maxTokens = 16000, array $modelCapabilities = [])
     {
         $this->apiKey = $apiKey;
         $this->model = $model;
         $this->maxTokens = $maxTokens;
+        $this->modelCapabilities = $modelCapabilities;
     }
 
     public function getId(): string
@@ -108,6 +113,7 @@ class GeminiProvider implements AIProviderInterface
                     'id'         => $id,
                     'name'       => $model['displayName'] ?? $id,
                     'created_at' => '',
+                    ...ModelCapabilities::fromModelMetadata($this->getId(), $model),
                 ];
             }
 
@@ -267,6 +273,10 @@ class GeminiProvider implements AIProviderInterface
                     $event = json_decode($json, true);
                     if (!is_array($event)) continue;
 
+                    if (is_string($event['candidates'][0]['finishReason'] ?? null)) {
+                        $usage['finish_reason'] = $event['candidates'][0]['finishReason'];
+                    }
+
                     // Extract text from candidates
                     $text = $event['candidates'][0]['content']['parts'][0]['text'] ?? '';
                     if ($text !== '') {
@@ -319,6 +329,7 @@ class GeminiProvider implements AIProviderInterface
         }
 
         $onComplete($fullResponse, [
+            'finish_reason' => $usage['finish_reason'] ?? null,
             'input_tokens'  => $usage['input_tokens'],
             'output_tokens' => $usage['output_tokens'],
             'duration_ms'   => $durationMs,
@@ -395,20 +406,10 @@ class GeminiProvider implements AIProviderInterface
     /**
      * Conservative maxOutputTokens caps to avoid 400s across Gemini variants.
      */
-    private function resolveMaxTokens(int $requested, string $model): int
+    public function resolveMaxTokens(int $requested, string $model): int
     {
-        $requested = max(1, $requested);
-        $id = strtolower($model);
-
-        if (str_contains($id, 'pro')) {
-            return min($requested, 16384);
-        }
-
-        if (str_contains($id, 'flash')) {
-            return min($requested, 8192);
-        }
-
-        return min($requested, 8192);
+        $capabilities = ModelCapabilities::resolve($this->getId(), $model, $this->modelCapabilities);
+        return min(max(1, $requested), $capabilities['max_output_tokens']);
     }
 
     private function extractApiErrorMessage(string $raw): string
@@ -528,19 +529,7 @@ class GeminiProvider implements AIProviderInterface
      */
     public function getContextWindow(string $model): int
     {
-        $windows = [
-            'gemini-2.0-flash'      => 1_048_576,
-            'gemini-2.0-flash-lite' => 1_048_576,
-            'gemini-1.5-pro'        => 2_097_152,
-            'gemini-1.5-flash'      => 1_048_576,
-        ];
-
-        if (isset($windows[$model])) {
-            return $windows[$model];
-        }
-
-        // Generous default — Gemini models tend to have very large windows
-        return 1_048_576;
+        return ModelCapabilities::resolve($this->getId(), $model, $this->modelCapabilities)['context_window'];
     }
 
     public function estimateCost(int $inputTokens, int $outputTokens, string $model): array

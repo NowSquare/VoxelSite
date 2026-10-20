@@ -16,6 +16,9 @@ use VoxelSite\Encryption;
 use VoxelSite\AIProviderFactory;
 use VoxelSite\Validator;
 use VoxelSite\RouterSettings;
+use VoxelSite\ModelCapabilitySettings;
+use VoxelSite\ModelCapabilities;
+use VoxelSite\GenerationBudget;
 
 $method = $_REQUEST['_route_method'];
 $path = $_REQUEST['_route_path'];
@@ -32,6 +35,7 @@ if ($method === 'GET' && $path === '/settings') {
     // Never expose encrypted API keys to the frontend
     // Mask keys for all providers
     $masked = $all;
+    unset($masked['ai_model_capability_cache']);
     $providerIds = ['claude', 'openai', 'gemini', 'deepseek', 'openai_compatible'];
     foreach ($providerIds as $pid) {
         $keyName = "ai_{$pid}_api_key";
@@ -51,6 +55,39 @@ if ($method === 'GET' && $path === '/settings') {
     jsonResponse(['ok' => true, 'data' => ['settings' => $masked,
         'governor_activity' => (new \VoxelSite\RouterActivity(\VoxelSite\Database::getInstance()))
             ->recent((int) ($_REQUEST['_user']['id'] ?? 0))]]);
+    return;
+}
+
+// ═══════════════════════════════════════════
+//  POST /settings/model-budget — Preview limits without calling a provider
+// ═══════════════════════════════════════════
+
+if ($method === 'POST' && $path === '/settings/model-budget') {
+    $body = getJsonBody();
+    try {
+        $providerId = $body['provider'] ?? $settings->get('ai_provider', 'claude');
+        $model = $body['model'] ?? '';
+        $baseUrl = $body['base_url'] ?? $settings->get('ai_openai_compatible_base_url', '');
+        if (!is_string($providerId) || !in_array($providerId, ['claude', 'openai', 'gemini', 'deepseek', 'openai_compatible'], true)
+            || !is_string($model) || strlen($model) > 256 || !is_string($baseUrl) || strlen($baseUrl) > 2048) {
+            throw new RuntimeException('Choose a valid provider, model and server URL.', 422);
+        }
+        $requested = ModelCapabilitySettings::validateMaxTokens($body['max_tokens'] ?? 32000);
+        $overrides = array_key_exists('model_limits', $body)
+            ? ModelCapabilitySettings::validateOverrides($body['model_limits'], $baseUrl) : null;
+        $capabilities = ModelCapabilitySettings::forProvider($settings, $providerId, $baseUrl, $overrides);
+        $provider = AIProviderFactory::createWithKey($providerId, '', $model, $baseUrl, $capabilities);
+        if ($model === '') {
+            $model = $provider->getModels()[0]['id'] ?? '';
+        }
+        jsonResponse(['ok' => true, 'data' => [
+            'budget' => GenerationBudget::resolve($provider, $model, $requested),
+            'focused_budget' => GenerationBudget::resolve($provider, $model, $requested, 'section_edit'),
+            'source' => ModelCapabilities::resolve($providerId, $model, $capabilities)['source'],
+        ]]);
+    } catch (RuntimeException $e) {
+        jsonResponse(['ok' => false, 'error' => ['code' => 'validation', 'message' => $e->getMessage()]], 422);
+    }
     return;
 }
 
@@ -92,6 +129,26 @@ if ($method === 'PUT' && $path === '/settings') {
         if (in_array($key, $allowedKeys, true)) {
             $updates[$key] = $value;
         }
+    }
+    try {
+        if (array_key_exists('ai_max_tokens', $updates)) {
+            $updates['ai_max_tokens'] = ModelCapabilitySettings::validateMaxTokens($updates['ai_max_tokens']);
+        }
+        if (array_key_exists(ModelCapabilitySettings::OVERRIDES_KEY, $body)) {
+            if (($_REQUEST['_user']['role'] ?? '') !== 'owner') {
+                throw new RuntimeException('Only the owner can change model limits.', 403);
+            }
+            $updates[ModelCapabilitySettings::OVERRIDES_KEY] = ModelCapabilitySettings::validateOverrides(
+                $body[ModelCapabilitySettings::OVERRIDES_KEY],
+                (string) ($updates['ai_openai_compatible_base_url'] ?? $settings->get('ai_openai_compatible_base_url', ''))
+            );
+        }
+    } catch (RuntimeException $e) {
+        jsonResponse(['ok' => false, 'error' => [
+            'code' => $e->getCode() === 403 ? 'forbidden' : 'validation',
+            'message' => $e->getMessage(),
+        ]], $e->getCode());
+        return;
     }
 
     // Handle API keys separately (need encryption)
@@ -181,6 +238,7 @@ if ($method === 'POST' && $path === '/settings/test-api') {
         // testConnection() makes a real API call and throws on failure,
         // unlike listModels() which silently falls back to hardcoded defaults.
         $models = $providerInstance->testConnection();
+        ModelCapabilitySettings::recordModels($settings, $provider, $baseUrl, $models);
 
         jsonResponse(['ok' => true, 'data' => [
             'message' => 'Connected. API key is valid.',
@@ -218,6 +276,8 @@ if ($method === 'GET' && $path === '/settings/models') {
     try {
         $provider = AIProviderFactory::create($settings);
         $models = $provider->listModels();
+        ModelCapabilitySettings::recordModels($settings, $providerId,
+            (string) $settings->get('ai_openai_compatible_base_url', ''), $models);
         jsonResponse(['ok' => true, 'data' => ['models' => $models, 'provider' => $providerId]]);
     } catch (\Throwable $e) {
         jsonResponse(['ok' => true, 'data' => ['models' => [], 'provider' => $providerId]]);
@@ -239,6 +299,7 @@ if ($method === 'POST' && $path === '/settings/list-models') {
 
     try {
         $models = AIProviderFactory::fetchModels($provider, $apiKey, $baseUrl);
+        ModelCapabilitySettings::recordModels($settings, $provider, $baseUrl, $models);
         jsonResponse(['ok' => true, 'data' => ['models' => $models]]);
     } catch (\Throwable $e) {
         jsonResponse(['ok' => false, 'error' => [

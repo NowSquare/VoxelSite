@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace VoxelSite\Providers;
 
 use VoxelSite\AIProviderInterface;
+use VoxelSite\ModelCapabilities;
 use RuntimeException;
+
+if (!class_exists(ModelCapabilities::class)) { require_once dirname(__DIR__) . '/ModelCapabilities.php'; }
 
 /**
  * Anthropic Claude AI provider.
@@ -30,12 +33,14 @@ class ClaudeProvider implements AIProviderInterface
     private string $apiKey;
     private ?string $model;
     private int $maxTokens;
+    private array $modelCapabilities = [];
 
-    public function __construct(string $apiKey, ?string $model = null, int $maxTokens = 16000)
+    public function __construct(string $apiKey, ?string $model = null, int $maxTokens = 16000, array $modelCapabilities = [])
     {
         $this->apiKey = $apiKey;
         $this->model = $model;
         $this->maxTokens = $maxTokens;
+        $this->modelCapabilities = $modelCapabilities;
     }
 
     public function getId(): string
@@ -102,6 +107,7 @@ class ClaudeProvider implements AIProviderInterface
                     'id'         => $id,
                     'name'       => $model['display_name'] ?? $id,
                     'created_at' => $model['created_at'] ?? '',
+                    ...ModelCapabilities::fromModelMetadata($this->getId(), $model),
                 ];
             }
 
@@ -175,6 +181,7 @@ class ClaudeProvider implements AIProviderInterface
                 'id'         => $id,
                 'name'       => $model['display_name'] ?? $id,
                 'created_at' => $model['created_at'] ?? '',
+                ...ModelCapabilities::fromModelMetadata($this->getId(), $model),
             ];
         }
 
@@ -416,6 +423,10 @@ class ClaudeProvider implements AIProviderInterface
                             }
                         }
 
+                        if (is_string($event['delta']['stop_reason'] ?? null)) {
+                            $usage['finish_reason'] = $event['delta']['stop_reason'];
+                        }
+
                         if (($event['type'] ?? '') === 'message_delta') {
                             $usage['output_tokens'] = $event['usage']['output_tokens'] ?? ($usage['output_tokens'] ?? 0);
                         }
@@ -543,6 +554,7 @@ class ClaudeProvider implements AIProviderInterface
         }
 
         $onComplete($fullResponse, [
+            'finish_reason' => $usage['finish_reason'] ?? null,
             'input_tokens'                => $usage['input_tokens'],
             'output_tokens'               => $usage['output_tokens'],
             'cache_read_input_tokens'     => $usage['cache_read_input_tokens'] ?? 0,
@@ -662,22 +674,11 @@ class ClaudeProvider implements AIProviderInterface
     /**
      * Context window sizes for Claude models (in tokens).
      *
-     * All current Claude models use a 200K context window.
-     * Haiku 3.5 also has 200K. Unknown models get a safe 128K.
+     * Uses exact documented IDs or live metadata, with conservative legacy fallbacks.
      */
     public function getContextWindow(string $model): int
     {
-        $modelLower = strtolower($model);
-
-        // All Claude Sonnet/Opus 4.x and Haiku 3.5 have 200K context
-        if (str_contains($modelLower, 'sonnet') ||
-            str_contains($modelLower, 'opus') ||
-            str_contains($modelLower, 'haiku')) {
-            return 200_000;
-        }
-
-        // Conservative fallback for unknown Claude models
-        return 128_000;
+        return ModelCapabilities::resolve($this->getId(), $model, $this->modelCapabilities)['context_window'];
     }
 
     /**
@@ -705,45 +706,11 @@ class ClaudeProvider implements AIProviderInterface
         ];
     }
 
-    /**
-     * Cap max_tokens to the model's supported output limit.
-     *
-     * Claude model output limits (as of Feb 2026):
-     * - Haiku 3.5:     8,192
-     * - Sonnet 4/4.5: 64,000
-     * - Opus 4:       32,768
-     * - Opus 4.5+:    64,000
-     * - Opus 4.6+:   128,000
-     *
-     * Note: Claude 3.5 Sonnet had 16K. Claude 4+ Sonnet has 64K.
-     */
-    private function resolveMaxTokens(int $requested, string $model): int
+    /** Resolve the same output limit used by context planning and the request. */
+    public function resolveMaxTokens(int $requested, string $model): int
     {
-        $modelLower = strtolower($model);
-
-        // Opus models support much higher output limits
-        if (str_contains($modelLower, 'opus')) {
-            if (str_contains($modelLower, '4-6') || str_contains($modelLower, '4.6')) {
-                return min($requested, 128000);
-            }
-            if (str_contains($modelLower, '4-5') || str_contains($modelLower, '4.5')) {
-                return min($requested, 64000);
-            }
-            return min($requested, 32768);
-        }
-
-        // Haiku 3.5
-        if (str_contains($modelLower, 'haiku')) {
-            return min($requested, 8192);
-        }
-
-        // Sonnet 4/4.5 — supports 64K output tokens
-        if (str_contains($modelLower, 'sonnet')) {
-            return min($requested, 64000);
-        }
-
-        // Unknown models — conservative default
-        return min($requested, 16384);
+        $capabilities = ModelCapabilities::resolve($this->getId(), $model, $this->modelCapabilities);
+        return min(max(1, $requested), $capabilities['max_output_tokens']);
     }
 
     /**

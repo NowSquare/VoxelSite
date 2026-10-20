@@ -66,13 +66,14 @@ class AIProviderFactory
         $maxTokens = (int) $settings->get('ai_max_tokens', 32000);
 
         $providerClass = self::$providers[$providerId];
+        $baseUrl = (string) $settings->get('ai_openai_compatible_base_url', '');
+        $capabilities = ModelCapabilitySettings::forProvider($settings, $providerId, $baseUrl);
 
         // OpenAI Compatible needs base_url
         if ($providerId === 'openai_compatible') {
-            $baseUrl = $settings->get('ai_openai_compatible_base_url', '');
-            $provider = new $providerClass($apiKey, $model, $maxTokens, $baseUrl);
+            $provider = new $providerClass($apiKey, $model, $maxTokens, $baseUrl, $capabilities);
         } else {
-            $provider = new $providerClass($apiKey, $model, $maxTokens);
+            $provider = new $providerClass($apiKey, $model, $maxTokens, $capabilities);
         }
 
         // Standalone orchestration has no prompt job; PromptEngine rebinds this
@@ -86,7 +87,7 @@ class AIProviderFactory
      * Used during installation and settings when the key hasn't
      * been saved yet.
      */
-    public static function createWithKey(string $providerId, string $apiKey, string $model = '', string $baseUrl = ''): AIProviderInterface
+    public static function createWithKey(string $providerId, string $apiKey, string $model = '', string $baseUrl = '', array $capabilities = []): AIProviderInterface
     {
         if (!isset(self::$providers[$providerId])) {
             throw new RuntimeException("Unknown AI provider: '{$providerId}'.");
@@ -96,10 +97,10 @@ class AIProviderFactory
 
         // OpenAI Compatible needs base_url
         if ($providerId === 'openai_compatible') {
-            return new $providerClass($apiKey, $model ?: null, 32000, $baseUrl);
+            return new $providerClass($apiKey, $model ?: null, 32000, $baseUrl, $capabilities);
         }
 
-        return new $providerClass($apiKey, $model ?: null, 32000);
+        return new $providerClass($apiKey, $model ?: null, 32000, $capabilities);
     }
 
     /**

@@ -39,6 +39,7 @@ final class BudgetProvider implements AIProviderInterface
     public function getConfigFields(): array { return []; }
     public function validateConfig(array $config): bool { return true; }
     public function estimateTokens(string $text): int { return 1; }
+    public function resolveMaxTokens(int $requested, string $model): int { return max(1, $requested); }
     public function getContextWindow(string $model): int { return 1000; }
     public function estimateCost(int $inputTokens, int $outputTokens, string $model): array { return []; }
     public function complete(string $systemPrompt, array $messages, array $options = []): string {

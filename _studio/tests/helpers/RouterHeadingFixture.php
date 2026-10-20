@@ -89,6 +89,7 @@ final class HeadingFakeProvider implements AIProviderInterface
     public function testConnection(): array { return $this->getModels(); }
     public function getConfigFields(): array { return []; }
     public function validateConfig(array $config): bool { return true; }
+    public function resolveMaxTokens(int $requested, string $model): int { return max(1, $requested); }
     public function getContextWindow(string $model): int { return 200000; }
     public function estimateTokens(string $text): int { return (int) ceil(strlen($text) / 4); }
     // Required legacy interface returns floats. Benchmark reports cost=null, never this synthetic zero.

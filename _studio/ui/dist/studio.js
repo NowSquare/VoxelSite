@@ -1621,7 +1621,7 @@ A page reload is required after the update completes.`)){t.classList.add("hidden
     </div>`,document.body.appendChild(n),requestAnimationFrame(()=>n.classList.add("is-visible"));let o=()=>Ee(n),i=l=>{l.key==="Escape"&&(l.preventDefault(),o())};document.addEventListener("keydown",i);let a=new MutationObserver(()=>{document.body.contains(n)||(document.removeEventListener("keydown",i),a.disconnect())});a.observe(document.body,{childList:!0}),$e(n,o),n.querySelector("#close-key-reveal").addEventListener("click",o);let r=n.querySelector("#revealed-key-input");r==null||r.addEventListener("focus",()=>r.select()),n.querySelector("#copy-api-key").addEventListener("click",async()=>{let l=n.querySelector("#copy-api-key");try{await navigator.clipboard.writeText(e),l.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',l.style.color="#22c55e",setTimeout(()=>{l.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',l.style.color=""},2e3)}catch{r==null||r.select()}})}var Ts=()=>{var e;return((e=window.demoGuard)==null?void 0:e.call(window))||!1},on=()=>{var e;return((e=window.viewerGuard)==null?void 0:e.call(window))||!1},Fa={confirmed:{bg:"var(--vs-success-dim)",text:"var(--vs-success)",label:"Confirmed"},pending:{bg:"var(--vs-info-dim)",text:"var(--vs-info)",label:"Pending"},cancelled:{bg:"var(--vs-error-dim)",text:"var(--vs-error)",label:"Cancelled"},completed:{bg:"var(--vs-accent-dim)",text:"var(--vs-accent)",label:"Completed"},rejected:{bg:"var(--vs-error-dim)",text:"var(--vs-error)",label:"Rejected"},"no-show":{bg:"var(--vs-bg-raised)",text:"var(--vs-text-ghost)",label:"No-show"},archived:{bg:"var(--vs-bg-raised)",text:"var(--vs-text-ghost)",label:"Archived"}},Gu={contact:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>',newsletter:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',reservation:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>',appointment:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',"event-registration":'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/></svg>',callback:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',"quote-request":'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',feedback:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',waitlist:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>'};function Kl(){return setTimeout(()=>Ku(),0),`
     <div>
       <div class="vs-page-header" style="margin-bottom: 24px;">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 class="vs-page-title">Agent Actions</h1>
             <p class="vs-page-subtitle">Define what AI agents and visitors can do on your website.</p>
@@ -1677,7 +1677,7 @@ A page reload is required after the update completes.`)){t.classList.add("hidden
         <circle cx="72" cy="62" r="2.5" fill="currentColor" opacity="0.3"/>
       </svg>`},f={"bottom-bar":"Bottom Bar","floating-fab":"Floating FAB","minimal-pill":"Minimal Pill"},x={"all-pages":"All Pages","homepage-only":"Homepage Only",hidden:"Hidden"};t.innerHTML=`
       <div class="vs-settings-card" style="margin-bottom: 20px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
           <div>
             <h2 class="vs-settings-card-title" style="margin-bottom: 2px;">Actions Bar</h2>
             <p style="font-size: 12px; color: var(--vs-text-tertiary); margin: 0;">How actions appear on your published site.</p>
@@ -1889,7 +1889,7 @@ A page reload is required after the update completes.`)){t.classList.add("hidden
       </div>
       <div class="flex items-center justify-between gap-4 flex-wrap">
         <h1 class="vs-page-title">${y(a.name||e)}</h1>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-wrap">
           <button id="btn-toggle-active" class="vs-btn ${l?"vs-btn-secondary":"vs-btn-primary"} vs-btn-sm" title="${l?"Deactivate this action":"Activate this action on your website"}">
             ${l?"\u25CF Live \u2014 click to deactivate":"\u25CB Draft \u2014 click to go live"}
           </button>
@@ -2262,7 +2262,7 @@ Option 3`}" style="height: auto; resize: vertical; min-height: 64px;">${y(Ue)}</
     <div class="vs-settings-card" style="margin-top: 16px;">
       <h2 class="vs-settings-card-title">Submissions</h2>
       <div class="vs-form-filter-bar" style="margin-bottom: 12px;">
-        <div class="flex items-center gap-2 flex-wrap">
+        <div class="vs-form-filter-controls">
           <select id="action-filter-status" class="vs-input vs-input-compact">
             <option value="all" ${n==="all"?"selected":""}>All statuses</option>
             <option value="pending" ${n==="pending"?"selected":""}>Pending</option>
@@ -2271,9 +2271,9 @@ Option 3`}" style="height: auto; resize: vertical; min-height: 64px;">${y(Ue)}</
             <option value="cancelled" ${n==="cancelled"?"selected":""}>Cancelled</option>
             <option value="no-show" ${n==="no-show"?"selected":""}>No-show</option>
           </select>
-          <input type="text" id="action-filter-search" class="vs-input vs-input-compact" placeholder="Search submissions..." value="${y(o)}" style="min-width: 180px;" />
+          <input type="text" id="action-filter-search" class="vs-input vs-input-compact vs-form-filter-search" placeholder="Search submissions..." value="${y(o)}" />
         </div>
-        <div class="flex items-center gap-2">
+        <div class="vs-form-filter-actions">
           ${window.IS_DEMO?"":`<button id="btn-purge-records" class="vs-btn vs-btn-secondary vs-btn-sm" title="Remove old submissions" ${c===0?'disabled style="opacity:0.4;pointer-events:none;"':""}>
             ${$.trash} Purge Old
           </button>`}
@@ -2478,7 +2478,7 @@ Option 3`}" style="height: auto; resize: vertical; min-height: 64px;">${y(Ue)}</
     </div>
 
     <div class="vs-form-filter-bar">
-      <div class="flex items-center gap-2 flex-wrap">
+      <div class="vs-form-filter-controls">
         <select id="form-filter-status" class="vs-input vs-input-compact">
           <option value="all">All statuses</option>
           <option value="new">New</option>
@@ -2491,9 +2491,9 @@ Option 3`}" style="height: auto; resize: vertical; min-height: 64px;">${y(Ue)}</
           <option value="web">Web</option>
           <option value="mcp">MCP / Agent</option>
         </select>
-        <input type="text" id="form-filter-search" class="vs-input vs-input-compact" placeholder="Search submissions..." style="min-width: 180px;" />
+        <input type="text" id="form-filter-search" class="vs-input vs-input-compact vs-form-filter-search" placeholder="Search submissions..." />
       </div>
-      <div class="flex items-center gap-2">
+      <div class="vs-form-filter-actions">
         <button class="vs-btn vs-btn-secondary vs-btn-sm" id="btn-upgrade-to-action" title="Convert this form into an agent action">
           ${$.zap} Upgrade to Action
         </button>

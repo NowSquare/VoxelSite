@@ -165,7 +165,7 @@ async function loadFormDetail(formId) {
     </div>
 
     <div class="vs-form-filter-bar">
-      <div class="flex items-center gap-2 flex-wrap">
+      <div class="vs-form-filter-controls">
         <select id="form-filter-status" class="vs-input vs-input-compact">
           <option value="all">All statuses</option>
           <option value="new">New</option>
@@ -178,9 +178,9 @@ async function loadFormDetail(formId) {
           <option value="web">Web</option>
           <option value="mcp">MCP / Agent</option>
         </select>
-        <input type="text" id="form-filter-search" class="vs-input vs-input-compact" placeholder="Search submissions..." style="min-width: 180px;" />
+        <input type="text" id="form-filter-search" class="vs-input vs-input-compact vs-form-filter-search" placeholder="Search submissions..." />
       </div>
-      <div class="flex items-center gap-2">
+      <div class="vs-form-filter-actions">
         <button class="vs-btn vs-btn-secondary vs-btn-sm" id="btn-upgrade-to-action" title="Convert this form into an agent action">
           ${icons.zap} Upgrade to Action
         </button>

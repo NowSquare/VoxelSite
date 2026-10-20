@@ -50,7 +50,7 @@ export function renderActionsView() {
   return `
     <div>
       <div class="vs-page-header" style="margin-bottom: 24px;">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 class="vs-page-title">Agent Actions</h1>
             <p class="vs-page-subtitle">Define what AI agents and visitors can do on your website.</p>
@@ -139,7 +139,7 @@ async function loadActions() {
 
     barCard.innerHTML = `
       <div class="vs-settings-card" style="margin-bottom: 20px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
           <div>
             <h2 class="vs-settings-card-title" style="margin-bottom: 2px;">Actions Bar</h2>
             <p style="font-size: 12px; color: var(--vs-text-tertiary); margin: 0;">How actions appear on your published site.</p>
@@ -678,7 +678,7 @@ async function loadActionDetail(actionId) {
       </div>
       <div class="flex items-center justify-between gap-4 flex-wrap">
         <h1 class="vs-page-title">${escapeHtml(action.name || actionId)}</h1>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-wrap">
           <button id="btn-toggle-active" class="vs-btn ${isActive ? 'vs-btn-secondary' : 'vs-btn-primary'} vs-btn-sm" title="${isActive ? 'Deactivate this action' : 'Activate this action on your website'}">
             ${isActive ? '● Live — click to deactivate' : '○ Draft — click to go live'}
           </button>
@@ -1727,7 +1727,7 @@ async function loadActionRecords(actionId, page = 1) {
     <div class="vs-settings-card" style="margin-top: 16px;">
       <h2 class="vs-settings-card-title">Submissions</h2>
       <div class="vs-form-filter-bar" style="margin-bottom: 12px;">
-        <div class="flex items-center gap-2 flex-wrap">
+        <div class="vs-form-filter-controls">
           <select id="action-filter-status" class="vs-input vs-input-compact">
             <option value="all" ${status === 'all' ? 'selected' : ''}>All statuses</option>
             <option value="pending" ${status === 'pending' ? 'selected' : ''}>Pending</option>
@@ -1736,9 +1736,9 @@ async function loadActionRecords(actionId, page = 1) {
             <option value="cancelled" ${status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
             <option value="no-show" ${status === 'no-show' ? 'selected' : ''}>No-show</option>
           </select>
-          <input type="text" id="action-filter-search" class="vs-input vs-input-compact" placeholder="Search submissions..." value="${escapeHtml(search)}" style="min-width: 180px;" />
+          <input type="text" id="action-filter-search" class="vs-input vs-input-compact vs-form-filter-search" placeholder="Search submissions..." value="${escapeHtml(search)}" />
         </div>
-        <div class="flex items-center gap-2">
+        <div class="vs-form-filter-actions">
           ${window.IS_DEMO ? '' : `<button id="btn-purge-records" class="vs-btn vs-btn-secondary vs-btn-sm" title="Remove old submissions" ${total === 0 ? 'disabled style="opacity:0.4;pointer-events:none;"' : ''}>
             ${icons.trash} Purge Old
           </button>`}

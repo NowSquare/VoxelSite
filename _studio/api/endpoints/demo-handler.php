@@ -19,7 +19,7 @@ declare(strict_types=1);
  *
  * The /auth/session route uses cookie-branching:
  * - Demo token cookie → synthetic response (role: owner)
- * - Real session cookie → run auth.php, patch site_name only
+ * - Real session cookie → run auth.php, patch demo presentation only
  */
 
 use VoxelSite\DemoMode;
@@ -43,6 +43,7 @@ if ($path === '/auth/session') {
         // No auth.php needed — there's no DB session to look up
         jsonResponse(['ok' => true, 'data' => [
             'site_name' => DemoDataProvider::siteName(),
+            'ai_configured' => true, // Sample UI state; generation remains blocked.
             'user'      => [
                 'id'    => DemoMode::DEMO_USER['id'],
                 'email' => DemoMode::DEMO_USER['email'],
@@ -55,9 +56,9 @@ if ($path === '/auth/session') {
         return;
     }
 
-    // ── Real session: run auth.php, patch site_name only ──
+    // ── Real session: run auth.php, patch demo presentation only ──
     // A real owner logged in during demo mode. Preserve their
-    // identity and token, only replace the site name.
+    // identity, token and role while showing the same sample UI state.
     ob_start();
     require __DIR__ . '/auth.php';
     $output = ob_get_clean();
@@ -65,6 +66,8 @@ if ($path === '/auth/session') {
     $response = json_decode($output, true);
     if ($response && ($response['ok'] ?? false)) {
         $response['data']['site_name'] = DemoDataProvider::siteName();
+        $response['data']['ai_configured'] = true;
+        $response['data']['demo'] = true;
         // Do NOT change the role — they're a real user
     }
 
@@ -1888,6 +1891,80 @@ if ($path === '/agentic/actions') {
 //  Settings
 // ═══════════════════════════════════════════
 
+// These reads must not fall through to owner-only services or the installed DB.
+// All values are presentation fixtures; no credential or provider is configured.
+if ($path === '/settings/mcp') {
+    $sampleUsedAt = time() - 3600;
+    jsonResponse(['ok' => true, 'data' => [
+        'demo' => true,
+        'site_name' => DemoDataProvider::siteName(),
+        'enabled' => true,
+        'configuration_override' => false,
+        'workspace_ready' => true,
+        'endpoint' => 'https://example.invalid/_studio/mcp.php',
+        'version' => hash('sha256', 'demo-connections'),
+        'accounts' => [['id' => 0, 'name' => 'Demo User', 'role' => 'owner']],
+        'connections' => [[
+            'id' => 1, 'user_id' => 0, 'demo' => true,
+            'label' => 'Sample connection · Studioform',
+            'client_name' => 'Other MCP client',
+            'connection_state' => 'used',
+            'scopes' => ['site:read', 'files:read', 'preview:read'],
+            'first_authenticated_at' => $sampleUsedAt - 86400,
+            'last_authenticated_at' => $sampleUsedAt,
+            'last_used_at' => $sampleUsedAt,
+            'expires_at' => null, 'revoked_at' => null,
+            'last_auth_failure' => null, 'last_permission_denial' => null,
+            'version' => hash('sha256', 'demo-connection'),
+        ]],
+        'rest_connections' => [], 'access_groups' => [], 'approvals' => [], 'pending_secrets' => [],
+        'qualification' => ['status' => 'unqualified', 'clients' => [], 'reason' => 'demo_fixture'],
+        'billing' => 'Demo data only. No AI provider calls or client connections are made.',
+    ]]);
+    return;
+}
+
+if ($path === '/settings/mcp/activity') {
+    jsonResponse(['ok' => true, 'data' => [
+        'demo' => true, 'draft_version' => 'draft:0', 'last_external_revision' => null, 'provider_calls' => 0,
+    ]]);
+    return;
+}
+
+if ($path === '/settings/recovery') {
+    jsonResponse(['ok' => true, 'data' => ['demo' => true, 'items' => []]]);
+    return;
+}
+
+if ($path === '/settings/api-keys') {
+    jsonResponse(['ok' => true, 'data' => [
+        'demo' => true, 'keys' => [], 'available_scopes' => [], 'agent_api_available' => false,
+        'pending_secrets' => [], 'total' => 0, 'next_offset' => null,
+    ]]);
+    return;
+}
+
+if ($path === '/workspace/status') {
+    jsonResponse(['ok' => true, 'data' => [
+        'demo' => true, 'format' => 2, 'ready' => true, 'draft_version' => 0,
+        'release_id' => null, 'reservation_operation_id' => null,
+        'base_url' => 'https://example.invalid', 'access_verified' => true,
+        'preflight' => ['ok' => true, 'issues' => [], 'source_transforms' => []],
+    ]]);
+    return;
+}
+
+if ($path === '/update/inspect') {
+    jsonResponse(['ok' => true, 'data' => [
+        'demo' => true, 'current_version' => trim((string) file_get_contents(dirname(__DIR__, 3) . '/VERSION')),
+        'zip_supported' => true, 'runtime_supported' => true, 'git_supported' => false,
+        'message' => 'Demo data only. Updates are disabled.',
+        'limits' => ['archive_bytes' => 134217728, 'expanded_bytes' => 268435456, 'entries' => 8000, 'review_files' => 1500],
+        'provider_calls' => 0,
+    ]]);
+    return;
+}
+
 if ($path === '/settings') {
     // Must return data.settings envelope matching settings.php:49
     // settings.js:50 reads: s = settingsRes.data?.settings || {}
@@ -1903,9 +1980,10 @@ if ($path === '/settings') {
             'site_url'         => '',
             'site_favicon'     => null,
             'ai_provider'      => 'claude',
+            'ai_configured'    => true, // Sample UI state; no key is stored or used.
             'ai_claude_model'  => 'claude-sonnet-4-20250514',
             'ai_claude_api_key' => null,
-            'ai_claude_api_key_set' => false,
+            'ai_claude_api_key_set' => true,
             'ai_max_tokens'    => 16000,
             'governor.mode' => 'off',
             'governor.typesafe_configured' => false,
@@ -1973,6 +2051,7 @@ if ($path === '/settings') {
             ],
         ],
         'governor_activity' => ['available' => true, 'items' => []],
+        'demo' => true,
     ]]);
     return;
 }

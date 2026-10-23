@@ -34,6 +34,10 @@ export function mcpClientSetup(client, endpoint) {
 }
 
 function connectionStatus(connection, data) {
+  if (data.demo) return { state: 'sample', values: [
+    `Sample last used ${timestamp(connection.last_used_at)}`,
+    'Example activity only. No real connection or credential exists.', 'View sample permissions', 'permissions',
+  ] };
   const state = connection.connection_state || (connection.revoked_at ? 'revoked' : !data.enabled ? 'disabled' : 'waiting');
   const client = connection.client_name || 'your AI tool';
   const authCause = {
@@ -73,15 +77,15 @@ export function renderMcpConnections(data, currentUserId, page = {}) {
           <p class="text-xs text-vs-text-tertiary mt-1">${esc(account?.name || 'Unavailable account')}${connection.expires_at ? ` · Expires ${esc(timestamp(connection.expires_at))}` : ''}</p>
           <p class="text-sm text-vs-text-secondary mt-2">${esc(status)}</p>
           <p class="text-xs text-vs-text-tertiary mt-1">${esc(detail)}</p>
-          ${connection.first_authenticated_at ? `<p class="text-xs text-vs-text-tertiary mt-1">First authenticated ${esc(timestamp(connection.first_authenticated_at))} · Last authenticated ${esc(timestamp(connection.last_authenticated_at))}</p>` : ''}
-          ${connection.last_used_at && state !== 'used' ? `<p class="text-xs text-vs-text-tertiary mt-1">Last used ${esc(timestamp(connection.last_used_at))}</p>` : ''}
+          ${!data.demo && connection.first_authenticated_at ? `<p class="text-xs text-vs-text-tertiary mt-1">First authenticated ${esc(timestamp(connection.first_authenticated_at))} · Last authenticated ${esc(timestamp(connection.last_authenticated_at))}</p>` : ''}
+          ${!data.demo && connection.last_used_at && state !== 'used' ? `<p class="text-xs text-vs-text-tertiary mt-1">Last used ${esc(timestamp(connection.last_used_at))}</p>` : ''}
           ${state === 'authentication_failed' && connection.last_auth_failure?.at ? `<p class="text-xs text-vs-text-tertiary mt-1">Authentication failure ${esc(timestamp(connection.last_auth_failure.at))}</p>` : ''}
           <button type="button" class="vs-btn vs-btn-ghost vs-btn-sm mt-2" data-mcp-next="${kind}" data-connection="${Number(connection.id)}">${esc(action)}</button>
           <details id="mcp-permissions-${Number(connection.id)}" class="text-xs text-vs-text-tertiary mt-2"><summary class="cursor-pointer">View permissions</summary>
             <p class="mt-2 break-words">${(connection.scopes || []).map(esc).join(', ')}</p>
           </details>
         </div>
-        ${inactive ? '' : `<button type="button" class="vs-btn vs-btn-ghost vs-btn-sm shrink-0" data-mcp-revoke="${Number(connection.id)}" aria-label="Revoke ${escapeAttr(connection.label)}">Revoke</button>`}
+        ${inactive ? '' : `<button type="button" class="vs-btn vs-btn-ghost vs-btn-sm shrink-0" data-mcp-revoke="${Number(connection.id)}" aria-label="Revoke ${escapeAttr(connection.label)}" ${data.demo ? 'disabled' : ''}>Revoke</button>`}
       </div>
     </li>`;
   }).join('');
@@ -98,12 +102,13 @@ export function renderMcpConnections(data, currentUserId, page = {}) {
     <div class="flex items-start justify-between gap-4">
       <div><h2 class="vs-settings-card-title">Connect your AI tool</h2>
         <p class="vs-settings-card-subtitle">Work on this website from a connected AI conversation.</p></div>
-      <span class="text-xs text-vs-text-tertiary shrink-0">${data.enabled ? 'Enabled' : 'Disabled'}</span>
+      <span class="text-xs text-vs-text-tertiary shrink-0">${data.demo ? 'Demo data' : data.enabled ? 'Enabled' : 'Disabled'}</span>
     </div>
+    ${data.demo ? '<p class="text-sm text-vs-text-secondary mb-4" role="note">This is a read-only example. No real connection or credential exists. The endpoint and activity below are sample data; creating credentials and changing access are disabled.</p>' : ''}
     <p class="text-sm text-vs-text-secondary mb-4">Your conversation stays in your AI tool. Changes appear in Studio’s draft and history. Publishing needs separate access.</p>
     <p class="text-xs text-vs-text-tertiary mb-4">${esc(data.billing || '')}</p>
     <div class="flex flex-wrap items-center gap-3 mb-4">
-      <button type="button" id="mcp-toggle" class="vs-btn vs-btn-secondary vs-btn-sm" ${data.configuration_override || (!data.enabled && (!data.workspace_ready || !data.endpoint)) ? 'disabled' : ''}>${data.enabled ? 'Disable connections' : 'Enable connections'}</button>
+      <button type="button" id="mcp-toggle" class="vs-btn vs-btn-secondary vs-btn-sm" ${data.demo || data.configuration_override || (!data.enabled && (!data.workspace_ready || !data.endpoint)) ? 'disabled' : ''}>${data.enabled ? 'Disable connections' : 'Enable connections'}</button>
       <button type="button" id="mcp-check-result" class="vs-btn vs-btn-ghost vs-btn-sm">Check result</button>
       ${!data.workspace_ready || !data.endpoint ? '<a href="./workspace.php" class="text-sm text-vs-text-secondary underline">Finish private draft setup</a>' : ''}
       ${data.configuration_override ? '<span class="text-xs text-vs-text-tertiary">Access is controlled by the server configuration.</span>' : ''}
@@ -112,7 +117,7 @@ export function renderMcpConnections(data, currentUserId, page = {}) {
       <div class="flex gap-2 mb-2"><input id="mcp-endpoint" type="text" readonly class="vs-input min-w-0" value="${escapeAttr(data.endpoint)}" spellcheck="false">
         <button type="button" id="mcp-copy-endpoint" class="vs-btn vs-btn-secondary vs-btn-sm shrink-0">Copy URL</button></div>
       <p class="text-xs text-vs-text-tertiary mb-4">Use remote HTTP with a bearer credential. Enter the credential in your client’s secret settings. Keep it out of shared configuration.</p>` : ''}
-    <p class="text-xs text-vs-text-tertiary mb-4">${data.qualification?.status === 'qualified' ? `Client compatibility qualified for ${esc(data.qualification.product_version || 'this release')}.` : 'No qualified client run is recorded for this release. Setup below follows the client’s documented method.'}</p>
+    ${data.demo ? '' : `<p class="text-xs text-vs-text-tertiary mb-4">${data.qualification?.status === 'qualified' ? `Client compatibility qualified for ${esc(data.qualification.product_version || 'this release')}.` : 'No qualified client run is recorded for this release. Setup below follows the client’s documented method.'}</p>`}
     <div id="mcp-feedback" class="text-sm text-vs-text-secondary mb-4" role="status" aria-live="polite"></div>
     <form id="mcp-create" class="flex flex-col gap-4">
       <fieldset><legend class="text-sm font-medium text-vs-text-secondary mb-2">Choose your AI tool</legend>
@@ -144,7 +149,7 @@ export function renderMcpConnections(data, currentUserId, page = {}) {
             <span class="text-sm text-vs-text-secondary">${esc(group.label)}
               <span class="block text-xs text-vs-text-tertiary mt-1">${esc(group.description)}</span></span></label>`).join('')}</div>
       </details>
-      <div><button type="submit" class="vs-btn vs-btn-primary vs-btn-sm" ${!data.endpoint || !data.workspace_ready ? 'disabled' : ''}>Create credential</button></div>
+      <div><button type="submit" class="vs-btn vs-btn-primary vs-btn-sm" ${data.demo || !data.endpoint || !data.workspace_ready ? 'disabled' : ''}>Create credential</button></div>
     </form>
     <div id="mcp-secret" class="hidden mt-4" role="region" aria-label="New connection credential">
       <p class="text-sm font-medium text-vs-text-primary">Save this credential now</p>
@@ -268,6 +273,7 @@ export async function bindMcpConnections(container, { api, user, clipboard = nav
     input.focus();
   };
   const perform = async (button, operation, success, reload = true) => {
+    if (data.demo) { feedback('Demo mode — changing connections is disabled.'); return null; }
     if (busy) return null;
     if (secret) { feedback('Save the credential and choose “I’ve saved it” before changing connection access.'); return null; }
     busy = true;
@@ -391,6 +397,7 @@ export async function bindMcpConnections(container, { api, user, clipboard = nav
   };
   createForm.addEventListener('submit', async event => {
     event.preventDefault();
+    if (data.demo) { feedback('Demo mode — creating credentials is disabled.'); return; }
     const form = event.currentTarget;
     if (busy || creating || acknowledgedCreate || secret || !data.endpoint || !data.workspace_ready) return;
     const retained = pending(creationEndpoint);
@@ -431,6 +438,7 @@ export async function bindMcpConnections(container, { api, user, clipboard = nav
     }
   });
   container.querySelectorAll('[data-mcp-reveal]').forEach(button => button.addEventListener('click',async () => {
+    if (data.demo) { feedback('Demo mode — no real credential exists.'); return; }
     if (button.disabled || busy || creating || secret) return;
     busy = true;
     clearSecret();

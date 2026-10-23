@@ -267,7 +267,13 @@ class DemoMode
         '/settings/usage',
         '/settings/logs',
         '/settings/logs/download',
+        '/settings/mcp',
+        '/settings/mcp/activity',
+        '/settings/recovery',
+        '/settings/api-keys',
+        '/workspace/status',
         '/team',
+        '/update/inspect',
         '/update/dist-packages',
         '/agentic/actions',               // List all actions (no trailing /)
         '/agentic/actions/bar-settings',   // Bar settings (exact route)

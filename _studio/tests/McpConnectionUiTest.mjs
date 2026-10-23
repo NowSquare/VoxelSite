@@ -65,6 +65,29 @@ test('Connection copy explains separate publish/live restore access and escapes 
   assert.ok(!html.includes('aria-label="Revoke Reader " onclick="evil()'));
   assert.ok(html.includes('for="mcp-label"') && html.includes('aria-live="polite"'));
 });
+test('Demo connections are explicitly sample data without a qualification claim', () => {
+  const html = context.renderMcpConnections({ ...data, demo: true, enabled: true,
+    connections: [{ ...data.connections[0], label: 'Sample connection', connection_state: 'used', last_used_at: 1700000000 }] }, 1);
+  assert.ok(html.includes('No real connection or credential exists'));
+  assert.ok(html.includes('Sample last used'));
+  assert.ok(!html.includes('No qualified client run') && !html.includes('Client compatibility qualified'));
+  assert.match(html, /id="mcp-toggle"[^>]*disabled/);
+  assert.match(html, /type="submit"[^>]*disabled/);
+  assert.match(html, /data-mcp-revoke="7"[^>]*disabled/);
+});
+test('Demo connection handlers never send credential or configuration writes', async () => {
+  const view = container(); let writes = 0;
+  const write = async () => { writes++; throw new Error('Demo must not send a write'); };
+  await context.bindMcpConnections(view, {
+    api: { get: async () => ({ ok: true, data: { ...data, demo: true, enabled: true } }), post: write },
+    operation: write, user: { id: 1, role: 'owner' }, clipboard: {},
+  });
+  await view.fields['mcp-toggle'].fire('click');
+  await view.fields['mcp-create'].fire('submit');
+  await view.claim.fire('click');
+  assert.equal(writes, 0);
+  assert.ok(view.fields['mcp-feedback'].textContent.includes('Demo'));
+});
 test('Non-owner UI makes no connection administration request', async () => {
   const view = container();
   await context.bindMcpConnections(view, {

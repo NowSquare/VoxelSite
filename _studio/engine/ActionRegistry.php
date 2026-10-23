@@ -118,19 +118,14 @@ class ActionRegistry
      */
     public function loadPromptTemplate(string $actionId): ?string
     {
-        $action = $this->actions[$actionId] ?? null;
+        return (new AuthoringRules())->action($actionId)['content'];
+    }
 
-        if ($action === null) {
-            return null;
-        }
-
-        $path = $this->promptsPath . '/' . $action['promptFile'];
-
-        if (!file_exists($path)) {
-            return null;
-        }
-
-        return file_get_contents($path);
+    /** Canonical template identity, shared by both authoring paths. */
+    public function promptFilename(string $actionId): ?string
+    {
+        $file = $this->actions[$actionId]['promptFile'] ?? null;
+        return is_string($file) && $file !== '' ? $file : null;
     }
 
     /**

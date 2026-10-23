@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace VoxelSite\Providers;
 
 use VoxelSite\AIProviderInterface;
+use VoxelSite\Agent\ProviderCallPolicy;
+use VoxelSite\Agent\ProviderCallForbidden;
 use VoxelSite\ModelCapabilities;
 use RuntimeException;
+
+if (!class_exists(ProviderCallPolicy::class)) { require_once dirname(__DIR__) . '/Agent/ProviderCallPolicy.php'; }
 
 if (!class_exists(ModelCapabilities::class)) { require_once dirname(__DIR__) . '/ModelCapabilities.php'; }
 
@@ -82,6 +86,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
      */
     public function listModels(): array
     {
+        ProviderCallPolicy::assertAllowed('model_discovery');
         try {
             $url = $this->baseUrl . '/models';
 
@@ -98,9 +103,9 @@ class OpenAICompatibleProvider implements AIProviderInterface
                 CURLOPT_CONNECTTIMEOUT => 5,
             ]);
 
+            ProviderCallPolicy::assertAllowed('provider_http_dispatch');
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
 
             if ($httpCode !== 200 || empty($response)) {
                 return [];
@@ -125,6 +130,8 @@ class OpenAICompatibleProvider implements AIProviderInterface
             }
 
             return $models;
+        } catch (ProviderCallForbidden $error) {
+            throw $error;
         } catch (\Throwable) {
             return [];
         }
@@ -132,6 +139,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
 
     public function testConnection(): array
     {
+        ProviderCallPolicy::assertAllowed('provider_test');
         $url = $this->baseUrl . '/models';
 
         $headers = ['Content-Type: application/json'];
@@ -147,10 +155,10 @@ class OpenAICompatibleProvider implements AIProviderInterface
             CURLOPT_CONNECTTIMEOUT => 5,
         ]);
 
+        ProviderCallPolicy::assertAllowed('provider_http_dispatch');
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
-        curl_close($ch);
 
         if (!empty($curlError)) {
             throw new RuntimeException('Could not reach server at ' . $this->baseUrl . ': ' . $curlError);
@@ -192,6 +200,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
 
     public function validateConfig(array $config): bool
     {
+        ProviderCallPolicy::assertAllowed('provider_validation');
         $baseUrl = self::normalizeBaseUrl($config['base_url'] ?? $this->baseUrl);
         $key = $config['api_key'] ?? $this->apiKey;
 
@@ -209,11 +218,13 @@ class OpenAICompatibleProvider implements AIProviderInterface
                 CURLOPT_CONNECTTIMEOUT => 5,
             ]);
 
+            ProviderCallPolicy::assertAllowed('provider_http_dispatch');
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
 
             return $httpCode === 200;
+        } catch (ProviderCallForbidden $error) {
+            throw $error;
         } catch (\Throwable) {
             return false;
         }
@@ -226,6 +237,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
         callable $onComplete,
         array $options = []
     ): void {
+        ProviderCallPolicy::assertAllowed('provider_stream');
         $model = $options['model'] ?? $this->model ?? '';
         $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), (string) $model);
         $structuredOption = $options['structured_output'] ?? false;
@@ -395,6 +407,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
 
         $running = 0;
         do {
+            ProviderCallPolicy::assertAllowed('provider_http_dispatch');
             $status = curl_multi_exec($mh, $running);
 
             if ($status !== CURLM_OK) {
@@ -425,7 +438,6 @@ class OpenAICompatibleProvider implements AIProviderInterface
 
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
-        curl_close($ch);
 
         // Providers may omit the trailing newline, including on JSON error bodies.
         if ($lineBuffer !== '') {
@@ -494,6 +506,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
         array $messages,
         array $options = []
     ): string {
+        ProviderCallPolicy::assertAllowed('provider_complete');
         $model = $options['model'] ?? $this->model ?? '';
         $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), (string) $model);
         $structuredOption = $options['structured_output'] ?? false;
@@ -577,6 +590,7 @@ class OpenAICompatibleProvider implements AIProviderInterface
      */
     protected function apiCall(array $payload): array
     {
+        ProviderCallPolicy::assertAllowed('provider_http');
         $headers = [
             'Content-Type: application/json',
         ];
@@ -594,10 +608,10 @@ class OpenAICompatibleProvider implements AIProviderInterface
             CURLOPT_CONNECTTIMEOUT => 10,
         ]);
 
+        ProviderCallPolicy::assertAllowed('provider_http_dispatch');
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
-        curl_close($ch);
 
         if (!empty($error)) {
             throw new RuntimeException("API connection failed: {$error}");

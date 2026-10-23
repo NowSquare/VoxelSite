@@ -1,0 +1,14 @@
+:root {
+  --color-primary: #334b36;
+  --color-accent: #c18b4a;
+  --font-heading: Georgia, serif;
+  --font-body: Arial, sans-serif;
+  --max-width: 64rem;
+  --fixture-image: url('../images/workshop.png');
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

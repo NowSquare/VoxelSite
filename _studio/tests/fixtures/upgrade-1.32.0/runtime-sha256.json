@@ -1,0 +1,16 @@
+{
+  "migrations/001_initial_schema.php": "c60509f8ccbbea7f0715c6c127095fadd28cea793b15b2d1dd38ae2a40d6233d",
+  "migrations/002_extend_user_roles.php": "dba8b9aa338a475e992c55d0ffca15b66df3ca6c62f6ab8a47420a6eb0d0bb92",
+  "migrations/003_add_evaluation_issues.php": "90f51b00d3c8cc99868a9bcf95d41563080c3f743e22525a15eff7f11deee619",
+  "migrations/004_add_prompt_api_support.php": "46dffae72bc455d5738a1d45ee41f623dd6ddc653daeb6c32d244071c283a351",
+  "migrations/005_add_notes.php": "08c5929cd5c001f3ebff994e9ffff2dd168302a49216ecf88fd06d3c8a6c60a0",
+  "migrations/006_add_board.php": "e223dbbc1ed8308972800cbd2cf21636ec2bfd953da1990e62ebe42a71396d47",
+  "migrations/007_ai_call_ledger.php": "998a6a79bd75e03ca48bf8b0fbeff97ae9e172a8f3c6426eb71199816585e99e",
+  "migrations/008_router_job_budget.php": "8354b081e29c8a67796f9c7e75238af2d2f1ccfbdaf1c754a5b604c9f311eff0",
+  "migrations/009_router_claim_overrides.php": "85a4ac9bcffef665e54f22a5eacfaa8a14eab67fa83f4477b679b79b2f157fa9",
+  "migrations/010_router_pending_headings.php": "b5d0a1ae85d7334d337184b159acc45cfcba096adbb9d568e730d247dfbb643f",
+  "migrations/011_router_enabled.php": "d5adbe6a3c8ccfff64c80a98af446211c5fb49495e54889f5439f9ffd54a62a1",
+  "migrations/012_site_control_plans.php": "a1412347a2f93db170d553ecebb795537c348a7bced01ef3a5fe16d95bb4757b",
+  "migrations/013_site_mutation_journal.php": "4d78f9c729cc89a6e22ea98dfd2fdb9206ee483b82d338f45b6ab4ed45002468",
+  "AgentAuth.php": "d4ea26c33447b8fe58eddb3f53fb4ba53ab67ef04afccce5c587145bc4b52aa7"
+}

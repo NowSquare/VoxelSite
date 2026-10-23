@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace VoxelSite;
 
+use VoxelSite\Agent\ProviderCallPolicy;
+use VoxelSite\Agent\ProviderCallForbidden;
+
+if (!class_exists(ProviderCallPolicy::class)) { require_once __DIR__ . '/Agent/ProviderCallPolicy.php'; }
+
 /**
  * Post-generation quality evaluator.
  *
@@ -53,6 +58,7 @@ class EvaluatorEngine
         array $existingPages = [],
         array $options = []
     ): array {
+        ProviderCallPolicy::assertAllowed('ai_evaluation');
         try {
             $systemPrompt = $this->loadPrompt();
 
@@ -82,6 +88,8 @@ class EvaluatorEngine
                 'decoded'      => is_array($decoded),
                 'issue_count'  => is_array($decoded) ? count($decoded['issues'] ?? []) : 0,
             ]);
+        } catch (ProviderCallForbidden $error) {
+            throw $error;
         } catch (\Throwable $e) {
             Logger::error('evaluator', 'Evaluation failed', [
                 'error' => $e->getMessage(),

@@ -3,6 +3,11 @@ declare(strict_types=1);
 
 namespace VoxelSite;
 
+use VoxelSite\Agent\ProviderCallPolicy;
+use VoxelSite\Agent\ProviderCallForbidden;
+
+if (!class_exists(ProviderCallPolicy::class)) { require_once __DIR__ . '/Agent/ProviderCallPolicy.php'; }
+
 /** Bounded heading writes and distinct deterministic/read-only Router outcomes. */
 final class RouterHeading
 {
@@ -13,7 +18,8 @@ final class RouterHeading
     private RouterSettings $config;
     private \Closure $clientFactory;
 
-    public function __construct(private Database $db, private Settings $settings, ?callable $clientFactory = null)
+    public function __construct(private Database $db, private Settings $settings, ?callable $clientFactory = null,
+        private ?FileManager $files = null)
     {
         $this->config = new RouterSettings($settings);
         $this->clientFactory = $clientFactory === null
@@ -24,6 +30,7 @@ final class RouterHeading
     public function execute(array $request, int $promptLogId, callable $generatorFactory,
         callable $writerFactory, ?callable $isCancelled = null): array
     {
+        ProviderCallPolicy::assertAllowed('ai_router_heading');
         $cancellationProbe = $isCancelled;
         $isCancelled = static function () use ($cancellationProbe): bool {
             try { return $cancellationProbe !== null && (bool) $cancellationProbe(); }
@@ -57,8 +64,8 @@ final class RouterHeading
             return $reject('explicit_replacement_required', 'clarify') + $meta;
         }
         if ($isCancelled !== null && $isCancelled()) { return $reject('generation_cancelled') + $meta; }
-        $root = getenv('VS_TEST_PREVIEW_DIR') ?: dirname(__DIR__) . '/preview';
         try {
+            $root = ($this->files ??= new FileManager($this->db))->workspace()->draftRoot();
             // Free chat exposes facts only, never a write target from action data.
             $target = $request['action_type'] === 'free_prompt' ? [] : $this->target($request, $root);
             if (isset($target['reason'])) { return $reject($target['reason'], $target['status'] ?? 'rejected') + $meta; }
@@ -72,12 +79,15 @@ final class RouterHeading
         try {
             $client = ($this->clientFactory)($key);
             if (!$client instanceof TypeSafeClientInterface) { throw new \RuntimeException(); }
+            ProviderCallPolicy::assertAllowed('ai_router_heading_dispatch');
             $answer = $client->evaluate($state, $this->questions(array_keys($state['targets'])));
             $reason = $this->routeFailure($answer, array_keys($state['targets']));
             $ledger->finish($callId, in_array($reason, ['routing_unavailable', 'routing_invalid'], true) ? 'error' : 'success',
                 is_array($answer['usage'] ?? null) ? $answer['usage'] : null, null,
                 $reason === 'routing_invalid' ? 'invalid_response' : 'classification_error',
                 is_string($answer['model'] ?? null) ? $answer['model'] : null);
+        } catch (ProviderCallForbidden $error) {
+            throw $error;
         } catch (\Throwable) {
             $ledger->finish($callId, 'error', errorCode: 'classification_error');
             $reason = 'routing_unavailable';
@@ -102,7 +112,7 @@ final class RouterHeading
         };
         try {
             $guard();
-            $pending = isset($request['user_id']) ? new RouterPendingHeading($this->db, $this->settings) : null;
+            $pending = isset($request['user_id']) ? new RouterPendingHeading($this->db, $this->settings, files: $this->files) : null;
             $pending?->supersede($promptLogId);
             $intent = $meta['route']['intent'];
             $deterministic = $meta['route']['model_tier'] === 'none';
@@ -127,6 +137,7 @@ final class RouterHeading
             $blockedCandidate = null;
             $patch = new StagedHeadingPatch($root, [$target['file_path']], $generator,
                 function (array $candidate) use ($guard): array {
+                    ProviderCallPolicy::assertAllowed('ai_router_heading_review');
                     $guard();
                     $client = ($this->clientFactory)($this->config->typeSafeKey());
                     if (!$client instanceof TypeSafeClientInterface) { throw new \RuntimeException(); }

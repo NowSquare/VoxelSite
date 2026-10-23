@@ -3,6 +3,11 @@ declare(strict_types=1);
 
 namespace VoxelSite;
 
+use VoxelSite\Agent\ProviderCallPolicy;
+use VoxelSite\Agent\ProviderCallForbidden;
+
+if (!class_exists(ProviderCallPolicy::class)) { require_once __DIR__ . '/Agent/ProviderCallPolicy.php'; }
+
 /** Bounded System One routing adapter (Choice/Noul), not a generator or full SDK. */
 final class TypeSafeHttpClient implements TypeSafeClientInterface
 {
@@ -21,6 +26,7 @@ final class TypeSafeHttpClient implements TypeSafeClientInterface
 
     public function evaluate(array $state, array $questions): array
     {
+        ProviderCallPolicy::assertAllowed('typesafe_evaluate');
         $start = hrtime(true);
         $base = ['status' => 'error', 'answers' => [], 'model' => null, 'usage' => null,
             'cost_usd' => null, 'duration_ms' => 0.0, 'http_status' => null, 'calls' => 0, 'error' => 'invalid_request'];
@@ -29,10 +35,13 @@ final class TypeSafeHttpClient implements TypeSafeClientInterface
             $body = json_encode(RouterSecrets::redact(['model' => 'jev-latest', 'state' => $state, 'questions' => $questions]), JSON_THROW_ON_ERROR);
             if (strlen($body) > 32768) { return $base; }
         } catch (\Throwable) { return $base; }
+        ProviderCallPolicy::assertAllowed('typesafe_dispatch');
         $base['calls'] = 1;
         try {
             $reply = ($this->transport)(self::ENDPOINT,
                 ['Authorization: Bearer ' . $this->key, 'Content-Type: application/json', 'Accept: application/json'], $body);
+        } catch (ProviderCallForbidden $error) {
+            throw $error;
         } catch (\Throwable) {
             $base['error'] = 'transport_unavailable';
             $base['duration_ms'] = (hrtime(true) - $start) / 1e6;
@@ -102,6 +111,7 @@ final class TypeSafeHttpClient implements TypeSafeClientInterface
     /** Fixed destination, TLS verification, no redirects, one attempt, hard bounds. */
     private function post(string $url, #[\SensitiveParameter] array $headers, string $body): array
     {
+        ProviderCallPolicy::assertAllowed('typesafe_http');
         if (!function_exists('curl_init')) { throw new \RuntimeException('transport_unavailable'); }
         $curl = curl_init($url);
         $response = '';
@@ -113,6 +123,7 @@ final class TypeSafeHttpClient implements TypeSafeClientInterface
                     if (strlen($response) + strlen($chunk) > self::MAX_RESPONSE_BYTES) { return 0; }
                     $response .= $chunk; return strlen($chunk);
                 }]);
+            ProviderCallPolicy::assertAllowed('typesafe_http_dispatch');
             if (curl_exec($curl) === false) { throw new \RuntimeException('transport_unavailable'); }
             return ['status' => (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE), 'body' => $response];
         } finally { curl_close($curl); }

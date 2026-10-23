@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "synthetic": true,
+  "pages": ["index.php", "about.php", "services/repairs.php"],
+  "partials": ["_partials/header.php", "_partials/nav.php", "_partials/footer.php"],
+  "mutable_assets": [
+    "assets/css/style.css",
+    "assets/js/main.js",
+    "assets/js/service-copy.js",
+    "assets/data/site.json",
+    "assets/data/services.json",
+    "assets/data/memory.json",
+    "assets/data/design-intelligence.json",
+    "assets/forms/enquiry.json",
+    "assets/images/workshop.png"
+  ],
+  "derived_assets": ["assets/css/tailwind.css"],
+  "shipped_runtime": ["assets/js/form-handler.js", "submit.php"],
+  "checks": [
+    "nested_page_include",
+    "server_side_json",
+    "root_relative_navigation",
+    "root_relative_image",
+    "css_asset_url",
+    "javascript_module_dependency",
+    "javascript_json_fetch",
+    "interactive_disclosure",
+    "first_party_form_javascript",
+    "first_party_form_no_javascript"
+  ]
+}

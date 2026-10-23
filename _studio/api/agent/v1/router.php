@@ -279,7 +279,8 @@ foreach ($routes as [$routeMethod, $routePattern, $handlerFile, $requiredScope])
     ];
 
     $mutationPolicy = \VoxelSite\SiteMutationRoutePolicy::agent($method, $routePattern);
-    if ($mutationPolicy['lock']) {
+    $sharedAuthoring=in_array($method.' '.$routePattern,['POST /pages','PUT /pages/:slug','DELETE /pages/:slug','POST /compile'],true);
+    if ($mutationPolicy['lock'] && !$sharedAuthoring) {
         try {
             $websiteMutationLock = \VoxelSite\SiteMutationLock::acquire();
             (new \VoxelSite\SiteMutationJournal(\VoxelSite\Database::getInstance()))->recoverInterrupted();

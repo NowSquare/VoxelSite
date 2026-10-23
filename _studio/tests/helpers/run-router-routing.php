@@ -6,6 +6,8 @@ putenv('VS_TEST_PREVIEW_DIR=' . $root . '/_studio/preview');
 putenv('VS_TEST_ASSETS_DIR=' . $root . '/assets');
 require $root . '/_studio/engine/bootstrap.php';
 require __DIR__ . '/RouterHeadingFixture.php';
+require __DIR__ . '/LegacyWorkspaceFixture.php';
+foreach (['VS_TEST_DOC_ROOT' => '', 'VS_TEST_MUTATION_LOCK' => '/_studio/data/site.lock', 'VS_TEST_WORKSPACE_STATE_DIR' => '/_studio/data/workspace', 'VS_TEST_REVISIONS_DIR' => '/_studio/revisions', 'VS_TEST_SNAPSHOT_DIR' => '/_studio/data/snapshots'] as $name => $suffix) putenv($name . '=' . $root . $suffix);
 foreach (['PromptEngine', 'AIRouter', 'FileManager', 'SiteContext', 'RevisionManager', 'Logger', 'TailwindCompiler', 'AEOGenerator'] as $class) {
     if (!str_starts_with((new ReflectionClass('VoxelSite\\' . $class))->getFileName(), $root . '/_studio/engine/')) {
         throw new RuntimeException('Non-isolated production class: ' . $class);
@@ -122,10 +124,11 @@ if (!empty($scenario['cancel'])) {
         usleep(1100000);
     };
 }
-$siteData = json_decode(file_get_contents($root . '/assets/data/site.json'), true, 512, JSON_THROW_ON_ERROR);
+activateLegacyTestWorkspace($db);
+$siteData = json_decode(file_get_contents($root . '/_studio/preview/assets/data/site.json'), true, 512, JSON_THROW_ON_ERROR);
 $siteData['routing_test_fact'] = 'ROUTING_DATA_SOURCE_SENTINEL';
 if (!empty($scenario['oversized_context'])) { $siteData['routing_large_data'] = str_repeat('Large site fact. ', 60000); }
-file_put_contents($root . '/assets/data/site.json', json_encode($siteData, JSON_THROW_ON_ERROR));
+file_put_contents($root . '/_studio/preview/assets/data/site.json', json_encode($siteData, JSON_THROW_ON_ERROR));
 $fm = new \VoxelSite\FileManager($db); $fm->syncPageRegistry();
 $before = \VoxelSite\Tests\RouterHeadingFixture::snapshot($root . '/_studio/preview');
 $beforeAssets = \VoxelSite\Tests\RouterHeadingFixture::snapshot($root . '/assets');

@@ -1,0 +1,11 @@
+{
+  "id": "enquiry",
+  "name": "Repair enquiry",
+  "description": "Synthetic enquiry form for preview safety checks.",
+  "fields": [
+    {"name": "name", "label": "Name", "type": "text", "required": true, "validation": {"max_length": 120}},
+    {"name": "email", "label": "Email", "type": "email", "required": true},
+    {"name": "message", "label": "What needs repair?", "type": "textarea", "required": true, "validation": {"max_length": 2000}}
+  ],
+  "submission": {"success_message": "Test enquiry received."}
+}

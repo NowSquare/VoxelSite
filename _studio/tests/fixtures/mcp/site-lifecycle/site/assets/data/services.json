@@ -1,0 +1,6 @@
+{
+  "services": [
+    {"id": "chair", "name": "Chair repairs"},
+    {"id": "table", "name": "Table repairs"}
+  ]
+}

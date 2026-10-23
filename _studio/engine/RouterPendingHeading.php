@@ -2,6 +2,10 @@
 declare(strict_types=1);
 namespace VoxelSite;
 
+use VoxelSite\Agent\ProviderCallPolicy;
+
+if (!class_exists(ProviderCallPolicy::class)) { require_once __DIR__ . '/Agent/ProviderCallPolicy.php'; }
+
 /** Server-held final blocked candidate. HTTP callers supply only its opaque ID and consent reason. */
 final class RouterPendingHeading
 {
@@ -11,14 +15,15 @@ final class RouterPendingHeading
     private string $root;
 
     public function __construct(private Database $db, private Settings $settings,
-        ?callable $clientFactory = null, ?callable $writerFactory = null)
+        ?callable $clientFactory = null, ?callable $writerFactory = null, ?FileManager $files = null)
     {
         $this->config = new RouterSettings($settings);
-        $this->root = getenv('VS_TEST_PREVIEW_DIR') ?: dirname(__DIR__) . '/preview';
+        $files ??= new FileManager($db);
+        $this->root = $files->workspace()->draftRoot();
         $this->clientFactory = $clientFactory === null
             ? static fn(#[\SensitiveParameter] string $key): TypeSafeClientInterface => new TypeSafeHttpClient($key)
             : \Closure::fromCallable($clientFactory);
-        $this->writerFactory = $writerFactory === null ? fn(): FileManager => new FileManager($this->db) : \Closure::fromCallable($writerFactory);
+        $this->writerFactory = $writerFactory === null ? static fn(): FileManager => $files : \Closure::fromCallable($writerFactory);
     }
 
     /** Re-entry invalidates any older consent opportunity for this same job. */
@@ -56,6 +61,7 @@ final class RouterPendingHeading
 
     public function approve(string $id, int $owner, #[\SensitiveParameter] string $reason): array
     {
+        ProviderCallPolicy::assertAllowed('ai_router_pending_review');
         $this->owner($owner);
         $row = $this->record($id);
         $target = $row['target'];
@@ -75,6 +81,7 @@ final class RouterPendingHeading
             };
             $patch = new StagedHeadingPatch($this->root, [$target['file_path']], null,
                 function (array $state): array {
+                    ProviderCallPolicy::assertAllowed('ai_router_pending_review_dispatch');
                     $this->configured();
                     $client = ($this->clientFactory)($this->config->typeSafeKey());
                     if (!$client instanceof TypeSafeClientInterface) { throw new \RuntimeException('gate_unavailable'); }

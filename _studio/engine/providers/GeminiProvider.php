@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace VoxelSite\Providers;
 
 use VoxelSite\AIProviderInterface;
+use VoxelSite\Agent\ProviderCallPolicy;
+use VoxelSite\Agent\ProviderCallForbidden;
 use VoxelSite\ModelCapabilities;
 use RuntimeException;
+
+if (!class_exists(ProviderCallPolicy::class)) { require_once dirname(__DIR__) . '/Agent/ProviderCallPolicy.php'; }
 
 if (!class_exists(ModelCapabilities::class)) { require_once dirname(__DIR__) . '/ModelCapabilities.php'; }
 
@@ -63,6 +67,7 @@ class GeminiProvider implements AIProviderInterface
      */
     public function listModels(): array
     {
+        ProviderCallPolicy::assertAllowed('model_discovery');
         if (empty($this->apiKey)) {
             return $this->getModels();
         }
@@ -77,9 +82,9 @@ class GeminiProvider implements AIProviderInterface
                 CURLOPT_CONNECTTIMEOUT => 10,
             ]);
 
+            ProviderCallPolicy::assertAllowed('provider_http_dispatch');
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
 
             if ($httpCode !== 200 || empty($response)) {
                 return $this->getModels();
@@ -118,6 +123,8 @@ class GeminiProvider implements AIProviderInterface
             }
 
             return $models ?: $this->getModels();
+        } catch (ProviderCallForbidden $error) {
+            throw $error;
         } catch (\Throwable) {
             return $this->getModels();
         }
@@ -125,6 +132,7 @@ class GeminiProvider implements AIProviderInterface
 
     public function testConnection(): array
     {
+        ProviderCallPolicy::assertAllowed('provider_test');
         if (empty($this->apiKey)) {
             throw new RuntimeException('No API key provided.');
         }
@@ -138,10 +146,10 @@ class GeminiProvider implements AIProviderInterface
             CURLOPT_CONNECTTIMEOUT => 10,
         ]);
 
+        ProviderCallPolicy::assertAllowed('provider_http_dispatch');
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
-        curl_close($ch);
 
         if (!empty($curlError)) {
             throw new RuntimeException('Connection failed: ' . $curlError);
@@ -179,6 +187,7 @@ class GeminiProvider implements AIProviderInterface
 
     public function validateConfig(array $config): bool
     {
+        ProviderCallPolicy::assertAllowed('provider_validation');
         $key = $config['api_key'] ?? '';
         if (empty($key)) {
             return false;
@@ -195,11 +204,13 @@ class GeminiProvider implements AIProviderInterface
                 CURLOPT_CONNECTTIMEOUT => 10,
             ]);
 
+            ProviderCallPolicy::assertAllowed('provider_http_dispatch');
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
 
             return $httpCode === 200;
+        } catch (ProviderCallForbidden $error) {
+            throw $error;
         } catch (\Throwable) {
             return false;
         }
@@ -212,6 +223,7 @@ class GeminiProvider implements AIProviderInterface
         callable $onComplete,
         array $options = []
     ): void {
+        ProviderCallPolicy::assertAllowed('provider_stream');
         $model = $options['model'] ?? $this->model ?? $this->getModels()[0]['id'];
         $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), (string) $model);
         $structuredOption = $options['structured_output'] ?? false;
@@ -296,11 +308,11 @@ class GeminiProvider implements AIProviderInterface
         ]);
 
         $startTime = microtime(true);
+        ProviderCallPolicy::assertAllowed('provider_http_dispatch');
         curl_exec($ch);
 
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
-        curl_close($ch);
 
         $durationMs = (int) ((microtime(true) - $startTime) * 1000);
 
@@ -342,6 +354,7 @@ class GeminiProvider implements AIProviderInterface
         array $messages,
         array $options = []
     ): string {
+        ProviderCallPolicy::assertAllowed('provider_complete');
         $model = $options['model'] ?? $this->model ?? $this->getModels()[0]['id'];
         $maxTokens = $this->resolveMaxTokens((int) ($options['max_tokens'] ?? $this->maxTokens), (string) $model);
         $structuredOption = $options['structured_output'] ?? false;
@@ -471,6 +484,7 @@ class GeminiProvider implements AIProviderInterface
      */
     protected function apiCall(string $url, array $payload): array
     {
+        ProviderCallPolicy::assertAllowed('provider_http');
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
@@ -481,10 +495,10 @@ class GeminiProvider implements AIProviderInterface
             CURLOPT_CONNECTTIMEOUT => 10,
         ]);
 
+        ProviderCallPolicy::assertAllowed('provider_http_dispatch');
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
-        curl_close($ch);
 
         if (!empty($error)) {
             throw new RuntimeException("Gemini API connection failed: {$error}");

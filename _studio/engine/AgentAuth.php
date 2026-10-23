@@ -63,6 +63,7 @@ class AgentAuth
         'assets:write',
         'tools:invoke',
         'prompt:execute',
+        'mail:send',
     ];
 
     /**
@@ -79,6 +80,7 @@ class AgentAuth
      */
     private const OPT_IN_SCOPES = [
         'prompt:execute' => ['owner', 'editor', 'agent'],
+        'mail:send' => ['owner'],
     ];
 
     /** Default scopes per role — principle of least privilege */
@@ -218,9 +220,10 @@ class AgentAuth
      */
     public function listKeys(): array
     {
+        $hasAudience=in_array('audience',array_column($this->db->query('PRAGMA table_info(api_keys)'),'name'),true);
         return $this->db->query(
             'SELECT id, key_prefix, label, role, scopes, rate_limit, last_used_at, created_at
-             FROM api_keys
+             FROM api_keys ' . ($hasAudience?"WHERE audience = 'rest'":'') . '
              ORDER BY created_at DESC'
         );
     }
@@ -230,7 +233,8 @@ class AgentAuth
      */
     public function revokeKey(int $keyId): bool
     {
-        $deleted = $this->db->delete('api_keys', 'id = ?', [$keyId]);
+        $hasAudience=in_array('audience',array_column($this->db->query('PRAGMA table_info(api_keys)'),'name'),true);
+        $deleted = $this->db->delete('api_keys', 'id = ?'.($hasAudience?" AND audience = 'rest'":''), [$keyId]);
 
         if ($deleted > 0) {
             Logger::info('agent-api', 'API key revoked', ['key_id' => $keyId]);
@@ -264,8 +268,11 @@ class AgentAuth
      * - AUTH_RATE_LIMITED: Valid key but rate limit exceeded. → 429
      *                     `rate_limit`, `remaining`, `retry_after` are populated.
      */
-    public function authenticate(): array
+    public function authenticate(string $audience = 'rest', bool $countUsage = true): array
     {
+        if (!in_array($audience, ['rest', 'studio_mcp'], true)) {
+            throw new \InvalidArgumentException('Unknown credential audience.');
+        }
         $header = $this->extractAuthorizationHeader();
 
         // No Authorization header at all
@@ -282,7 +289,7 @@ class AgentAuth
         $hash = hash('sha256', $plaintext);
 
         $key = $this->db->queryOne(
-            'SELECT id, label, role, scopes, rate_limit FROM api_keys WHERE key_hash = ?',
+            'SELECT * FROM api_keys WHERE key_hash = ?',
             [$hash]
         );
 
@@ -297,8 +304,22 @@ class AgentAuth
         $keyId     = (int) $key['id'];
         $rateLimit = (int) $key['rate_limit'];
 
+        // New MCP credentials never inherit REST authority, and existing keys
+        // never gain management MCP access as a side effect of an upgrade.
+        $mcpMetadata = null;
+        if ($this->db->scalar("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'studio_mcp_credentials'")) {
+            $mcpMetadata = $this->db->queryOne('SELECT key_id FROM studio_mcp_credentials WHERE key_id = ?', [$keyId]);
+        }
+        if (($key['audience'] ?? 'rest') !== $audience
+            || ($audience === 'studio_mcp' && $mcpMetadata === null)) {
+            if (($key['audience'] ?? 'rest') === 'studio_mcp' && $mcpMetadata !== null) {
+                (new \VoxelSite\Agent\ConnectionTelemetry($this->db))->authenticationFailed($keyId, 'audience_mismatch');
+            }
+            return ['status' => self::AUTH_INVALID_KEY];
+        }
+
         // Check rate limit — return full rate info for response headers
-        if ($this->isRateLimited($keyId, $rateLimit)) {
+        if ($countUsage && $this->isRateLimited($keyId, $rateLimit)) {
             $retryAfter = $this->getRetryAfterSeconds();
 
             Logger::warning('agent-api', 'Rate limited', [
@@ -316,7 +337,7 @@ class AgentAuth
         }
 
         // Record usage
-        $this->recordUsage($keyId);
+        if ($countUsage) $this->recordUsage($keyId);
 
         // Update last_used_at
         $this->db->update('api_keys', ['last_used_at' => now()], 'id = ?', [$keyId]);

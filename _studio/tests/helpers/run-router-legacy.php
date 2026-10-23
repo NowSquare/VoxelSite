@@ -15,6 +15,7 @@ require __DIR__ . '/FakeTypeSafeTransport.php';
 // Parent processes may have test overrides; never inherit their filesystem targets.
 putenv('VS_TEST_PREVIEW_DIR=' . $root . '/_studio/preview');
 putenv('VS_TEST_ASSETS_DIR=' . $root . '/assets');
+foreach (['VS_TEST_DOC_ROOT' => '', 'VS_TEST_MUTATION_LOCK' => '/_studio/data/site.lock', 'VS_TEST_WORKSPACE_STATE_DIR' => '/_studio/data/workspace', 'VS_TEST_REVISIONS_DIR' => '/_studio/revisions', 'VS_TEST_SNAPSHOT_DIR' => '/_studio/data/snapshots'] as $name => $suffix) putenv($name . '=' . $root . $suffix);
 foreach (['PromptEngine', 'FileManager', 'SiteContext', 'RevisionManager', 'Logger', 'TailwindCompiler', 'AEOGenerator'] as $class) {
     $source = (new ReflectionClass('VoxelSite\\' . $class))->getFileName();
     if (!str_starts_with($source, $root . '/_studio/engine/')) {
@@ -35,6 +36,8 @@ foreach (glob($root . '/_studio/engine/migrations/*.php') as $file) {
     $migration = require $file;
     ($migration['up'])($db);
 }
+$db->update('site_workspace_state', ['format' => 2], 'id=1');
+file_put_contents($root . '/_studio/preview/.htaccess', \VoxelSite\SiteWorkspace::ACCESS_MARKER . "\nRequire all denied\nDeny from all\n");
 $user = $db->insert('users', ['email' => 'fixture@example.test', 'password_hash' => 'not-a-login', 'name' => 'Fixture',
     'role' => 'owner', 'created_at' => now(), 'updated_at' => now()]);
 $settings = new Settings($db);

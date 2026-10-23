@@ -142,7 +142,7 @@ class PromptEngine
                 $this->activePromptLogId = (int) $promptLogId;
                 if ($this->headless) { $this->headlessJobId = (int) $promptLogId; }
                 $this->emitSSE('status', ['message' => 'Choosing a model and instructions...']);
-                $routing = ($this->governorRouter ?? new AIRouter($this->db, $this->settings))
+                $routing = ($this->governorRouter ?? new AIRouter($this->db, $this->settings, files: $this->fileManager ?? null))
                     ->route($request, new AICallLedger($this->db, (int) $promptLogId));
                 $actionData['governor_routing'] = $routing;
                 $this->db->update('prompt_log', ['conversation_id' => $conversationId,
@@ -210,13 +210,12 @@ class PromptEngine
 
                 // Update prompt status so UI stops polling
                 if ($promptLogId !== null) {
-                    $db = Database::getInstance();
-                    $row = $db->query(
+                    $row = $this->db->query(
                         'SELECT status FROM prompt_log WHERE id = ? LIMIT 1',
                         [$promptLogId]
                     );
                     if (!empty($row) && ($row[0]['status'] ?? '') === 'streaming') {
-                        $db->update('prompt_log', [
+                        $this->db->update('prompt_log', [
                             'status'        => 'partial',
                             'error_message' => 'Process terminated mid-generation. Files written before termination are preserved.',
                         ], 'id = ?', [$promptLogId]);
@@ -224,9 +223,8 @@ class PromptEngine
                 }
 
                 // Ensure style.css exists
-                $fm = new FileManager();
-                $fm->ensureStyleCssExists();
-                $fm->compileTailwind();
+                $this->fileManager->ensureStyleCssExists();
+                $this->fileManager->compileTailwind();
             } catch (\Throwable $e) {
                 // Last resort — at least try to log
                 Logger::critical('ai', 'Shutdown handler itself failed', [
@@ -606,7 +604,7 @@ class PromptEngine
                                     // stream is interrupted. The compiler is fast (<500ms).
                                     if (str_ends_with($file['path'], '.php') || str_ends_with($file['path'], '.css')) {
                                         $compileResult = $this->fileManager->compileTailwind();
-                                        $twPath = dirname(__DIR__, 2) . '/assets/css/tailwind.css';
+                                        $twPath = $this->fileManager->workspace()->resolveDraft('assets/css/tailwind.css');
                                         Logger::info('files', 'Mid-stream Tailwind compile', [
                                             'trigger'     => $file['path'],
                                             'success'     => $compileResult['ok'] ?? false,
@@ -877,9 +875,8 @@ class PromptEngine
                     ]);
                 }
 
-                // Auto-regenerate AEO files (llms.txt, robots.txt, mcp.php, schema.php)
-                // when data-layer files were modified. This keeps AEO content in sync
-                // with every AI edit — not just on publish.
+                // Refresh schema in the private draft. Public discovery outputs
+                // are generated only inside a retained publish candidate.
                 $this->autoRegenerateAEO($parsed['operations']);
 
                 // ── Post-generation quality evaluation ──
@@ -912,9 +909,8 @@ class PromptEngine
                                 $this->fileManager->listPreviewFiles(), 'path'
                             );
                             $shippedRootFiles = ['submit.php'];
-                            $rootDir = dirname(dirname(__DIR__));
                             foreach ($shippedRootFiles as $shipped) {
-                                if (file_exists($rootDir . '/' . $shipped)) {
+                                if (is_file($this->fileManager->workspace()->resolvePublished($shipped))) {
                                     $existingPages[] = $shipped;
                                 }
                             }
@@ -1220,57 +1216,25 @@ class PromptEngine
      */
     private function loadSystemPrompt(string $actionType): string
     {
-        $promptsPath = dirname(__DIR__) . '/prompts';
-        $customPromptsPath = dirname(__DIR__) . '/custom_prompts';
-
-        // Determine system prompt source — with diagnostic logging for Forge debugging
-        $promptSource = 'default_fallback';
-        $masterPath = null;
-
-        if (file_exists($customPromptsPath . '/system.md')) {
-            $masterPath = $customPromptsPath . '/system.md';
-            $promptSource = 'custom_prompts';
-        } elseif (file_exists($promptsPath . '/system.md')) {
-            $masterPath = $promptsPath . '/system.md';
-            $promptSource = 'prompts';
-        }
-
-        if ($masterPath !== null) {
-            $systemPrompt = file_get_contents($masterPath);
-            if ($systemPrompt === false || $systemPrompt === '') {
-                $promptSource = 'default_fallback (read failed)';
-                $systemPrompt = $this->getDefaultSystemPrompt();
-            }
-        } else {
+        $rules = new AuthoringRules();
+        $master = $rules->system();
+        $addition = $rules->action($actionType);
+        $systemPrompt = $master['content'];
+        $promptSource = $master['source'];
+        if ($systemPrompt === null || $systemPrompt === '') {
             $systemPrompt = $this->getDefaultSystemPrompt();
+            $promptSource = 'default_fallback';
         }
-
-        // Action-specific addition
-        $actionSource = 'none';
-        $actionPath = null;
-
-        if (file_exists($customPromptsPath . '/actions/' . $actionType . '.md')) {
-            $actionPath = $customPromptsPath . '/actions/' . $actionType . '.md';
-            $actionSource = 'custom_prompts';
-        } elseif (file_exists($promptsPath . '/actions/' . $actionType . '.md')) {
-            $actionPath = $promptsPath . '/actions/' . $actionType . '.md';
-            $actionSource = 'prompts';
+        if (trim($addition['content'] ?? '') !== '') {
+            $systemPrompt .= "\n\n" . trim($addition['content']);
         }
-
-        if ($actionPath !== null) {
-            $actionPrompt = trim((string) file_get_contents($actionPath));
-            if ($actionPrompt !== '') {
-                $systemPrompt .= "\n\n" . $actionPrompt;
-            }
-        }
-
         Logger::debug('ai', 'System prompt loaded', [
             'prompt_source' => $promptSource,
-            'action_type'   => $actionType,
-            'action_source' => $actionSource,
-            'prompts_path'  => $promptsPath,
-            'prompts_exist' => is_dir($promptsPath),
-            'master_path'   => $masterPath,
+            'action_type' => $actionType,
+            'action_source' => $addition['source'],
+            'prompts_path' => dirname(__DIR__) . '/prompts',
+            'prompts_exist' => is_dir(dirname(__DIR__) . '/prompts'),
+            'master_path' => $master['path'],
             'prompt_length' => strlen($systemPrompt),
         ]);
 
@@ -1483,11 +1447,9 @@ class PromptEngine
     }
 
     /**
-     * Auto-regenerate AEO files if data-layer files were modified.
+     * Refresh private schema if data-layer files were modified.
      *
-     * AEO files (llms.txt, robots.txt, mcp.php, schema.php) are derived
-     * from site.json, form schemas, and page files. When any of these
-     * change, the AEO files must be regenerated to stay in sync.
+     * Public discovery files are generated later by reviewed publish preparation.
      *
      * Runs silently — errors are logged but don't interrupt the AI flow.
      */
@@ -1517,9 +1479,9 @@ class PromptEngine
         }
 
         try {
-            $this->emitSSE('status', ['message' => 'Syncing AI discovery files...']);
+            $this->emitSSE('status', ['message' => 'Syncing structured site data...']);
 
-            $aeo = new AEOGenerator();
+            $aeo = new AEOGenerator(database: $this->db, workspace: $this->fileManager->workspace());
             $siteUrl = '';
             try {
                 $siteUrl = $this->settings->get('site_url', '');
@@ -2235,12 +2197,9 @@ class PromptEngine
         if ($isVisualEditorAction || $focusedRoute) {
             $systemPrompt = $this->getDefaultSystemPrompt();
             // Append the action-specific prompt (section_edit.md / add_section.md)
-            $actionPromptPath = dirname(__DIR__) . '/prompts/actions/' . ($promptRecipe === 'add_page' ? 'edit_page' : $promptRecipe) . '.md';
-            if (file_exists($actionPromptPath)) {
-                $actionPrompt = trim(file_get_contents($actionPromptPath));
-                if ($actionPrompt !== '') {
-                    $systemPrompt .= "\n\n" . $actionPrompt;
-                }
+            $actionPrompt = trim((new AuthoringRules())->action($promptRecipe)['content'] ?? '');
+            if ($actionPrompt !== '') {
+                $systemPrompt .= "\n\n" . $actionPrompt;
             }
             $systemPrompt .= "\n\n" . $this->getStructuredOutputContract();
         } elseif ($maxTokens <= 8000) {
@@ -2248,7 +2207,7 @@ class PromptEngine
             // instead of the full 33KB system.md
             $systemPrompt = $this->getDefaultSystemPrompt();
         } else {
-            $systemPrompt = $this->loadSystemPrompt($promptRecipe === 'add_page' ? 'edit_page' : $promptRecipe);
+            $systemPrompt = $this->loadSystemPrompt($promptRecipe);
         }
 
         // Calculate context character budget using the model's context window.
@@ -2316,7 +2275,7 @@ class PromptEngine
                 $manager = new RevisionManager($this->db, $this->settings, $this->fileManager);
                 $revision = $manager->createRevision([['path' => $target['file_path'], 'action' => 'write', 'content' => $modified]],
                     'Replace selected text', (int) $request['user_id'], null, [$target['file_path'] => $source]);
-                $root = getenv('VS_TEST_PREVIEW_DIR') ?: dirname(__DIR__) . '/preview';
+                $root = $this->fileManager->workspace()->draftRoot();
                 $this->fileManager->writeGovernedFile($target['file_path'], $target['content_hash'], $modified, GovernedFilePath::resolve($root, $target['file_path']));
                 $applied = true;
             }
@@ -2906,139 +2865,7 @@ class PromptEngine
      */
     private function getDefaultSystemPrompt(): string
     {
-        return <<<'PROMPT'
-You are a professional web developer building a website using PHP includes for shared elements. You produce complete, production-ready PHP/HTML/CSS/JS files.
-
-## Language
-Always match the user's language. If they write in French, all content is in French. If Japanese, everything in Japanese. Code syntax stays English.
-
-## Bias to Action
-Build immediately using your best judgment. Never ask more than one question. Make design choices yourself — the user can refine afterward. When pages already exist, treat requests as incremental changes to the existing site.
-
-## Facts and Sample Content
-Never invent contact details, addresses, phone numbers, emails, opening hours, prices, statistics, ratings, review counts, client logos or awards. If the user or the context did not supply a fact, leave it out. No placeholders like `#`, `example.com` or `555` numbers. Data files feed llms.txt, Schema.org and MCP, so invented values become false public claims. If a layout needs testimonials and none were supplied, write at most three clearly generic sample quotes in the page HTML only, put `<!-- sample content: replace before publishing -->` above them, and say in your message that they are placeholders.
-
-## Copy
-Match the tone and specificity of the existing page copy. Specific beats vague; one strong word beats three weak ones; buttons name the action. No clichés (elevate, seamless, unlock, passion, curated), no triple adjectives, no invented numbers, no icon on every card.
-
-## Architecture
-
-Pages use PHP includes for shared partials. Styling uses **Tailwind utility classes** — the TailwindCompiler reads your HTML and compiles a static `assets/css/tailwind.css` automatically. You never write that file.
-
-### File structure
-- `_partials/header.php` — The SINGLE layout partial that pages include. Contains DOCTYPE, `<head>` (with CSS links), opening `<body>`, and includes nav. **Pages ONLY include this file** — never a separate `head.php`.
-- `_partials/nav.php` — The entire navigation component (AI-designed, unique per site)
-- `_partials/footer.php` — Footer + closing `</body></html>`
-- `index.php`, `about.php`, etc. — Root-level page content between header/footer includes
-- CRITICAL: Do NOT create a separate `_partials/head.php`. All `<head>` content goes inside `_partials/header.php`.
-
-### Template: `_partials/header.php`
-```php
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title><?= htmlspecialchars($page['title'] ?? 'Home') ?> — <?= htmlspecialchars($siteName ?? 'My Site') ?></title>
-  <meta name="description" content="<?= htmlspecialchars($page['description'] ?? '') ?>">
-  <link rel="stylesheet" href="/assets/css/style.css">
-  <link rel="stylesheet" href="/assets/css/tailwind.css">
-</head>
-<body class="bg-white text-gray-900 antialiased">
-<?php include __DIR__ . '/nav.php'; ?>
-<main>
-```
-
-### Template: Page files (e.g. `about.php`)
-```php
-<?php
-$siteName = 'My Site';
-$page = [
-    'title'       => 'About',
-    'description' => 'Learn more about us.',
-    'slug'        => 'about',
-];
-include '_partials/header.php';
-?>
-<!-- Page content styled with Tailwind classes -->
-<section class="max-w-5xl mx-auto px-6 py-20">
-  <h1 class="text-4xl font-bold mb-6">About Us</h1>
-</section>
-<?php include '_partials/footer.php'; ?>
-```
-
-Keep page files at the root level (`*.php`), not inside nested directories.
-
-### Nav & Footer: Fully AI-designed
-
-The AI creates `_partials/nav.php` and `_partials/footer.php` from scratch using Tailwind classes. The design should match the site's personality — there is no fixed template. A restaurant might have a centered logo with a reservation CTA. A SaaS might have a dark nav with dropdowns. A portfolio might be ultra-minimal.
-
-**Nav must always:**
-- Be responsive — choose the mobile pattern that fits the site (compact persistent, bottom tab bar, text toggle, full-screen overlay, slide-in panel, or hamburger)
-- Use `aria-current="page"` on the active link
-- Include the site name/logo
-- Use Tailwind utility classes for ALL styling including colors, backgrounds, hover states, and transitions
-- The TailwindCompiler supports ALL standard Tailwind colors (gray-*, yellow-*, blue-*, red-*, etc.) plus design tokens (primary-*, accent-*, etc.) — use them freely
-- All `<ul>` elements must use `list-none` to remove default browser bullets
-- Any `<button>` must include `bg-transparent border-0 cursor-pointer` to neutralize browser defaults
-- Include a styled CTA button (colored background, rounded, hover effects)
-- Use backdrop-blur or background color for sticky/fixed navs
-- First content section must have `pt-24` or `pt-32` to clear the fixed nav
-- Mobile menus are `position: fixed; inset: 0; z-index: 9999` via the `.mobile-menu` class in `style.css`, below `.site-header` at 10000 so the toggle stays clickable, with the close button always reachable
-
-**Footer must always:**
-- Include copyright with year
-- Close `</main>`, `</body>`, `</html>`
-- Load scripts: `main.js`, `navigation.js`, `icon-resolver.js`
-- Use a distinctive background (e.g. dark footer: `bg-gray-900 text-gray-400`)
-- Style with proper grid/flex layouts for multi-column content
-- Remove list bullets with `list-none` on link lists
-- Include hover effects on links (e.g. `hover:text-white`)
-
-### CSS strategy
-
-1. **`assets/css/tailwind.css`** — Auto-compiled by TailwindCompiler. Includes Preflight resets. Never write this file manually.
-2. **`assets/css/style.css`** — ONLY for design tokens (`:root` custom properties) and effects Tailwind cannot express (`@keyframes`, `[data-reveal]` transitions). NEVER add component classes.
-
-`style.css` structure — tokens and animations only:
-```css
-:root {
-  --color-primary: hsl(220, 60%, 50%);
-  --color-primary-light: hsl(220, 40%, 95%);
-  --font-heading: 'Playfair Display', Georgia, serif;
-  --font-body: 'Inter', system-ui, sans-serif;
-  /* Design tokens: palette, fonts, spacing */
-}
-html { scroll-behavior: smooth; }
-body { font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); line-height:1.7; }
-
-/* ONLY @keyframes and [data-reveal] below — NEVER component classes like .hero, .card, .btn */
-```
-
-**Font-family classes:** Use `font-heading` for headings/display text and `font-body` for body text. These resolve to `var(--font-heading)` and `var(--font-body)` from your `:root` tokens. **Do NOT use `font-['Font_Name']`** — the semantic classes keep font names in one place and enable user-facing font changes via the Style panel.
-
-Preflight resets (box-sizing, link underlines, list bullets, img block display, heading/form normalization) are automatically prepended to `tailwind.css` by the TailwindCompiler.
-
-## Rules
-
-1. Use PHP includes for header/nav/footer. Never duplicate nav across pages.
-2. **ALL HTML styling uses Tailwind utility classes** (`flex`, `bg-gray-900`, `px-6`, `py-24`, `text-white`, `hover:bg-primary-600`, `md:grid-cols-3`). Use `style.css` ONLY for `:root` design tokens + `@keyframes` + `[data-reveal]`.
-3. Semantic HTML5 with proper heading hierarchy.
-4. Never output `assets/css/tailwind.css` — it is compiled automatically from your HTML.
-5. Custom CSS in `assets/css/style.css` only for design tokens and effects Tailwind can't express (complex animations, scroll-driven effects).
-6. JavaScript in `assets/js/main.js` + `assets/js/navigation.js` (shipped) + `assets/js/icon-resolver.js` (shipped). Vanilla ES6 only.
-7. Responsive design from 320px to 2560px. Mobile-first approach.
-8. No external scripts or CDN assets. Google Fonts `<link>` tags are allowed in header.php.
-9. When no user-uploaded image fits, use images from the built-in library at `/assets/library/` listed in the IMAGE LIBRARY context section when present. Never use external image URLs or placeholder services.
-10. Two-space indentation. Commented sections.
-11. Forms use the schema-driven system: create `assets/forms/{form_id}.json` with the schema AND the HTML form with `action="/submit.php"` and `<input type="hidden" name="form_id" value="{form_id}">`. Form AJAX handling is shipped code (auto-injected by the engine) — never generate form JavaScript. Never use PHP mail() or $_POST handling.
-12. CRITICAL: Never put raw HTML directly after `<?php` without closing the PHP block first with `?>`. Partials that start with HTML should NOT open with `<?php`.
-13. Home page links MUST use `href="/"` — never `/home`, `/index`, or `/index.php`. The home page is `index.php` served at `/`.
-14. All color custom properties in `style.css` MUST use the `--color-` prefix (e.g. `--color-primary`, `--color-bg`, `--color-dark-800`). This enables the Tailwind compiler to resolve classes like `bg-primary`, `text-accent`, `bg-dark-800` automatically.
-15. **NEVER create custom component classes** like `.hero-section`, `.btn-primary`, `.card`, `.section-header`, `.fragrance-card`, `.collection-grid`. These bypass the TailwindCompiler. Use Tailwind utilities in HTML instead. For one-off effects, use inline `style="..."` attributes.
-16. When REMOVING a page, you MUST emit a `<file path="page.php" action="delete" />` tag for each file AND update `_partials/nav.php`. Both are required — without the delete tag, the file stays on disk.
-17. **Icons:** Use `<i class="icon" data-lucide="phone" aria-hidden="true"></i>` placeholders. Never output raw SVG `<path>` data for Lucide icons. Never use `<img src="/assets/icons/...">` for theme-colored icons. The shipped `icon-resolver.js` hydrates placeholders into inline SVGs at runtime from `/assets/icons/`. Do NOT generate `icon-resolver.js`.
-PROMPT;
+        return AuthoringRules::defaultSystemPrompt();
     }
 
     /**
@@ -3199,19 +3026,15 @@ PROMPT;
      */
     private function findMissingNavPages(): array
     {
-        $previewDir = dirname(__DIR__) . '/preview';
         $filesToScan = [
-            $previewDir . '/_partials/nav.php',
-            $previewDir . '/_partials/footer.php',
+            '_partials/nav.php',
+            '_partials/footer.php',
         ];
 
         $referencedPages = [];
         foreach ($filesToScan as $filePath) {
-            if (!file_exists($filePath)) {
-                continue;
-            }
-            $content = file_get_contents($filePath);
-            if ($content === false) {
+            $content = $this->fileManager->readFile($filePath);
+            if ($content === null) {
                 continue;
             }
 
@@ -3231,8 +3054,7 @@ PROMPT;
 
         $missing = [];
         foreach (array_keys($referencedPages) as $page) {
-            $pagePath = $previewDir . '/' . $page . '.php';
-            if (!file_exists($pagePath)) {
+            if ($this->fileManager->readFile($page . '.php') === null) {
                 $missing[] = $page . '.php';
             }
         }

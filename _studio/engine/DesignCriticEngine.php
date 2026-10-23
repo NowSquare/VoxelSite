@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace VoxelSite;
 
+use VoxelSite\Agent\ProviderCallPolicy;
+use VoxelSite\Agent\ProviderCallForbidden;
+
+if (!class_exists(ProviderCallPolicy::class)) { require_once __DIR__ . '/Agent/ProviderCallPolicy.php'; }
+
 /**
  * Design critic — a second, isolated opinion on the design itself.
  *
@@ -94,6 +99,7 @@ final class DesignCriticEngine
         ?string $directionBlock = null,
         array $options = []
     ): array {
+        ProviderCallPolicy::assertAllowed('ai_design_review');
         $empty = ['score' => null, 'verdict' => '', 'gaps' => [], 'tells' => []];
 
         try {
@@ -133,6 +139,8 @@ final class DesignCriticEngine
             ]);
 
             return $result;
+        } catch (ProviderCallForbidden $error) {
+            throw $error;
         } catch (\Throwable $e) {
             Logger::error('critic', 'Design review failed', [
                 'error' => $e->getMessage(),

@@ -40,6 +40,8 @@ if (!in_array('--legacy-only', $argv, true)) {
         $previousPreview = getenv('VS_TEST_PREVIEW_DIR');
         $previousAssets = getenv('VS_TEST_ASSETS_DIR');
         try {
+            $db = Database::getInstance(':memory:');
+            Fixture::activate($db, $root);
             $before = Fixture::snapshot($root);
             $provider = new HeadingFakeProvider($case['candidate']);
             $gateCalls = [];
@@ -52,7 +54,7 @@ if (!in_array('--legacy-only', $argv, true)) {
                 return $answer;
             };
             putenv('VS_TEST_PREVIEW_DIR=' . $root);
-            putenv('VS_TEST_ASSETS_DIR=' . $root . '/assets');
+            putenv('VS_TEST_ASSETS_DIR=' . $root . '-state/published/assets');
             $patch = new StagedHeadingPatch($root, ['index.php'], $provider, $gate,
                 fn() => new FileManager(Database::getInstance(':memory:')));
             $result = $patch->execute($fixture['target'], $fixture['prompt'], $fixture['trusted_facts']);

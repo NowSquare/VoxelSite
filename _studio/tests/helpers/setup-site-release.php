@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
-$root = $argv[1];
+$root = realpath($argv[1] ?? '');
+if (!$root || !str_starts_with($root, realpath(sys_get_temp_dir()).'/')
+    || !is_file($root.'/_studio/engine/bootstrap.php')) throw new RuntimeException('A disposable copied installation is required.');
 require $root . '/_studio/engine/bootstrap.php';
 $db=VoxelSite\Database::getInstance(); (new VoxelSite\Migrator($db))->run();
 foreach ([1=>'owner',2=>'editor',3=>'viewer'] as $id=>$role) {
@@ -25,5 +27,11 @@ foreach (['index'=>'Home','about'=>'About','services'=>'Services','services/team
 }
 file_put_contents($root.'/assets/css/style.css',':root { --color-primary: #123456; --color-text: #111111; --color-bg: #ffffff; }');
 file_put_contents($root.'/index.php','<!DOCTYPE html><html><body><h1>Published original</h1></body></html>');
+$db->update('site_workspace_state',['format'=>2],'id = 1');
+foreach (['css','js','data','images','files','forms'] as $directory) {
+    if (!is_dir($root.'/_studio/preview/assets/'.$directory)) mkdir($root.'/_studio/preview/assets/'.$directory,0700,true);
+}
+file_put_contents($root.'/_studio/preview/.htaccess',VoxelSite\SiteWorkspace::ACCESS_MARKER."\nRequire all denied\nDeny from all\n");
+copy($root.'/assets/css/style.css',$root.'/_studio/preview/assets/css/style.css');
 $fm=new VoxelSite\FileManager($db); $fm->syncPageRegistry(); $fm->compileTailwind();
 echo "Fixture initialized.\n";

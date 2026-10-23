@@ -24,6 +24,7 @@ use RuntimeException;
 class Auth
 {
     private Database $db;
+    private ?bool $hasDisabledColumn = null;
 
     /** Rate limit: max failed attempts before lockout */
     private const MAX_ATTEMPTS = 5;
@@ -63,7 +64,7 @@ class Auth
 
         // Find user by email
         $user = $this->db->queryOne(
-            'SELECT id, email, name, role, password_hash FROM users WHERE email = ?',
+            'SELECT id, email, name, role, password_hash FROM users WHERE email = ?' . $this->activeConstraint(),
             [$email]
         );
 
@@ -158,7 +159,7 @@ class Auth
             "SELECT u.id, u.email, u.name, u.role
              FROM sessions s
              JOIN users u ON u.id = s.user_id
-             WHERE s.id = ? AND s.expires_at > ?",
+             WHERE s.id = ? AND s.expires_at > ?" . $this->activeConstraint('u.'),
             [$token, $now]
         );
 
@@ -241,7 +242,7 @@ class Auth
     public function listUsers(): array
     {
         return $this->db->query(
-            'SELECT id, name, email, role, last_login_at, created_at FROM users ORDER BY created_at ASC'
+            'SELECT id, name, email, role, last_login_at, created_at FROM users WHERE 1=1' . $this->activeConstraint() . ' ORDER BY created_at ASC'
         );
     }
 
@@ -254,7 +255,7 @@ class Auth
     public function getUser(int $userId): ?array
     {
         return $this->db->queryOne(
-            'SELECT id, name, email, role, last_login_at, created_at FROM users WHERE id = ?',
+            'SELECT id, name, email, role, last_login_at, created_at FROM users WHERE id = ?' . $this->activeConstraint(),
             [$userId]
         );
     }
@@ -269,7 +270,7 @@ class Auth
      */
     public function updateUser(int $userId, array $data): array
     {
-        $user = $this->db->queryOne('SELECT id, role FROM users WHERE id = ?', [$userId]);
+        $user = $this->db->queryOne('SELECT id, role FROM users WHERE id = ?' . $this->activeConstraint(), [$userId]);
         if ($user === null) {
             return ['ok' => false, 'error' => 'User not found.'];
         }
@@ -317,7 +318,7 @@ class Auth
      */
     public function deleteUser(int $userId): array
     {
-        $user = $this->db->queryOne('SELECT id, role FROM users WHERE id = ?', [$userId]);
+        $user = $this->db->queryOne('SELECT id, role FROM users WHERE id = ?' . $this->activeConstraint(), [$userId]);
         if ($user === null) {
             return ['ok' => false, 'error' => 'User not found.'];
         }
@@ -326,9 +327,23 @@ class Auth
             return ['ok' => false, 'error' => 'Cannot delete the owner account.'];
         }
 
-        // Destroy their sessions first
-        $this->db->delete('sessions', 'user_id = ?', [$userId]);
-        $this->db->delete('users', 'id = ?', [$userId]);
+        $remove = function () use ($userId): void {
+            $this->db->delete('sessions', 'user_id = ?', [$userId]);
+            if ($this->activeConstraint() !== '') {
+                // Keep referenced audit/business IDs without leaving a usable
+                // account or blocking deletion on retained operation history.
+                $keys = $this->db->query('SELECT key_id FROM studio_mcp_credentials WHERE user_id=? UNION SELECT key_id FROM agent_rest_owners WHERE user_id=?', [$userId, $userId]);
+                foreach ($keys as $key) $this->db->delete('api_keys', 'id = ?', [$key['key_id']]);
+                $this->db->update('users', ['disabled_at' => time(), 'name' => 'Removed account',
+                    'email' => 'removed-' . $userId . '-' . bin2hex(random_bytes(8)) . '@example.invalid',
+                    'password_hash' => password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT), 'updated_at' => now()],
+                    'id = ?', [$userId]);
+            } else {
+                $this->db->delete('users', 'id = ?', [$userId]);
+            }
+        };
+        if ($this->db->getPdo()->inTransaction()) $remove();
+        else $this->db->transaction($remove);
 
         return ['ok' => true];
     }
@@ -340,7 +355,7 @@ class Auth
      */
     public function setPassword(int $userId, string $newPassword): bool
     {
-        $user = $this->db->queryOne('SELECT id FROM users WHERE id = ?', [$userId]);
+        $user = $this->db->queryOne('SELECT id FROM users WHERE id = ?' . $this->activeConstraint(), [$userId]);
         if ($user === null) {
             return false;
         }
@@ -351,6 +366,12 @@ class Auth
         ], 'id = ?', [$userId]);
 
         return true;
+    }
+
+    private function activeConstraint(string $prefix = ''): string
+    {
+        $this->hasDisabledColumn ??= in_array('disabled_at', array_column($this->db->query('PRAGMA table_info(users)'), 'name'), true);
+        return $this->hasDisabledColumn ? ' AND ' . $prefix . 'disabled_at IS NULL' : '';
     }
 
     /**
@@ -446,7 +467,8 @@ class Auth
         // Build reset URL
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
         $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        $resetUrl = "{$protocol}://{$host}/_studio/?reset={$token}";
+        $studioPath = InstallationUrl::studioPath();
+        $resetUrl = "{$protocol}://{$host}{$studioPath}/?reset={$token}";
 
         // Send email
         $mailer = \VoxelSite\Mailer::getInstance();
@@ -668,7 +690,7 @@ class Auth
      * HttpOnly: JavaScript can't read the cookie (XSS protection)
      * SameSite=Lax: prevents CSRF from external sites
      * Secure: only sent over HTTPS (when applicable)
-     * Path: scoped to /_studio/ only
+     * Path: scoped to this installation's Studio directory
      */
     private function setSessionCookie(string $token): void
     {
@@ -677,7 +699,7 @@ class Auth
 
         setcookie('vs_session', $token, [
             'expires'  => time() + (self::SESSION_DAYS * 86400),
-            'path'     => '/_studio/',
+            'path'     => InstallationUrl::studioPath().'/',
             'secure'   => $isSecure,
             'httponly'  => true,
             'samesite' => 'Lax',
@@ -694,7 +716,7 @@ class Auth
 
         setcookie('vs_session', '', [
             'expires'  => time() - 3600,
-            'path'     => '/_studio/',
+            'path'     => InstallationUrl::studioPath().'/',
             'secure'   => $isSecure,
             'httponly'  => true,
             'samesite' => 'Lax',

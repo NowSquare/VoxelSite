@@ -1,0 +1,8 @@
+{
+  "business_name": "Fixture Workshop",
+  "description": "A fictional business for automated Studio MCP tests.",
+  "email": "hello@example.test",
+  "website": "https://example.test",
+  "language": "en",
+  "synthetic": true
+}

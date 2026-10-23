@@ -78,11 +78,12 @@ $cases = [
 ];
 foreach ($cases as $name => $case) {
     $root = Fixture::create();
+    Fixture::activate($db, $root);
     $previousPreview = getenv('VS_TEST_PREVIEW_DIR');
     $previousAssets = getenv('VS_TEST_ASSETS_DIR');
     try {
         putenv('VS_TEST_PREVIEW_DIR=' . $root);
-        putenv('VS_TEST_ASSETS_DIR=' . $root . '/assets');
+        putenv('VS_TEST_ASSETS_DIR=' . $root . '-state/published/assets');
         $db->exec('DELETE FROM ai_call_ledger');
         $target = $fixture['target'];
         $target['file_path'] = $case['file_path'] ?? 'index.php';

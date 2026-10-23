@@ -12,12 +12,13 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/engine/bootstrap.php';
+$basePath = \VoxelSite\InstallationUrl::studioPath();
 
 // ── Redirect to installer if not set up ──
 // Demo mode bypasses this check — it doesn't need a database.
 // All data comes from fixture files in _studio/demo/.
 if (!\VoxelSite\DemoMode::isActive() && !isInstalled()) {
-    header('Location: /_studio/install.php');
+    header('Location: '.$basePath.'/install.php');
     exit;
 }
 
@@ -34,8 +35,13 @@ if (!\VoxelSite\DemoMode::isActive()) {
     }
 }
 
+if (!\VoxelSite\DemoMode::isActive() && !(new \VoxelSite\SiteWorkspace())->status()['ready']) {
+    header('Location: workspace.php');
+    exit;
+}
+
 // ── Resolve asset paths relative to _studio ──
-$basePath = '/_studio';
+$basePath = htmlspecialchars($basePath, ENT_QUOTES, 'UTF-8');
 $isDemo = \VoxelSite\DemoMode::isActive();
 $hideBanner = $isDemo && \VoxelSite\DemoMode::hideBanner();
 ?>

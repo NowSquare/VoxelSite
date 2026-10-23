@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace VoxelSite;
 
 use RuntimeException;
+use VoxelSite\Agent\ProviderCallPolicy;
+
+if (!class_exists(ProviderCallPolicy::class)) { require_once __DIR__ . '/Agent/ProviderCallPolicy.php'; }
 
 /**
  * Factory for creating AI provider instances.
@@ -33,6 +36,7 @@ class AIProviderFactory
      */
     public static function create(?Settings $settings = null, ?Encryption $encryption = null): AIProviderInterface
     {
+        ProviderCallPolicy::assertAllowed('provider_factory');
         $settings = $settings ?? new Settings();
         $providerId = $settings->get('ai_provider', 'claude');
 
@@ -89,6 +93,7 @@ class AIProviderFactory
      */
     public static function createWithKey(string $providerId, string $apiKey, string $model = '', string $baseUrl = '', array $capabilities = []): AIProviderInterface
     {
+        ProviderCallPolicy::assertAllowed('provider_factory');
         if (!isset(self::$providers[$providerId])) {
             throw new RuntimeException("Unknown AI provider: '{$providerId}'.");
         }
@@ -142,6 +147,7 @@ class AIProviderFactory
      */
     public static function fetchModels(string $providerId, string $apiKey, string $baseUrl = ''): array
     {
+        ProviderCallPolicy::assertAllowed('model_discovery');
         $provider = self::createWithKey($providerId, $apiKey, '', $baseUrl);
         return $provider->listModels();
     }

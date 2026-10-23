@@ -20,6 +20,13 @@ $path = $_REQUEST['_route_path'];
 $params = $_REQUEST['_route_params'] ?? [];
 $user = $_REQUEST['_user'];
 
+if ($method === 'GET' && (in_array($path, ['/ai/history', '/ai/conversations', '/ai/diagnostics'], true)
+    || str_starts_with($path, '/ai/conversations/'))) {
+    require __DIR__ . '/configuration.php';
+    return;
+}
+
+
 // ═══════════════════════════════════════════
 //  POST /ai/prompt — The main event
 // ═══════════════════════════════════════════
@@ -141,172 +148,6 @@ if ($method === 'POST' && $path === '/ai/prompt') {
         'images'          => $validatedImages,
     ]);
 
-    return;
-}
-
-// ═══════════════════════════════════════════
-//  GET /ai/history — Recent prompts
-// ═══════════════════════════════════════════
-
-if ($method === 'GET' && $path === '/ai/history') {
-    $db = Database::getInstance();
-    $limit = min(50, max(1, (int)($_GET['limit'] ?? 20)));
-
-    $history = $db->query(
-        "SELECT id, conversation_id, action_type, user_prompt, files_modified,
-                tokens_input, tokens_output, cost_estimate, duration_ms,
-                status, created_at
-         FROM prompt_log
-         WHERE user_id = ?
-         ORDER BY created_at DESC
-         LIMIT ?",
-        [$user['id'], $limit]
-    );
-
-    jsonResponse(['ok' => true, 'data' => ['history' => $history]]);
-    return;
-}
-
-// ═══════════════════════════════════════════
-//  GET /ai/conversations
-// ═══════════════════════════════════════════
-
-if ($method === 'GET' && $path === '/ai/conversations') {
-    $db = Database::getInstance();
-
-    $conversations = $db->query(
-        "SELECT id, title, page_scope, is_active, created_at, updated_at
-         FROM conversations
-         WHERE user_id = ?
-         ORDER BY updated_at DESC
-         LIMIT 50",
-        [$user['id']]
-    );
-
-    jsonResponse(['ok' => true, 'data' => ['conversations' => $conversations]]);
-    return;
-}
-
-// ═══════════════════════════════════════════
-//  GET /ai/conversations/:id
-// ═══════════════════════════════════════════
-
-if ($method === 'GET' && str_starts_with($path, '/ai/conversations/')) {
-    $db = Database::getInstance();
-    $parser = new ResponseParser();
-    $conversationId = $params['id'] ?? '';
-    $limit = min(100, max(1, (int)($_GET['limit'] ?? 50)));
-    $requestedOffset = max(0, (int)($_GET['offset'] ?? 0));
-    $hasExplicitOffset = array_key_exists('offset', $_GET);
-
-    $conversation = $db->queryOne(
-        'SELECT * FROM conversations WHERE id = ? AND user_id = ?',
-        [$conversationId, $user['id']]
-    );
-
-    if ($conversation === null) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'not_found',
-            'message' => 'Conversation not found.',
-        ]], 404);
-        return;
-    }
-
-    $totalPromptsRow = $db->queryOne(
-        "SELECT COUNT(*) AS count
-         FROM prompt_log
-         WHERE conversation_id = ? AND user_id = ?",
-        [$conversationId, $user['id']]
-    );
-    $totalPrompts = (int)($totalPromptsRow['count'] ?? 0);
-    $offset = $hasExplicitOffset
-        ? $requestedOffset
-        : max(0, $totalPrompts - $limit);
-
-    $prompts = $db->query(
-        "SELECT id, action_type, user_prompt, ai_response, files_modified,
-                tokens_input, tokens_output, cost_estimate, status, evaluation_issues,
-                status_message, last_progress_at, created_at
-         FROM prompt_log
-         WHERE conversation_id = ? AND user_id = ?
-         ORDER BY created_at ASC
-         LIMIT ? OFFSET ?",
-        [$conversationId, $user['id'], $limit, $offset]
-    );
-
-    // Auto-expire stale 'streaming' prompts.
-    // If a prompt has been stuck in 'streaming' for more than 3 minutes
-    // with no liveness heartbeat, the PHP process was killed (SIGKILL,
-    // OOM, server restart). Mark it as 'partial' so the UI stops polling
-    // and the user can continue.
-    //
-    // Uses COALESCE(last_progress_at, created_at) so that active heartbeats
-    // from both interactive and headless modes prevent false expiry.
-    $staleThreshold = 180; // 3 minutes
-    $staleIds = [];
-    foreach ($prompts as &$prompt) {
-        if ($prompt['status'] === 'streaming') {
-            $progressCol = $prompt['last_progress_at'] ?? $prompt['created_at'] ?? '';
-            $progressTs = strtotime($progressCol);
-            if ($progressTs && (time() - $progressTs) > $staleThreshold) {
-                $staleIds[] = $prompt['id'];
-            }
-        }
-
-        $prompt['ai_message'] = '';
-        if (!empty($prompt['ai_response'])) {
-            $prompt['ai_message'] = $parser->extractAssistantMessage((string) $prompt['ai_response']);
-        }
-    }
-    unset($prompt);
-
-    // This history read only becomes a website writer when recovering styles.
-    // Defer the whole cleanup while busy or awaiting recovery, so a later read
-    // can retry it without blocking access to the conversation itself.
-    if ($staleIds && !\VoxelSite\DemoMode::isActive()) {
-        try {
-            $staleRecoveryLock = \VoxelSite\SiteMutationLock::acquire();
-            (new \VoxelSite\SiteMutationJournal($db))->recoverInterrupted();
-            (new \VoxelSite\SitePlanStore($db, new \VoxelSite\FileManager($db)))->recoverInterrupted();
-            \VoxelSite\SiteRecovery::assertWritable($db);
-            $fm = new \VoxelSite\FileManager($db);
-            $fm->ensureStyleCssExists();
-            if (!($fm->compileTailwind()['ok'] ?? false)) {
-                throw new \RuntimeException('Interrupted generation styles could not be compiled.');
-            }
-            foreach ($prompts as &$prompt) {
-                if (!in_array($prompt['id'], $staleIds, true)) continue;
-                $db->update('prompt_log', [
-                    'status'        => 'partial',
-                    'error_message' => 'Generation was interrupted (process terminated by server).',
-                ], 'id = ?', [$prompt['id']]);
-                $prompt['status'] = 'partial';
-            }
-            unset($prompt);
-            \VoxelSite\Logger::warning('ai', 'Recovered stale streaming prompts (conversation refresh)', [
-                'conversation_id' => $conversationId,
-                'count'           => count($staleIds),
-                'ids'             => $staleIds,
-            ]);
-        } catch (\RuntimeException $error) {
-            \VoxelSite\Logger::info('ai', 'Deferred interrupted generation recovery', [
-                'conversation_id' => $conversationId, 'reason' => $error->getMessage(),
-            ]);
-        } finally {
-            unset($staleRecoveryLock);
-        }
-    }
-
-    $conversation['prompts'] = $prompts;
-    $conversation['pagination'] = [
-        'limit' => $limit,
-        'offset' => $offset,
-        'requested_offset' => $requestedOffset,
-        'count' => count($prompts),
-        'total' => $totalPrompts,
-    ];
-
-    jsonResponse(['ok' => true, 'data' => ['conversation' => $conversation]]);
     return;
 }
 

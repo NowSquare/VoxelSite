@@ -1,0 +1,21 @@
+{
+  "profile": "2025-11-25",
+  "evidence": "synthetic_protocol_fixture",
+  "sources": [
+    "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports",
+    "https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle",
+    "https://modelcontextprotocol.io/specification/2025-11-25/server/tools"
+  ],
+  "invalidBodies": [
+    {"label":"malformed JSON", "body":"{", "code":-32700},
+    {"label":"batch unsupported", "body":"[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}]", "code":-32600},
+    {"label":"scalar request rejected", "body":"3", "code":-32600},
+    {"label":"wrong JSON-RPC version", "body":"{\"jsonrpc\":\"1.0\",\"id\":1,\"method\":\"tools/list\"}", "code":-32600},
+    {"label":"response envelope rejected", "body":"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}", "code":-32600},
+    {"label":"array params rejected", "body":"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":[]}", "code":-32602},
+    {"label":"null ID rejected", "body":"{\"jsonrpc\":\"2.0\",\"id\":null,\"method\":\"tools/list\"}", "code":-32600},
+    {"label":"fractional ID rejected", "body":"{\"jsonrpc\":\"2.0\",\"id\":1.5,\"method\":\"tools/list\"}", "code":-32600},
+    {"label":"boolean ID rejected", "body":"{\"jsonrpc\":\"2.0\",\"id\":true,\"method\":\"tools/list\"}", "code":-32600},
+    {"label":"missing initialization fields", "body":"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\"}}", "code":-32602}
+  ]
+}

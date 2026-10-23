@@ -8,6 +8,7 @@ use RuntimeException;
 use VoxelSite\AIProviderInterface;
 
 require_once dirname(__DIR__, 2) . '/engine/AIProviderInterface.php';
+require_once dirname(__DIR__, 2) . '/engine/SiteWorkspace.php';
 
 final class RouterHeadingFixture
 {
@@ -31,8 +32,28 @@ final class RouterHeadingFixture
         self::manifest();
         $root = sys_get_temp_dir() . '/voxelsite-governor-' . bin2hex(random_bytes(8));
         mkdir($root, 0700);
+        $root = realpath($root);
         self::copyTree(dirname(__DIR__) . '/fixtures/router-heading/site', $root);
+        if (realpath($root) !== $root || !str_starts_with($root, realpath(sys_get_temp_dir()) . '/')) {
+            throw new RuntimeException('Heading fixture must have a canonical disposable root.');
+        }
+        file_put_contents($root . '/.htaccess', \VoxelSite\SiteWorkspace::ACCESS_MARKER . "\nRequire all denied\nDeny from all\n");
         return $root;
+    }
+
+    public static function activate(\VoxelSite\Database $db, string $root): void
+    {
+        if (realpath($root) !== $root || !str_starts_with($root, realpath(sys_get_temp_dir()) . '/')) {
+            throw new RuntimeException('Heading fixture must have a canonical disposable root.');
+        }
+        $state = $root . '-state';
+        if (!is_dir($state . '/published/assets')) mkdir($state . '/published/assets', 0700, true);
+        foreach (['VS_TEST_DOC_ROOT' => $state . '/published', 'VS_TEST_ASSETS_DIR' => $state . '/published/assets',
+            'VS_TEST_MUTATION_LOCK' => $state . '/site.lock', 'VS_TEST_WORKSPACE_STATE_DIR' => $state . '/workspace'] as $key => $value) putenv($key . '=' . $value);
+        $migration = require dirname(__DIR__, 2) . '/engine/migrations/015_private_draft_assets.php';
+        ($migration['up'])($db);
+        $db->update('site_workspace_state', ['format' => 2], 'id = 1');
+        foreach (['logDir' => $state, 'initialized' => true] as $key => $value) (new \ReflectionProperty(\VoxelSite\Logger::class, $key))->setValue(null, $value);
     }
 
     public static function copyTree(string $from, string $to): void
@@ -63,6 +84,7 @@ final class RouterHeadingFixture
 
     public static function remove(string $root): void
     {
+        if (is_dir($root . '-state')) self::remove($root . '-state');
         foreach (scandir($root) as $name) {
             if ($name === '.' || $name === '..') {
                 continue;

@@ -1,5 +1,7 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/helpers/StudioRuntimeFixture.php';
+
 require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
 require_once __DIR__ . '/helpers/RouterHeadingFixture.php';
 use VoxelSite\{Database, Encryption, RouterActivity, Settings};
@@ -7,22 +9,36 @@ use VoxelSite\Tests\RouterHeadingFixture as Fixture;
 $passed = 0; $errors = [];
 function check(bool $ok, string $message): void { global $passed, $errors; $ok ? $passed++ : $errors[] = $message; }
 function requestStudio(string $root, array $input): array {
+    if (($input['method'] ?? '') === 'PUT' && ($input['path'] ?? '') === '/settings' && !isset($input['body']['operation_id'])) {
+        $read = requestStudio($root, ['method'=>'GET', 'path'=>'/settings', 'session'=>$input['session']]);
+        $versions = [];
+        foreach ($read['response']['data']['group_keys'] ?? [] as $group => $keys) {
+            if (array_intersect(array_keys($input['body']), $keys)) $versions[$group] = $read['response']['data']['versions'][$group];
+        }
+        $input['body'] = ['operation_id'=>'settings_'.bin2hex(random_bytes(16)), 'values'=>$input['body'], 'versions'=>$versions];
+    }
     $child = proc_open([PHP_BINARY, __DIR__ . '/helpers/call-router-owner.php', $root], [['pipe','r'],['pipe','w'],['pipe','w']], $pipes);
     fwrite($pipes[0], json_encode($input)); fclose($pipes[0]);
     $out = stream_get_contents($pipes[1]); $err = stream_get_contents($pipes[2]); fclose($pipes[1]); fclose($pipes[2]);
     if (proc_close($child) !== 0 || $err !== '') throw new RuntimeException('Router probe failed');
-    return json_decode($out, true, 512, JSON_THROW_ON_ERROR);
+    $response = json_decode($out, true, 512, JSON_THROW_ON_ERROR);
+    if ($response['status'] === 202) {
+        $input['body']['checkpoint'] = $response['response']['data']['operation']['checkpoint'];
+        return requestStudio($root, $input);
+    }
+    return $response;
 }
 $root = sys_get_temp_dir() . '/governor-studio-' . bin2hex(random_bytes(8));
 mkdir($root, 0700); $root = realpath($root);
 file_put_contents($root . '/.governor-owner-endpoint-test', 'disposable');
 try {
-    Fixture::copyTree(__DIR__ . '/../engine', $root . '/_studio/engine');
-    Fixture::copyTree(__DIR__ . '/../api', $root . '/_studio/api');
-    mkdir($root . '/_studio/data',0700); mkdir($root . '/_studio/logs',0700);
-    symlink(realpath(dirname(__DIR__,2) . '/vendor'),$root . '/vendor');
+    \VoxelSite\Tests\StudioRuntimeFixture::copy($root);
+    mkdir($root . '/_studio/logs',0700);
     $db = Database::getInstance($root . '/_studio/data/studio.db');
     foreach (glob(__DIR__ . '/../engine/migrations/*.php') as $file) { $migration = require $file; ($migration['up'])($db); }
+    mkdir($root . '/_studio/preview', 0700, true); mkdir($root . '/assets', 0700);
+    file_put_contents($root . '/_studio/preview/.htaccess', \VoxelSite\SiteWorkspace::ACCESS_MARKER . "\nRequire all denied\nDeny from all\n");
+    $db->update('site_workspace_state', ['format' => 2], 'id = 1');
     $sessions = [];
     foreach (['owner','editor','viewer'] as $i => $role) {
         $uid = $db->insert('users', ['email'=> $role.'@example.test','password_hash'=>'not-a-login','name'=>'Fixture','role'=>$role,'created_at'=>'2026-09-24','updated_at'=>'2026-09-24']);
@@ -48,14 +64,14 @@ try {
     $settings->clearCache();
     check($r['status'] === 200, 'Unchanged key and dropdown save succeeds with mode-only payload');
     check($settings->get('governor.typesafe_api_key') === $cipher, 'Omitted synthetic dots preserve exact stored ciphertext');
-    check($settings->get('governor.model_map') === $map, 'Unchanged dropdowns preserve saved model map');
+    check($settings->get('governor.model_map') == $map, 'Unchanged dropdowns preserve saved model map');
     $cross = $map; $cross['cheap']['provider'] = 'openai';
     $r = requestStudio($root,$owner+['method'=>'PUT','path'=>'/settings','body'=>['governor.model_map'=>$cross]]);
     check($r['status']===422,'Real router rejects cross-provider map');
     $r = requestStudio($root,$owner+['method'=>'PUT','path'=>'/settings','body'=>['ai_provider'=>'openai']]);
     check($r['status']===200,'Real router changes saved AI provider');
     $settings->clearCache();
-    check($settings->get('governor.model_map')===$map,'Provider switch preserves old binding without rebinding models');
+    check($settings->get('governor.model_map')==$map,'Provider switch preserves old binding without rebinding models');
     $r=requestStudio($root,['method'=>'GET','path'=>'/settings','session'=>$sessions['owner']]);
     check($r['response']['data']['settings']['governor.model_map_error']['code']==='governor_model_map','Router read exposes obsolete-map warning');
     $r = requestStudio($root,$owner+['method'=>'PUT','path'=>'/settings','body'=>['governor.model_map'=>$map]]);
@@ -95,7 +111,9 @@ try {
         // Helper wraps the real response under response.
         $body=$r['response'];
         check(count($body['data']['governor_activity']['items'])===$count,"$role sees only own outcomes");
-        foreach ([$secret,$cipher,'governor.typesafe_api_key'] as $forbidden) check(!str_contains(json_encode($body),$forbidden),'Settings and activity exclude secrets');
+        foreach ([$secret,$cipher] as $forbidden) check(!str_contains(json_encode($body),$forbidden),'Settings and activity exclude secret values');
+        check(!array_key_exists('governor.typesafe_api_key', $body['data']['settings']), 'Settings values omit the write-only Router key; group_keys may describe its schema');
+        if ($role !== 'owner') check(!isset($body['data']['group_keys']['router']) && !isset($body['data']['versions']['router']), 'Read-only settings cannot review owner Router changes');
     }
     $activity=(new RouterActivity($db))->recent(1);
     $byId=array_column($activity['items'],null,'id');

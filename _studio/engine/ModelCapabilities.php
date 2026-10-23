@@ -32,6 +32,16 @@ final class ModelCapabilities
         ],
     ];
 
+    /** Existing provider getModels() defaults, without constructing a provider. */
+    public static function defaultModel(string $providerId): string
+    {
+        return match($providerId) {
+            'claude'=>'claude-sonnet-4-5-20250514','openai'=>'gpt-5','gemini'=>'gemini-2.0-flash',
+            'deepseek'=>'deepseek-chat','openai_compatible'=>'',
+            default=>throw new \InvalidArgumentException('Unknown provider.'),
+        };
+    }
+
     /**
      * @param array<string, array{max_output_tokens?: int, context_window?: int, source?: string}> $capabilities
      * @return array{max_output_tokens: int, context_window: int, source: string}

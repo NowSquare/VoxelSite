@@ -39,13 +39,16 @@ if ($method === 'POST' && $path === '/install/check') {
 
     // PHP version
     $phpVersion = PHP_VERSION;
-    $phpOk = version_compare($phpVersion, '8.1.0', '>=');
+    $phpOk = version_compare($phpVersion, '8.2.0', '>=');
     $checks[] = [
         'name'    => 'PHP Version',
-        'detail'  => "PHP {$phpVersion}" . ($phpOk ? '' : ' (requires 8.1+)'),
+        'detail'  => "PHP {$phpVersion}" . ($phpOk ? '' : ' (requires 8.2+)'),
         'status'  => $phpOk ? 'pass' : 'fail',
         'required' => true,
     ];
+    $tokenizerOk=extension_loaded('tokenizer') && function_exists('token_get_all') && defined('TOKEN_PARSE');
+    $checks[]=['name'=>'PHP syntax validation','detail'=>$tokenizerOk?'Available through PHP tokenizer':'PHP tokenizer is required',
+        'status'=>$tokenizerOk?'pass':'fail','required'=>true];
 
     // SQLite3 extension
     $sqliteOk = extension_loaded('pdo_sqlite');
@@ -334,13 +337,8 @@ if ($method === 'POST' && $path === '/install/complete') {
     $body = json_decode(file_get_contents('php://input'), true);
 
     // ── Validate input ──
-    $errors = [];
-
-    $provider = $body['ai_provider'] ?? 'claude';
-
-    if (empty($body['ai_api_key']) && $provider !== 'openai_compatible') {
-        $errors[] = 'API key is required.';
-    }
+    $body=is_array($body)?$body:[];
+    $errors = \VoxelSite\AiSetup::validate($body);
     if (empty($body['admin_name'])) {
         $errors[] = 'Admin name is required.';
     }
@@ -380,31 +378,21 @@ if ($method === 'POST' && $path === '/install/complete') {
         // ── Step 4: Run migrations (creates all tables) ──
         $migrator = new Migrator($db);
         $migrationResult = $migrator->run();
+        // Only unchanged package bootstrap files gain publish ownership.
+        // Customer hosting files are never inferred from a directory scan.
+        \VoxelSite\ShippedSiteProvenance::capture($db, new \VoxelSite\SiteWorkspace($db));
 
         // ── Step 5: Store settings ──
         $settings = new Settings($db);
         $encryption = new Encryption($appKey);
 
-        $provider = $body['ai_provider'] ?? 'claude';
-
         $settingsData = [
             'site_name'                => trim($body['site_name']),
             'site_tagline'             => trim($body['site_tagline'] ?? ''),
             'site_language'            => 'en',
-            'ai_provider'              => $provider,
-            "ai_{$provider}_model"     => $body['ai_model'] ?? '',
+            'studio_mcp_enabled'       => false,
         ];
-
-        // Only encrypt and store API key if provided
-        $apiKey = trim($body['ai_api_key'] ?? '');
-        if (!empty($apiKey)) {
-            $settingsData["ai_{$provider}_api_key"] = $encryption->encrypt($apiKey);
-        }
-
-        // Store base_url for OpenAI Compatible
-        if ($provider === 'openai_compatible' && !empty($body['ai_base_url'])) {
-            $settingsData['ai_openai_compatible_base_url'] = trim($body['ai_base_url']);
-        }
+        $settingsData=array_merge($settingsData,\VoxelSite\AiSetup::installationSettings($body,$encryption));
 
         $settings->setMany($settingsData);
 
@@ -491,19 +479,36 @@ if ($method === 'POST' && $path === '/install/complete') {
 
         // Set the session cookie
         $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+        $studioPath=\VoxelSite\InstallationUrl::studioPath();
         setcookie('vs_session', $token, [
             'expires'  => time() + (30 * 86400),
-            'path'     => '/_studio/',
+            'path'     => $studioPath.'/',
             'httponly'  => true,
             'secure'   => $secure,
             'samesite' => 'Lax',
         ]);
 
+        // Filesystem activation is explicit POST work, separate from schema
+        // migration. A fresh owner can continue a bounded copy or configure the
+        // canonical URL in the upgrade screen after installation succeeds.
+        $workspaceResult = ['status' => 'pending', 'reason' => 'configured_url_required'];
+        $configuredBase = $settings->get('workspace_base_url', $settings->get('site_url', ''));
+        if (is_string($configuredBase) && $configuredBase !== '') {
+            try {
+                $workspace = new \VoxelSite\SiteWorkspace($db);
+                $workspaceResult = (new \VoxelSite\WorkspaceActivationService($workspace, $db))
+                    ->continue($configuredBase, $_SERVER, 100);
+            } catch (\Throwable $error) {
+                $workspaceResult = ['status' => 'pending', 'reason' => 'workspace_setup_required',
+                    'message' => $error->getMessage()];
+            }
+        }
         echo json_encode([
             'ok'         => true,
             'message'    => 'Installation complete.',
-            'redirect'   => '/_studio/#/chat',
+            'redirect'   => $studioPath.($workspaceResult['status'] === 'complete' ? '/#/chat' : '/workspace.php'),
             'migrations' => $migrationResult,
+            'workspace'  => $workspaceResult,
         ]);
     } catch (\Throwable $e) {
         http_response_code(500);

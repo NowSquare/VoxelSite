@@ -14,7 +14,7 @@ foreach (['router.php', 'pages.php'] as $file) {
     }
 }
 $input = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-require_once dirname(__DIR__, 3) . '/vendor/autoload.php';
+require_once $root . '/vendor/autoload.php';
 spl_autoload_register(static function (string $class) use ($root): void {
     if (str_starts_with($class, 'VoxelSite\\')) {
         $path = $root . '/_studio/engine/' . str_replace('\\', '/', substr($class, 10)) . '.php';
@@ -23,14 +23,26 @@ spl_autoload_register(static function (string $class) use ($root): void {
         }
     }
 }, true, true);
-putenv('VS_TEST_PREVIEW_DIR');
-putenv('VS_TEST_ASSETS_DIR');
+putenv('VS_TEST_PREVIEW_DIR=' . $root . '/_studio/preview');
+putenv('VS_TEST_ASSETS_DIR=' . $root . '/assets');
+putenv('VS_TEST_DOC_ROOT=' . $root);
+putenv('VS_TEST_WORKSPACE_STATE_DIR=' . $root . '/_studio/data/workspace');
+putenv('VS_TEST_REVISIONS_DIR=' . $root . '/_studio/revisions');
+putenv('VS_TEST_MUTATION_LOCK=' . $root . '/_studio/data/site-mutation.lock');
 require_once $root . '/_studio/engine/bootstrap.php';
 
 if (($input['operation'] ?? '') === 'setup') {
     $db = VoxelSite\Database::getInstance();
     (new VoxelSite\Migrator($db))->run();
-    foreach ([1 => 'editor', 7 => 'owner'] as $id => $role) {
+    if (!str_starts_with((new ReflectionClass(VoxelSite\FileManager::class))->getFileName(), $root . '/')
+        || (new ReflectionMethod(VoxelSite\FileManager::class, '__construct'))->getNumberOfParameters() < 2) {
+        throw new RuntimeException('Fixture FileManager and explicit workspace injection are required.');
+    }
+    if (!is_dir($root . '/assets')) mkdir($root . '/assets', 0700, true);
+    $workspace = new VoxelSite\SiteWorkspace($db, $root . '/_studio/preview', $root);
+    $db->update('site_workspace_state',['format'=>2],'id=1');
+    file_put_contents($root.'/_studio/preview/.htaccess',VoxelSite\SiteWorkspace::ACCESS_MARKER."\nRequire all denied\nDeny from all\n");
+    foreach ([1 => 'editor', 7 => 'owner', 9 => 'viewer'] as $id => $role) {
         $db->insert('users', ['id' => $id, 'email' => $role . '@example.test',
             'password_hash' => 'not-a-login', 'name' => 'Test ' . $role, 'role' => $role,
             'created_at' => now(), 'updated_at' => now()]);
@@ -39,9 +51,16 @@ if (($input['operation'] ?? '') === 'setup') {
     $auth = new VoxelSite\AgentAuth($db);
     $keys = [];
     foreach (['agent', 'editor', 'viewer'] as $role) {
-        $keys[$role] = $auth->createKey('Test ' . $role, $role)['key'];
+        $key=$auth->createKey('Test '.$role,$role);$keys[$role]=$key['key'];
+        $policy=new VoxelSite\Agent\ActorPolicy($db);
+        $policy->bindRestCredential(new VoxelSite\Agent\OperationActor('user',7,null,[],'studio_configured',null),$key['id'],['agent'=>7,'editor'=>1,'viewer'=>9][$role]);
     }
-    (new VoxelSite\PageService($db))->createPage('existing', 'Existing', '<?php /* original */ ?><h1>Existing</h1>');
+    $fixture=dirname(__DIR__).'/fixtures/mcp/site-lifecycle/site';
+    foreach(VoxelSite\SiteWorkspace::inventory($fixture)['files'] as $path=>$meta)VoxelSite\Agent\WorkspaceFiles::write($root.'/_studio/preview',$path,file_get_contents($fixture.'/'.$path));
+    VoxelSite\Agent\WorkspaceFiles::write($root.'/_studio/preview','existing.php',"<?php \$page=['title'=>'Existing','slug'=>'existing']; include __DIR__.'/_partials/header.php'; ?><h1>Existing</h1><?php include __DIR__.'/_partials/footer.php'; ?>");
+    VoxelSite\Agent\WorkspaceFiles::write($root.'/_studio/preview','_partials/nav.php',"<?php\n".VoxelSite\NavLinksParser::serialize([['label'=>'Home','href'=>'/','home'=>true],['label'=>'Existing','href'=>'/existing']])."\n?><nav></nav>");
+    VoxelSite\Agent\WorkspaceFiles::write($root.'/_studio/preview','assets/js/form-handler.js',file_get_contents(dirname(__DIR__,2).'/static/form-handler.js'));
+    (new VoxelSite\FileManager($db,$workspace))->syncPageRegistry(true);
     echo json_encode($keys, JSON_THROW_ON_ERROR);
     exit;
 }

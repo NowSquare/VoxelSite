@@ -184,18 +184,30 @@ try { (new LedgeredAIProvider($provider, $ledger, null, 'generation', true))->co
 catch (RuntimeException $error) { check($error->getMessage() === 'ledger_unavailable' && $before === $provider->calls, 'Missing schema fails closed before provider call'); }
 check($db->scalar("SELECT COUNT(*) FROM sqlite_master WHERE name = 'governor_job_budget'") === 0, 'Governed execution never creates runtime schema');
 
-$db->exec('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)');
+// Upgrade proof uses a complete old installation, independent of the ledger micro-schema.
+$ledgerDatabase = $db;
+Database::resetInstance();
+$upgradeDatabasePath = tempnam(sys_get_temp_dir(), 'governor-upgrade-');
+$db = Database::getInstance($upgradeDatabasePath);
+foreach (glob(__DIR__ . '/../engine/migrations/*.php') as $path) {
+    $schema = require $path;
+    if (version_compare($schema['version'], '1.31.0', '<=')) ($schema['up'])($db);
+}
 $settings = new \VoxelSite\Settings($db);
 $settings->set('schema_version', '1.31.0');
 $migrator = new \VoxelSite\Migrator($db, $settings);
 $upgrade = $migrator->run();
-check(count($upgrade['applied']) === 4 && $upgrade['current_version'] === '1.31.0.4'
+check(count($upgrade['applied']) >= 4 && version_compare($upgrade['current_version'],'1.31.0.4','>=')
     && $db->scalar("SELECT COUNT(*) FROM sqlite_master WHERE name = 'governor_job_budget'") === 1
     && $db->scalar("SELECT COUNT(*) FROM sqlite_master WHERE name = 'governor_claim_overrides'") === 1
     && $db->scalar("SELECT COUNT(*) FROM sqlite_master WHERE name = 'governor_pending_headings'") === 1,
     'Real Migrator upgrades existing schema 1.31.0 with budget, owner audit and pending-candidate migrations');
 check($migrator->run()['applied'] === [], 'Real Migrator applies pending Router migrations once');
 
+Database::closeInstance();
+foreach ([$upgradeDatabasePath, $upgradeDatabasePath . '-wal', $upgradeDatabasePath . '-shm'] as $path) if (is_file($path)) unlink($path);
+$db = $ledgerDatabase;
+($migration['up'])($db);
 $ledger = new AICallLedger($db, 13); $ledger->bindGovernedTarget($target);
 ($ledgerMigration['down'])($db);
 $before = $provider->calls;

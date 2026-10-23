@@ -3,13 +3,19 @@ declare(strict_types=1);
 
 namespace VoxelSite;
 
+use VoxelSite\Agent\ProviderCallPolicy;
+use VoxelSite\Agent\ProviderCallForbidden;
+
+if (!class_exists(ProviderCallPolicy::class)) { require_once __DIR__ . '/Agent/ProviderCallPolicy.php'; }
+
 /** Optional routing advice. Failure always leaves the configured editing path available. */
 final class AIRouter
 {
     private RouterSettings $config;
     private \Closure $clientFactory;
 
-    public function __construct(private Database $db, private Settings $settings, ?callable $clientFactory = null)
+    public function __construct(private Database $db, private Settings $settings, ?callable $clientFactory = null,
+        private ?FileManager $files = null)
     {
         $this->config = new RouterSettings($settings);
         $this->clientFactory = $clientFactory === null
@@ -19,6 +25,7 @@ final class AIRouter
 
     public function route(array $request, AICallLedger $ledger): array
     {
+        ProviderCallPolicy::assertAllowed('ai_router');
         $action = is_string($request['action_type'] ?? null) ? $request['action_type'] : 'free_prompt';
         $scope = is_string($request['page_scope'] ?? null) ? $request['page_scope'] : null;
         $base = ['mode' => 'off', 'status' => 'off', 'reason' => 'off', 'intent' => null,
@@ -41,6 +48,7 @@ final class AIRouter
             $client = ($this->clientFactory)($key);
             $callId = $ledger->start('classify', 'typesafe', 'jev-latest', 'evaluate');
             $base['call_id'] = $callId;
+            ProviderCallPolicy::assertAllowed('ai_router_dispatch');
             $result = $client->evaluate($state, $this->questions($targets));
             $ok = ($result['status'] ?? null) === 'ok';
             $ledger->finish($callId, $ok ? 'success' : 'error',
@@ -131,6 +139,8 @@ final class AIRouter
                 'page_scope' => $scope, 'target' => $target]);
             return RouterSecrets::redact($mode === 'shadow'
                 ? array_replace($base, ['status' => 'preview', 'reason' => 'preview', 'proposal' => $route]) : $route);
+        } catch (ProviderCallForbidden $error) {
+            throw $error;
         } catch (\Throwable) {
             $ledger->finish($callId, 'error', errorCode: 'classification_error');
             return array_replace($base, ['status' => 'fallback', 'reason' => 'classification_unavailable']);
@@ -143,7 +153,7 @@ final class AIRouter
         $targets = [];
         $data = is_array($request['action_data'] ?? null) ? $request['action_data'] : [];
         $scope = is_string($request['page_scope'] ?? null) ? $request['page_scope'] : null;
-        $root = getenv('VS_TEST_PREVIEW_DIR') ?: dirname(__DIR__) . '/preview';
+        $root = ($this->files ??= new FileManager($this->db))->workspace()->draftRoot();
         $snapshot = static function (string $path) use ($root): ?array {
             try {
                 $resolved = GovernedFilePath::resolve($root, $path);
@@ -197,7 +207,7 @@ final class AIRouter
     private function literalElement(array $target, string $selection): bool
     {
         try {
-            $root = getenv('VS_TEST_PREVIEW_DIR') ?: dirname(__DIR__) . '/preview';
+            $root = ($this->files ??= new FileManager($this->db))->workspace()->draftRoot();
             $source = file_get_contents(GovernedFilePath::resolve($root, $target['file_path']));
             if (!is_string($source) || !hash_equals($target['content_hash'], hash('sha256', $source))
                 || substr_count($source, $selection) !== 1) { return false; }

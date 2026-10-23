@@ -3,6 +3,11 @@ declare(strict_types=1);
 
 namespace VoxelSite;
 
+use VoxelSite\Agent\ProviderCallPolicy;
+use VoxelSite\Agent\ProviderCallForbidden;
+
+if (!class_exists(ProviderCallPolicy::class)) { require_once __DIR__ . '/Agent/ProviderCallPolicy.php'; }
+
 /** Observes a bounded state. Its answers never control generation or writes. */
 final class RouterShadow
 {
@@ -11,7 +16,8 @@ final class RouterShadow
     private RouterSettings $config;
     private \Closure $clientFactory;
 
-    public function __construct(private Database $db, private Settings $settings, ?callable $clientFactory = null)
+    public function __construct(private Database $db, private Settings $settings, ?callable $clientFactory = null,
+        private ?FileManager $files = null)
     {
         $this->config = new RouterSettings($settings);
         $this->clientFactory = $clientFactory === null
@@ -29,6 +35,7 @@ final class RouterShadow
 
     public function observe(array $request, ?AICallLedger $ledger = null): array
     {
+        ProviderCallPolicy::assertAllowed('ai_router_shadow');
         // A deleted/unreadable key remains a configuration failure, not an outage
         // that shadow is allowed to observe and ignore.
         try { $key = $this->config->typeSafeKey(); }
@@ -47,12 +54,15 @@ final class RouterShadow
             $client = ($this->clientFactory)($key);
             $callId = $ledger->start('classify', 'typesafe', 'jev-latest', 'evaluate');
             $base['call_id'] = $callId;
+            ProviderCallPolicy::assertAllowed('ai_router_shadow_dispatch');
             $answer = $client->evaluate($state, $questions);
             $ledger->finish($callId, ($answer['status'] ?? '') === 'ok' ? 'success' : 'error',
                 is_array($answer['usage'] ?? null) ? $answer['usage'] : null, null,
                 is_string($answer['error'] ?? null) ? $answer['error'] : null,
                 is_string($answer['model'] ?? null) ? $answer['model'] : null);
             return RouterSecrets::redact(array_replace($base, $answer));
+        } catch (ProviderCallForbidden $error) {
+            throw $error;
         } catch (\Throwable) {
             $ledger->finish($callId, 'error', errorCode: 'classification_error');
             // Never reflect transport/provider exception text into a job or log.
@@ -71,7 +81,7 @@ final class RouterShadow
         if (is_string($path) && is_string($address) && strlen($address) <= 1024
             && preg_match('~\A<h([1-6])\b[^>]*>[^<>]*</h\1>\z~i', $address)) {
             try {
-                $root = getenv('VS_TEST_PREVIEW_DIR') ?: dirname(__DIR__) . '/preview';
+                $root = ($this->files ??= new FileManager($this->db))->workspace()->draftRoot();
                 $absolute = GovernedFilePath::resolve($root, $path);
                 $content = file_get_contents($absolute, false, null, 0, 262145);
                 if (is_string($content) && strlen($content) <= 262144 && substr_count($content, $address) === 1) {

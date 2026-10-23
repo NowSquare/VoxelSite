@@ -1,0 +1,23 @@
+{
+  "profile": "2026-07-28",
+  "evidence": "synthetic_protocol_fixture",
+  "sources": [
+    "https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http",
+    "https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning",
+    "https://modelcontextprotocol.io/specification/2026-07-28/basic/index",
+    "https://modelcontextprotocol.io/specification/2026-07-28/server/discover",
+    "https://modelcontextprotocol.io/specification/2026-07-28/server/tools"
+  ],
+  "invalidBodies": [
+    {"label":"malformed JSON", "body":"{", "code":-32700},
+    {"label":"batch unsupported", "body":"[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}]", "code":-32600},
+    {"label":"scalar request rejected", "body":"3", "code":-32600},
+    {"label":"wrong JSON-RPC version", "body":"{\"jsonrpc\":\"1.0\",\"id\":1,\"method\":\"tools/list\"}", "code":-32600},
+    {"label":"response envelope rejected", "body":"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}", "code":-32600},
+    {"label":"array params rejected", "body":"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":[]}", "code":-32602},
+    {"label":"null ID rejected", "body":"{\"jsonrpc\":\"2.0\",\"id\":null,\"method\":\"tools/list\"}", "code":-32600},
+    {"label":"fractional ID rejected", "body":"{\"jsonrpc\":\"2.0\",\"id\":1.5,\"method\":\"tools/list\"}", "code":-32600},
+    {"label":"boolean ID rejected", "body":"{\"jsonrpc\":\"2.0\",\"id\":true,\"method\":\"tools/list\"}", "code":-32600},
+    {"label":"missing modern metadata rejected", "body":"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}", "code":-32602}
+  ]
+}

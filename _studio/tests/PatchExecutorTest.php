@@ -67,6 +67,8 @@ putenv("VS_TEST_ASSETS_DIR={$tempAssets}");
 
 $db = Database::getInstance($tempDbPath);
 (new \VoxelSite\Migrator($db))->run();
+require_once __DIR__ . '/helpers/LegacyWorkspaceFixture.php';
+activateLegacyTestWorkspace($db);
 $fileManager = new FileManager($db);
 $fileManager->syncPageRegistry();
 

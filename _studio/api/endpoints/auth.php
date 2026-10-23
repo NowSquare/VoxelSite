@@ -311,6 +311,7 @@ if ($method === 'GET' && $path === '/auth/session') {
             'user'      => $user,
             'token'     => $_COOKIE['vs_session'] ?? null,
             'site_name' => $siteName,
+            'ai_configured' => \VoxelSite\AiSetup::configured($settings),
         ],
     ]);
     return;

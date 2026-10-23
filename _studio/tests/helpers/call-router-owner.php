@@ -22,7 +22,7 @@ namespace {
         }
     }
     $input = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-    require_once dirname(__DIR__, 3) . '/vendor/autoload.php';
+    require_once $root . '/vendor/autoload.php';
     spl_autoload_register(static function (string $class) use ($root): void {
         if (!str_starts_with($class, 'VoxelSite\\')) { return; }
         $relative = str_replace('\\', '/', substr($class, strlen('VoxelSite\\')));

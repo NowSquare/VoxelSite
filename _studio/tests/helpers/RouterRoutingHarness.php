@@ -2,6 +2,7 @@
 declare(strict_types=1);
 namespace VoxelSite\Tests;
 require_once __DIR__ . '/RouterHeadingFixture.php';
+require_once __DIR__ . '/StudioRuntimeFixture.php';
 
 /** Runs production classes in a copied application: no installed settings or site writes. */
 final class RouterRoutingHarness
@@ -13,24 +14,12 @@ final class RouterRoutingHarness
         mkdir($root, 0700);
         try {
             file_put_contents($root . '/.routing-fixture', 'Disposable routing application');
-            foreach (['engine', 'prompts', 'static'] as $directory) {
-                RouterHeadingFixture::copyTree($repo . '/_studio/' . $directory, $root . '/_studio/' . $directory);
-            }
+            StudioRuntimeFixture::copy($root, $repo);
             $fixture = $repo . '/_studio/tests/fixtures/router-heading/site';
             RouterHeadingFixture::copyTree($fixture, $root . '/_studio/preview');
             RouterHeadingFixture::copyTree($fixture . '/assets', $root . '/assets');
             // Distinctive unrelated-page content proves whether context was actually bounded.
             file_put_contents($root . '/_studio/preview/bakery/index.php', '<main><p>ROUTING_UNRELATED_PAGE_SENTINEL</p></main>');
-            mkdir($root . '/vendor');
-            file_put_contents($root . '/vendor/autoload.php', '<?php require ' . var_export($repo . '/vendor/autoload.php', true) . ';' . <<<'LOADER'
-
-spl_autoload_register(function ($class) {
-    if (str_starts_with($class, 'VoxelSite\\')) {
-        $file = dirname(__DIR__) . '/_studio/engine/' . str_replace('\\', '/', substr($class, 10)) . '.php';
-        if (is_file($file)) require_once $file;
-    }
-}, true, true);
-LOADER);
             $process = proc_open([PHP_BINARY, __DIR__ . '/run-router-routing.php', $root],
                 [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
             if (!is_resource($process)) { throw new \RuntimeException('Cannot start routing fixture'); }

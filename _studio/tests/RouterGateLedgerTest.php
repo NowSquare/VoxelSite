@@ -15,6 +15,7 @@ $fixture = Fixture::manifest();
 $secret = bin2hex(random_bytes(32)); RouterSecrets::remember($secret);
 foreach (['accept', 'block', 'malformed', 'throw', 'invalid_candidate'] as $case) {
     $root = Fixture::create();
+    Fixture::activate($db, $root);
     try {
         $before = Fixture::snapshot($root); $writers = 0;
         $db->exec('DELETE FROM ai_call_ledger');
@@ -26,7 +27,7 @@ foreach (['accept', 'block', 'malformed', 'throw', 'invalid_candidate'] as $case
             return ['model' => 'jev-fixture', 'usage' => ['input_tokens' => 12, 'output_tokens' => 3],
                 'debug' => $secret, 'answers' => $case === 'malformed' ? [] : ['forbidden_claims' => ['noul' => $case === 'block' ? 0.9 : 0.1]]];
         };
-        putenv('VS_TEST_PREVIEW_DIR=' . $root); putenv('VS_TEST_ASSETS_DIR=' . $root . '/assets');
+        putenv('VS_TEST_PREVIEW_DIR=' . $root); putenv('VS_TEST_ASSETS_DIR=' . $root . '-state/published/assets');
         $patch = new StagedHeadingPatch($root, ['index.php'],
             new HeadingFakeProvider($case === 'invalid_candidate' ? '<script>bad</script>' : $fixture['accepted_candidate']),
             $gate, function () use ($db, &$writers): FileManager { $writers++; return new FileManager($db); }, new AICallLedger($db));

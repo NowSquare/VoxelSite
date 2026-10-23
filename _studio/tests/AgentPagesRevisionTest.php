@@ -1,6 +1,8 @@
 <?php
 
 declare(strict_types=1);
+require_once __DIR__ . '/helpers/StudioRuntimeFixture.php';
+
 
 require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
 
@@ -49,12 +51,11 @@ function requestPages(string $root, array $input): array
 
 $root = sys_get_temp_dir() . '/voxelsite-agent-pages-' . bin2hex(random_bytes(8));
 mkdir($root, 0700);
+$root=realpath($root);
 file_put_contents($root . '/.agent-pages-test', 'disposable');
 try {
-    copyTree(__DIR__ . '/../engine', $root . '/_studio/engine');
-    copyTree(__DIR__ . '/../api/agent/v1', $root . '/_studio/api/agent/v1');
+    \VoxelSite\Tests\StudioRuntimeFixture::copy($root);
     mkdir($root . '/_studio/preview', 0700);
-    symlink(realpath(dirname(__DIR__, 2) . '/vendor'), $root . '/vendor');
     $keys = requestPages($root, ['operation' => 'setup']);
     $db = Database::getInstance($root . '/_studio/data/studio.db');
     check((int) $db->scalar('PRAGMA foreign_keys') === 1, 'Foreign-key enforcement stays enabled');
@@ -64,29 +65,34 @@ try {
     $schema = requestPages($root, ['method' => 'GET', 'path' => '/schema']);
     check($schema['status'] === 200, 'Public schema remains accessible without authentication');
     foreach ([['/pages', 'post'], ['/pages/{slug}', 'put']] as [$path, $method]) {
-        check(isset($schema['response']['paths'][$path][$method]['responses']['500']),
-            "$method schema documents the missing-owner server error");
+        check(isset($schema['response']['paths'][$path][$method]['responses']['409']),
+            "$method schema documents bound-credential and source conflicts");
     }
+    $version=static fn()=> 'draft:'.$db->scalar('SELECT draft_version FROM site_workspace_state WHERE id=1');
     $original = file_get_contents($root . '/_studio/preview/existing.php');
     $payload = ['slug' => 'created', 'title' => 'Created', 'content' => '<?php /* created */ ?><h1>Created</h1>'];
     foreach (['agent', 'editor'] as $role) {
         $slug = 'created-' . $role;
         $create = requestPages($root, ['method' => 'POST', 'path' => '/pages', 'key' => $keys[$role],
-            'body' => array_replace($payload, ['slug' => $slug])]);
+            'body' => array_replace($payload, ['slug' => $slug,'operation_id'=>'old-create-'.$role.'-001','base_draft_version'=>$version(),'expected_content_sha256'=>null])]);
+        if($create['status']!==201)fwrite(STDERR,json_encode($create)."\n");
         check($create['status'] === 201, "$role page creation returns 201");
         check(is_file($root . '/_studio/preview/' . $slug . '.php'), "$role page creation writes its file");
         $revision = $db->queryOne('SELECT * FROM revisions ORDER BY id DESC LIMIT 1');
-        check($revision !== null && (int) $revision['user_id'] === 7, "$role creation revision references the real owner");
+        check($revision !== null && (int) $revision['user_id'] === ($role==='agent'?7:1), "$role creation revision references the explicitly bound account");
         check($revision !== null && is_file($root . '/_studio/revisions/' . $revision['id'] . '/after/' . $slug . '.php'),
             "$role creation captures its after-state");
         $content = '<?php /* updated by ' . $role . ' */ ?><h1>Updated</h1>';
         $before = file_get_contents($root . '/_studio/preview/existing.php');
-        $update = requestPages($root, ['method' => 'PUT', 'path' => '/pages/existing', 'key' => $keys[$role],
-            'body' => ['content' => $content, 'user_id' => 1]]);
+        $body=['operation_id'=>'old-update-'.$role.'-001','base_draft_version'=>$version(),'expected_content_sha256'=>hash('sha256',$before),'content'=>$content];
+        $spoof=requestPages($root,['method'=>'PUT','path'=>'/pages/existing','key'=>$keys[$role],'body'=>$body+['user_id'=>7]]);
+        check($spoof['status']===422,"$role cannot supply revision attribution");
+        $update = requestPages($root, ['method' => 'PUT', 'path' => '/pages/existing', 'key' => $keys[$role], 'body'=>$body]);
+        if($update['status']!==200)fwrite(STDERR,json_encode($update)."\n");
         check($update['status'] === 200, "$role page update returns 200");
-        check(file_get_contents($root . '/_studio/preview/existing.php') === $content, "$role update writes the requested content");
+        check(str_contains(file_get_contents($root . '/_studio/preview/existing.php'), 'updated by ' . $role), "$role update writes the requested content");
         $revision = $db->queryOne('SELECT * FROM revisions ORDER BY id DESC LIMIT 1');
-        check($revision !== null && (int) $revision['user_id'] === 7, "$role update uses owner attribution regardless of caller-supplied user_id");
+        check($revision !== null && (int) $revision['user_id'] === ($role==='agent'?7:1), "$role update uses current bound account attribution");
         $beforePath = $root . '/_studio/revisions/' . ($revision['id'] ?? 0) . '/before/existing.php';
         check(is_file($beforePath) && file_get_contents($beforePath) === $before, "$role update preserves its before-state");
     }
@@ -99,10 +105,10 @@ try {
         check($denied['status'] === 403, "$method denies a read-only key");
     }
     check($db->query('SELECT * FROM revisions ORDER BY id') === $revisions, 'Denied writes create no revisions');
-    // A malformed installation must fail before any revision/history mutation.
-    $db->update('users', ['role' => 'editor'], 'id = ?', [7]);
+    // Account demotion must fail before any revision/history mutation.
+    $db->update('users', ['role' => 'viewer'], 'id = ?', [7]);
     check(requestPages($root, ['method' => 'GET', 'path' => '/pages', 'key' => $keys['agent']])['status'] === 200,
-        'Missing-owner guard only affects writes');
+        'Demoted account may still read pages');
     if (count($revisions) === 4) {
         $db->update('revisions', ['is_undone' => 1], 'id = ?', [$revisions[3]['id']]);
         $db->update('settings', ['value' => json_encode($revisions[2]['id'])], 'key = ?', ['revision_pointer']);
@@ -110,13 +116,14 @@ try {
     $revisions = $db->query('SELECT * FROM revisions ORDER BY id');
     $content = file_get_contents($root . '/_studio/preview/existing.php');
     foreach ([['POST', '/pages', $payload], ['PUT', '/pages/existing', ['content' => $original]]] as [$method, $path, $body]) {
+        $body+=['operation_id'=>'demoted-'.strtolower($method).'-001','base_draft_version'=>$version(),'expected_content_sha256'=>$method==='POST'?null:hash('sha256',$content)];
         $missing = requestPages($root, compact('method', 'path', 'body') + ['key' => $keys['agent']]);
-        check($missing['status'] === 500 && ($missing['response']['error']['code'] ?? '') === 'no_owner',
-            "$method reports missing installation owner explicitly");
-        check($db->query('SELECT * FROM revisions ORDER BY id') === $revisions, "$method missing-owner failure preserves redo history");
+        check($missing['status'] === 403 && ($missing['response']['error']['code'] ?? '') === 'permission_denied',
+            "$method rechecks the bound account's current authority");
+        check($db->query('SELECT * FROM revisions ORDER BY id') === $revisions, "$method demoted-account failure preserves redo history");
         check(!is_file($root . '/_studio/preview/created.php')
             && file_get_contents($root . '/_studio/preview/existing.php') === $content,
-            "$method missing-owner failure leaves page files unchanged");
+            "$method demoted-account failure leaves page files unchanged");
     }
     check($db->query('PRAGMA foreign_key_check') === [], 'All stored records preserve foreign-key integrity');
     check($db->count('users', 'id = ?', [0]) === 0, 'No write inserts an artificial API user');

@@ -19,8 +19,8 @@ final class RouterContext
         $supportFiles = ['assets/css/style.css', '_partials/header.php', '_partials/nav.php', '_partials/footer.php'];
         // PHP pages often render JSON instead of containing literal copy. Include
         // that source of truth; if it does not fit, use the normal context path.
-        $assets = getenv('VS_TEST_ASSETS_DIR') ?: dirname(__DIR__, 2) . '/assets';
-        foreach (glob($assets . '/data/*.json') ?: [] as $dataFile) {
+        $dataDirectory = $this->files->workspace()->resolveDraft('assets/data');
+        foreach (glob($dataDirectory . '/*.json') ?: [] as $dataFile) {
             $supportFiles[] = 'assets/data/' . basename($dataFile);
         }
         foreach ($supportFiles as $support) {

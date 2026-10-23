@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace VoxelSite;
 
+use VoxelSite\Agent\ProviderCallPolicy;
+
 if (!interface_exists(AIProviderInterface::class)) { require_once __DIR__ . '/AIProviderInterface.php'; }
 if (!class_exists(AICallLedger::class)) { require_once __DIR__ . '/AICallLedger.php'; }
 
@@ -24,6 +26,7 @@ final class LedgeredAIProvider implements AIProviderInterface
 
     public function complete(string $systemPrompt, array $messages, array $options = []): string
     {
+        $this->assertAllowed('provider_complete');
         $id = $this->start('complete', $options);
         try {
             $result = $this->provider->complete($systemPrompt, $messages, $options);
@@ -39,6 +42,7 @@ final class LedgeredAIProvider implements AIProviderInterface
     public function stream(string $systemPrompt, array $messages, callable $onToken, callable $onComplete,
         array $options = []): void
     {
+        $this->assertAllowed('provider_stream');
         $id = $this->start('stream', $options);
         $completed = false;
         $usage = null;
@@ -90,15 +94,21 @@ final class LedgeredAIProvider implements AIProviderInterface
     public function getId(): string { return $this->provider->getId(); }
     public function getName(): string { return $this->provider->getName(); }
     public function getModels(): array { return $this->provider->getModels(); }
-    public function listModels(): array { return $this->provider->listModels(); }
-    public function testConnection(): array { return $this->provider->testConnection(); }
+    public function listModels(): array { $this->assertAllowed('model_discovery'); return $this->provider->listModels(); }
+    public function testConnection(): array { $this->assertAllowed('provider_test'); return $this->provider->testConnection(); }
     public function getConfigFields(): array { return $this->provider->getConfigFields(); }
-    public function validateConfig(array $config): bool { return $this->provider->validateConfig($config); }
+    public function validateConfig(array $config): bool { $this->assertAllowed('provider_validation'); return $this->provider->validateConfig($config); }
     public function estimateTokens(string $text): int { return $this->provider->estimateTokens($text); }
     public function resolveMaxTokens(int $requested, string $model): int { return $this->provider->resolveMaxTokens($requested, $model); }
     public function getContextWindow(string $model): int { return $this->provider->getContextWindow($model); }
     public function estimateCost(int $inputTokens, int $outputTokens, string $model): array
     { return $this->provider->estimateCost($inputTokens, $outputTokens, $model); }
+
+    private function assertAllowed(string $operation): void
+    {
+        if (!class_exists(ProviderCallPolicy::class)) { require_once __DIR__ . '/Agent/ProviderCallPolicy.php'; }
+        ProviderCallPolicy::assertAllowed($operation);
+    }
 
     /** Do not expose the credential-bearing inner provider through var_dump. */
     public function __debugInfo(): array { return []; }

@@ -76,6 +76,7 @@ $cases = $fixture['cases'] + [
 ];
 foreach ($cases as $name => $case) {
     $root = Fixture::create();
+    Fixture::activate($db, $root);
     $outside = tempnam(sys_get_temp_dir(), 'governor-outside-');
     $otherRoot = Fixture::create();
     $otherBefore = Fixture::snapshot($otherRoot);
@@ -131,7 +132,7 @@ foreach ($cases as $name => $case) {
             return ['answers' => ['forbidden_claims' => ['noul' => $case['noul'] ?? 0.1]]];
         };
         putenv('VS_TEST_PREVIEW_DIR=' . $root);
-        putenv('VS_TEST_ASSETS_DIR=' . $root . '/assets');
+        putenv('VS_TEST_ASSETS_DIR=' . $root . '-state/published/assets');
         $factory = function () use ($db, &$writer, &$factoryCalls, &$events, $mutation, $file, &$intervening, $otherRoot): FileManager {
             $factoryCalls++;
             $events[] = 'writer';

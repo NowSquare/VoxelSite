@@ -34,7 +34,7 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
 
 // Strip query string and the /_studio/api prefix
 $path = parse_url($uri, PHP_URL_PATH);
-$path = preg_replace('#^/_studio/api#', '', $path);
+$path = preg_replace('#^'.preg_quote(\VoxelSite\InstallationUrl::studioPath().'/api','#').'(?=/|$)#', '', $path);
 
 // If the URI still contains router.php (no URL rewriting), read
 // the route path from the _path query parameter instead.
@@ -68,6 +68,13 @@ $routes = [
     ['GET',    '/install/providers',        'install.php',      false],
     ['POST',   '/install/list-models',     'install.php',      false],
 
+    // Explicit, owner-controlled filesystem upgrade. The public probe returns
+    // an expiring random control value only; it never grants website access.
+    ['GET',    '/workspace/probe',        'workspace.php',    false],
+    ['GET',    '/workspace/status',       'workspace.php',    true],
+    ['POST',   '/workspace/migrate',      'workspace.php',    true],
+    ['POST',   '/workspace/rollback',     'workspace.php',    true],
+
     // Auth
     ['POST',   '/auth/login',              'auth.php',         false],
     ['GET',    '/auth/recovery-mode',      'auth.php',         false],
@@ -89,6 +96,9 @@ $routes = [
     ['GET',    '/ai/conversations',       'ai.php',            true],
     ['GET',    '/ai/conversations/:id',   'ai.php',            true],
     ['GET',    '/ai/diagnostics',         'ai.php',            true],
+    ['POST',   '/ai/repair-generation',   'configuration.php', true],
+    ['POST',   '/ai/cancel-interrupted',  'configuration.php', true],
+    ['DELETE', '/ai/history',            'configuration.php', true],
 
     // Router consent uses Studio owner sessions only, never Agent credentials.
     ['GET',    '/governor/pending/:id',          'router.php', true],
@@ -125,17 +135,24 @@ $routes = [
 
     // Preview / Publish
     ['GET',    '/preview',                'preview.php',        true],
+    ['POST',   '/preview/validate',       'preview.php',        true],
     ['GET',    '/preview/diff',           'preview.php',        true],
     ['POST',   '/publish',               'publish.php',        true],
     ['POST',   '/publish/rollback',      'publish.php',        true],
     ['POST',   '/publish/unpublish',     'publish.php',        true],
 
     // Export (download)
+    ['GET',    '/export',                'export.php',         true],
     ['POST',   '/export',                'export.php',         true],
 
     // Snapshots
     ['GET',    '/snapshots',             'snapshots.php',      true],
     ['POST',   '/snapshots',             'snapshots.php',      true],
+    ['POST',   '/snapshots/capture',     'snapshots.php',      true],
+    ['GET',    '/snapshots/:id/delete-review', 'snapshots.php', true],
+    ['GET',    '/snapshots/:id/inspect', 'snapshots.php',      true],
+    ['POST',   '/snapshots/:id/prepare-restore', 'snapshots.php', true],
+    ['POST',   '/snapshots/:id/apply-restore', 'snapshots.php', true],
     ['POST',   '/snapshots/:id/restore', 'snapshots.php',      true],
     ['DELETE', '/snapshots/:id',         'snapshots.php',      true],
 
@@ -215,6 +232,10 @@ $routes = [
     // Settings
     ['GET',    '/settings',              'settings.php',       true],
     ['PUT',    '/settings',              'settings.php',       true],
+    ['GET',    '/settings/prompts',      'configuration.php',  true],
+    ['GET',    '/settings/prompts/content', 'configuration.php', true],
+    ['PUT',    '/settings/prompts/content', 'configuration.php', true],
+    ['DELETE', '/settings/prompts/content', 'configuration.php', true],
     ['POST',   '/settings/test-api',     'settings.php',       true],
     ['GET',    '/settings/models',       'settings.php',       true],
     ['POST',   '/settings/list-models',  'settings.php',       true],
@@ -229,13 +250,34 @@ $routes = [
     ['GET',    '/settings/logs/download','settings.php',       true],
     ['DELETE', '/settings/logs',         'settings.php',       true],
     ['POST',   '/settings/favicon',     'settings.php',       true],
+    ['GET',    '/settings/favicon',     'settings.php',       true],
     ['DELETE', '/settings/favicon',     'settings.php',       true],
     ['GET',    '/settings/api-keys',    'api-keys.php',       true],
     ['POST',   '/settings/api-keys',   'api-keys.php',       true],
     ['DELETE', '/settings/api-keys/:id','api-keys.php',       true],
+    ['GET',    '/settings/mcp',        'mcp-connections.php', true],
+    ['POST',   '/settings/mcp',        'mcp-connections.php', true],
+    ['GET',    '/settings/mcp/activity','mcp-connections.php',true],
+    ['POST',   '/settings/mcp/connections','mcp-connections.php',true],
+    ['DELETE', '/settings/mcp/connections/:id','mcp-connections.php',true],
+    ['POST',   '/settings/mcp/rest-bind','mcp-connections.php',true],
+    ['POST',   '/settings/mcp/approvals/:id/approve','mcp-connections.php',true],
+    ['POST',   '/settings/mcp/approvals/:id/cancel','mcp-connections.php',true],
+    ['POST',   '/settings/mcp/approvals/:id/reveal','mcp-connections.php',true],
+    ['GET',    '/settings/recovery', 'owner-recovery.php', true],
+    ['GET',    '/settings/recovery/:id', 'owner-recovery.php', true],
+    ['POST',   '/settings/recovery/:id/review', 'owner-recovery.php', true],
+    ['POST',   '/settings/recovery/:id/restore', 'owner-recovery.php', true],
 
     // Site management
-    ['POST',   '/site/reset',            'site.php',           true],
+    ['GET',    '/site/reset',            'site-reset.php',     true],
+    ['POST',   '/site/reset',            'site-reset.php',     true],
+    ['POST',   '/site/reset/prepare',    'site-reset.php',     true],
+    ['POST',   '/site/reset/continue',   'site-reset.php',     true],
+    ['POST',   '/site/reset/recover',    'site-reset.php',     true],
+    ['GET',    '/site/reset-install',    'factory-reset.php',  true],
+    ['POST',   '/site/reset-install/prepare', 'factory-reset.php', true],
+    ['POST',   '/site/reset-install/discard', 'factory-reset.php', true],
     ['POST',   '/site/reset-install',    'site.php',           true],
 
     // Site graph (read-only)
@@ -267,6 +309,15 @@ $routes = [
     ['POST',   '/update/upload',         'update.php',         true],
     ['GET',    '/update/git-status',     'update.php',         true],
     ['POST',   '/update/git-update',     'update.php',         true],
+    ['GET',    '/update/inspect',        'update.php',         true],
+    ['POST',   '/update/package-begin', 'update.php', true],
+    ['POST',   '/update/package-chunk', 'update.php', true],
+    ['POST',   '/update/package-finish', 'update.php', true],
+    ['POST',   '/update/package-get', 'update.php', true],
+    ['POST',   '/update/prepare', 'update.php', true],
+    ['POST',   '/update/approve', 'update.php', true],
+    ['POST',   '/update/apply', 'update.php', true],
+    ['POST',   '/update/cleanup', 'update.php', true],
 ];
 
 // ── Load middleware (defines getJsonBody, authenticateRequest, validateCsrf) ──
@@ -308,7 +359,8 @@ foreach ($routes as [$routeMethod, $routePattern, $endpointFile, $requiresAuth])
     // Viewers can only read — block all write operations except auth/logout and auth/profile
     if ($requiresAuth && isset($user) && $user['role'] === 'viewer') {
         $isWriteMethod = in_array($method, ['POST', 'PUT', 'DELETE'], true);
-        $isAllowedWrite = in_array($path, ['/auth/logout', '/auth/profile', '/auth/password'], true);
+        $isAllowedWrite = in_array($path, ['/auth/logout', '/auth/profile', '/auth/password'], true)
+            || ($method === 'POST' && $path === '/preview/validate');
         if ($isWriteMethod && !$isAllowedWrite) {
             jsonResponse(['ok' => false, 'error' => [
                 'code'    => 'forbidden',
@@ -319,7 +371,9 @@ foreach ($routes as [$routeMethod, $routePattern, $endpointFile, $requiresAuth])
     }
 
     // ── CSRF check for state-changing methods ──
-    if (in_array($method, ['POST', 'PUT', 'DELETE'], true) && $requiresAuth) {
+    // The authenticated preview fallback discards its body and never submits or writes.
+    $isPreviewValidation = $method === 'POST' && $path === '/preview/validate';
+    if (in_array($method, ['POST', 'PUT', 'DELETE'], true) && $requiresAuth && !$isPreviewValidation) {
         if (!validateCsrf()) {
             Logger::warning('api', 'CSRF validation failed', [
                 'method' => $method,
@@ -374,7 +428,7 @@ foreach ($routes as [$routeMethod, $routePattern, $endpointFile, $requiresAuth])
                      || (int)($_SERVER['SERVER_PORT'] ?? 0) === 443;
             setcookie('vs_session', DemoMode::DEMO_SESSION_TOKEN, [
                 'expires'  => time() + (30 * 86400),
-                'path'     => '/_studio/',
+                'path'     => \VoxelSite\InstallationUrl::studioPath().'/',
                 'secure'   => $isSecure,
                 'httponly'  => true,
                 'samesite' => 'Lax',
@@ -410,7 +464,7 @@ foreach ($routes as [$routeMethod, $routePattern, $endpointFile, $requiresAuth])
                      || (int)($_SERVER['SERVER_PORT'] ?? 0) === 443;
             setcookie('vs_session', '', [
                 'expires'  => time() - 3600,
-                'path'     => '/_studio/',
+                'path'     => \VoxelSite\InstallationUrl::studioPath().'/',
                 'secure'   => $isSecure,
                 'httponly'  => true,
                 'samesite' => 'Lax',
@@ -444,6 +498,16 @@ foreach ($routes as [$routeMethod, $routePattern, $endpointFile, $requiresAuth])
     }
 
     // ── Normal dispatch ──
+    // A schema upgrade does not silently copy website files. Until the owner
+    // verifies private HTTP access and explicitly migrates, authoring is held.
+    if ($requiresAuth && !DemoMode::isActive() && $path !== '/site/reset-install'
+        && preg_match('~^/(?:pages|files|assets|preview|publish|export|snapshots|designs|revisions|site-control|site)(?:/|$)|^/ai/prompt$~', $path)
+        && !(new \VoxelSite\SiteWorkspace(Database::getInstance()))->status()['ready']) {
+        jsonResponse(['ok' => false, 'error' => ['code' => 'workspace_migration_required',
+            'message' => 'The site owner must finish private draft setup before website editing can continue.',
+            'upgrade_url' => \VoxelSite\InstallationUrl::studioPath().'/workspace.php']], 409);
+        exit;
+    }
     // Only endpoints that touch website files share the website lock. Account,
     // notes, settings and other Studio state remain usable during generation.
     $mutationPolicy = \VoxelSite\SiteMutationRoutePolicy::studio($method, $routePattern);
@@ -451,7 +515,13 @@ foreach ($routes as [$routeMethod, $routePattern, $endpointFile, $requiresAuth])
         jsonResponse(['ok'=>false,'error'=>['code'=>'forbidden','message'=>'Only the site owner can reset the installation.']],403);
         exit;
     }
-    if ($requiresAuth && $mutationPolicy['lock']) {
+    $sharedAuthoring = in_array($method.' '.$routePattern, [
+        'PUT /pages/:slug','PUT /pages/:slug/nav','PUT /pages/reorder','DELETE /pages/:slug',
+        'PUT /files/content','POST /files/create','POST /files/compile-tailwind','DELETE /files',
+        'POST /site-control/url-rename','POST /site-control/nav-reorder','POST /site-control/page-rename',
+        'POST /site-control/page-delete','POST /site-control/structural-move',
+    ],true);
+    if ($requiresAuth && $mutationPolicy['lock'] && !$sharedAuthoring) {
         try {
             $websiteMutationLock = \VoxelSite\SiteMutationLock::acquire();
             (new \VoxelSite\SiteMutationJournal(Database::getInstance()))->recoverInterrupted();
@@ -461,22 +531,6 @@ foreach ($routes as [$routeMethod, $routePattern, $endpointFile, $requiresAuth])
             }
         } catch (\Throwable $e) {
             jsonResponse(['ok'=>false,'error'=>['code'=>'site_busy','message'=>$e->getMessage()]],409);
-            exit;
-        }
-    }
-    if ($method === 'POST' && in_array($path, ['/site-control/url-rename','/site-control/nav-reorder',
-        '/site-control/page-rename','/site-control/page-delete','/site-control/structural-move'],true)) {
-        try {
-            $body = getJsonBody();
-            $mutationId = $body['mutation_id'] ?? bin2hex(random_bytes(16));
-            if (!is_string($mutationId) || !preg_match('/^[a-f0-9]{32}$/D',$mutationId)) {
-                throw new \RuntimeException('Invalid mutation identity. Refresh and try again.');
-            }
-            $journal = new \VoxelSite\SiteMutationJournal(Database::getInstance());
-            $previous = $journal->begin($mutationId,(int)$user['id'],$path,$body);
-            if ($previous !== null) { jsonResponse($previous['response'],$previous['httpCode']); exit; }
-        } catch (\Throwable $e) {
-            jsonResponse(['ok'=>false,'error'=>['code'=>'mutation_conflict','message'=>$e->getMessage()]],409);
             exit;
         }
     }

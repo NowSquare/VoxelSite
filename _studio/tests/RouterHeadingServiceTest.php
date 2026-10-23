@@ -57,6 +57,7 @@ function scenario(array $case = []): array {
     putenv('VS_TEST_PREVIEW_DIR=' . $root);
     Database::resetInstance();
     $db = Database::getInstance(':memory:');
+    Fixture::activate($db, $root);
     $db->exec('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)');
     $db->exec('CREATE TABLE pages (id INTEGER PRIMARY KEY, title TEXT, file_path TEXT, page_type TEXT)');
     $db->exec('CREATE TABLE prompt_log (id INTEGER PRIMARY KEY)');
@@ -243,6 +244,7 @@ foreach ($cases as $name => $case) {
 }
 Database::resetInstance();
 $db = Database::getInstance(':memory:');
+
 $db->exec('CREATE TABLE prompt_log (id INTEGER PRIMARY KEY)');
 $migration = require __DIR__ . '/../engine/migrations/007_ai_call_ledger.php';
 ($migration['up'])($db);

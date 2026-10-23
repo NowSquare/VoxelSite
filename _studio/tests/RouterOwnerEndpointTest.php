@@ -1,5 +1,7 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/helpers/StudioRuntimeFixture.php';
+
 
 require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
 require_once __DIR__ . '/helpers/RouterHeadingFixture.php';
@@ -51,13 +53,13 @@ file_put_contents($root . '/.governor-owner-endpoint-test', 'disposable');
 Database::resetInstance();
 $concurrent = [];
 try {
-    Fixture::copyTree(__DIR__ . '/../engine', $root . '/_studio/engine');
-    Fixture::copyTree(__DIR__ . '/../api', $root . '/_studio/api');
+    \VoxelSite\Tests\StudioRuntimeFixture::copy($root);
     Fixture::copyTree(__DIR__ . '/fixtures/router-heading/site', $root . '/_studio/preview');
-    mkdir($root . '/_studio/data', 0700); mkdir($root . '/_studio/logs', 0700); mkdir($root . '/assets', 0700);
-    symlink(realpath(dirname(__DIR__, 2) . '/vendor'), $root . '/vendor');
+    mkdir($root . '/_studio/logs', 0700); mkdir($root . '/assets', 0700);
     $db = Database::getInstance($root . '/_studio/data/studio.db');
     foreach (glob(__DIR__ . '/../engine/migrations/*.php') as $file) { $migration = require $file; ($migration['up'])($db); }
+    $db->update('site_workspace_state', ['format' => 2], 'id = 1');
+    file_put_contents($root . '/_studio/preview/.htaccess', \VoxelSite\SiteWorkspace::ACCESS_MARKER . "\nRequire all denied\nDeny from all\n");
     $sessions = [];
     foreach (['owner', 'editor', 'viewer'] as $i => $role) {
         $uid = $db->insert('users', ['email' => $role . '@example.test', 'password_hash' => 'not-a-login', 'name' => 'Fixture',

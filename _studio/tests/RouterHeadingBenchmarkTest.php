@@ -86,11 +86,12 @@ verify($badReport['successful_matched_comparisons'] === [], 'Wrong-file baseline
 
 if (method_exists(RouterLegacyBenchmark::class, 'classifyChanges')) {
     $before = ['preview/_partials/schema.php' => 'original', 'assets/css/tailwind.css' => 'original'];
-    $after = ['preview/_partials/schema.php' => 'changed', 'public/robots.txt' => 'generated'];
+    $after = ['preview/_partials/schema.php' => 'changed', 'preview/assets/js/navigation.js' => 'generated', 'public/robots.txt' => 'unexpected'];
     $changes = RouterLegacyBenchmark::classifyChanges($before, $after);
     verify(isset($changes['unexpected']['preview/_partials/schema.php']), 'Derived creation rule cannot authorize overwriting an existing file');
     verify(isset($changes['unexpected']['assets/css/tailwind.css']), 'Derived CSS rebuild rule cannot authorize deleting CSS');
-    verify(isset($changes['derived']['public/robots.txt']), 'New known derived discovery artifact is explicit');
+    verify(isset($changes['unexpected']['public/robots.txt']), 'Editing a draft cannot create published discovery files');
+    verify(isset($changes['derived']['preview/assets/js/navigation.js']), 'New known private draft navigation artifact is explicit');
 } else {
     verify(false, 'Hash-aware change classification is implemented');
 }

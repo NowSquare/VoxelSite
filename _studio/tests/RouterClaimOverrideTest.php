@@ -48,6 +48,7 @@ $reset();
 $candidate = 'The best bakery in the country';
 $candidateHash = hash('sha256', $candidate);
 $root = Fixture::create();
+    Fixture::activate($db, $root);
 $previousPreview = getenv('VS_TEST_PREVIEW_DIR'); $previousAssets = getenv('VS_TEST_ASSETS_DIR');
 try {
     $target = $fixture['target'] + ['expected_file_hash' => hash_file('sha256', $root . '/index.php')];
@@ -112,7 +113,8 @@ $cases = ['approved', 'candidate_b', 'repair_b', 'other_path', 'other_address', 
     'key_deleted', 'key_deleted_after_gate', 'key_deleted_after_decision', 'mode_off', 'ledger_down', 'ledger_after_gate', 'ledger_after_decision',
     'audit_write_failure', 'audit_ignore', 'invalid_candidate', 'secret_candidate', 'no_strict_ledger'];
 foreach ($cases as $case) {
-    $root = Fixture::create(); $extraRoot = null; $reset();
+    $root = Fixture::create();
+    Fixture::activate($db, $root); $extraRoot = null; $reset();
     try {
         $target = $fixture['target'] + ['expected_file_hash' => hash_file('sha256', $root . '/index.php')];
         if ($case === 'other_address') {
@@ -124,6 +126,7 @@ foreach ($cases as $case) {
         if (in_array($case, ['other_root', 'wrong_service_root'])) {
             $extraRoot = $root;
             $root = Fixture::create();
+    Fixture::activate($db, $root);
             if ($case === 'other_root') { $service = new RouterClaimOverride($db, $config, 1, $root, ['index.php']); }
         }
         if ($case === 'other_owner') { $service = new RouterClaimOverride($db, $config, 4, $root, ['index.php']); }
@@ -136,7 +139,7 @@ foreach ($cases as $case) {
         if ($case === 'other_address') { $target['source_address'] = '<h2>Second heading</h2>'; $target['content_hash'] = hash('sha256', $target['source_address']); }
         $before = Fixture::snapshot($root); $expected = $before;
         $file = $root . '/' . $target['file_path']; $original = file_get_contents($file);
-        putenv('VS_TEST_PREVIEW_DIR=' . $root); putenv('VS_TEST_ASSETS_DIR=' . $root . '/assets');
+        putenv('VS_TEST_PREVIEW_DIR=' . $root); putenv('VS_TEST_ASSETS_DIR=' . $root . '-state/published/assets');
         $ledger = new AICallLedger($db); $gates = 0; $factories = 0; $cancelled = false; $usedBeforeWriter = false;
         OverrideWriterProbe::$writes = 0;
         $drift = function () use ($file, $root, &$expected): void { file_put_contents($file, "\n<!-- human edit -->\n", FILE_APPEND); $expected = Fixture::snapshot($root); };

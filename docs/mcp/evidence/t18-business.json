@@ -1,0 +1,47 @@
+{
+  "task": "T18",
+  "recorded_at": "2026-10-20",
+  "status": "implemented_focused_verification",
+  "scope": [
+    "Form inventory, pinned schema reads, pure validation and reviewed draft schema changes",
+    "Live Action definitions, all nine shipped templates, duplication, order, bar settings and manifest",
+    "Separate real invocation, inbox read/write/export and mail authority",
+    "Scoped record identities, exact version changes, bulk and purge selections",
+    "Bounded cross-source pagination, CSV exports and verified attachment streams",
+    "Atomic source-database records, request receipts and delivery intents",
+    "Stable Studio request identities, displayed versions and lost-response retries",
+    "Owner-session rollback of interrupted live Action changes without resuming revoked work",
+    "Configured form submission limits keyed by authenticated actor and form, committed atomically with request receipts"
+  ],
+  "verification": [
+    {"command": "php _studio/tests/McpFormsActionsTest.php", "passed": 99},
+    {"command": "php _studio/tests/McpFormRateLimitTest.php", "passed": 21, "note": "Reproduced the missing-limit failure before the fix; verifies retry, actor/form/window isolation, rollback, mail denial, non-storing forms and retained replay."},
+    {"command": "node --test _studio/tests/McpFormsActionsUiTest.mjs", "passed": 10},
+    {"command": "php _studio/tests/McpBusinessBindingTest.php", "passed": 84, "note": "Combined real catalog synthetic wire integration; includes 67 shared lifecycle checks."},
+    {"command": "php _studio/tests/McpLegacyVersionTest.php", "passed": 13},
+    {"command": "node esbuild.config.js", "exit_code": 0},
+    {"command": "PHP lint of services, adapter, migration, business endpoints and submit.php", "exit_code": 0},
+    {"command": "git diff --check on owned modified files", "exit_code": 0},
+    {"command": "ShippedSiteProvenance submit.php hash verification", "exit_code": 0}
+  ],
+  "safety_evidence": [
+    "All fixtures use disposable canonical roots and verify constructor injection before setup.",
+    "Schema reads do not imply inbox authority; real invocation does not imply inbox read; export and mail require separate grants.",
+    "Validation creates no business database, record, upload or notification.",
+    "Repeated invocation preserves exact record IDs; attempted or uncertain delivery is never automatically sent again.",
+    "Authenticated form limits use the published configured maximum (default ten), never a caller-supplied IP. Successful receipt replay consumes no extra quota, and receipt failure rolls back the record and counter together.",
+    "Record and Action mutations require caller request IDs and captured versions; server adapters never fetch a fresh write version.",
+    "Recovery checks current owner session, retained installation, exact path state, expiry and digest, and preserves conflicting bytes.",
+    "Original and recovering actor attribution remain separate. A repaired request is terminal and cannot resume.",
+    "No production or persistent database migration, actual SMTP delivery, or provider request was performed."
+  ],
+  "limits": [
+    "Real invocation with file-upload fields is explicitly unsupported; existing authenticated attachment download remains supported.",
+    "Record deletion and purge retain attachment files for separately authorized maintenance.",
+    "Delivery tests use injected transport fixtures; no claim of exactly-once external delivery.",
+    "Business browser behavior is state-tested; no visual browser qualification is claimed here.",
+    "Owner recovery UI integration is owned by the unified recovery surface and is not claimed complete by this service evidence.",
+    "Action configuration journals are bounded to 512 rows and 16 MiB; exhaustion fails explicitly.",
+    "Synthetic MCP wire tests do not constitute additional named-client qualification."
+  ]
+}

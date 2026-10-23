@@ -1,6 +1,6 @@
 # VoxelSite
 
-Open-source AI website builder. Describe your business in plain language and VoxelSite generates a complete, self-hosted website — pages, layout, copy, styling, and forms. Plain PHP and SQLite, no framework, no SaaS, no vendor lock-in. You own every file.
+Open-source AI website builder. Build in Studio with your own provider key, or connect an external AI tool through private Studio MCP. Describe your business and turn the result into a complete, self-hosted website — pages, layout, copy, styling, and forms. Plain PHP and SQLite, no framework, no SaaS, no vendor lock-in. You own every file.
 
 [![VoxelSite — describe your website and the AI builds it](https://voxelsite.com/assets/screens/create-chat.webp)](https://voxelsite.com/demo)
 
@@ -19,7 +19,8 @@ VoxelSite is open source under the GNU Affero General Public License v3.0 — se
 
 ## What's included
 
-- **AI Studio** — a chat-driven interface to create and edit multi-page websites in plain language; every new site starts from a drawn design direction so no two sites come out the same, and an optional design review scores each generation the way a studio would
+- **AI Studio** — a chat-driven interface to create and edit multi-page websites in plain language; new sites use a drawn design direction, and an optional design review scores each generation the way a studio would
+- **Studio MCP** — connect an external AI tool to inspect the private draft, prepare an exact review, apply it and publish separately; built-in provider keys are optional
 - **Code Editor** — built-in Monaco editor with file explorer, multi-tab editing, and create/delete
 - **Site** — a structural graph of pages, partials, routes, tokens, and assets, with impact analysis, blast-radius queries, page management (rename, change URL, move, delete with automatic reference cleanup), and an AI orchestration console for site-wide changes you review and apply transactionally
 - **Visual Editor** — click-to-edit text, swap images, adjust styles, reorder sections, add sections from a picker, and describe changes with AI — all on the live preview
@@ -27,7 +28,7 @@ VoxelSite is open source under the GNU Affero General Public License v3.0 — se
 - **AI Router** — optional Jev routing selects the model, instructions and site context for each request. Small edits can use a faster model; larger changes use a stronger one
 - **Undo/Redo** — revision history for generated edits, including exact text replacements through AI Router
 - **Website References** — paste any public URL as design inspiration to create or restyle sites
-- **Snapshots** — save and restore entire site states
+- **Snapshots** — capture and restore the draft, published website, or both, with exact reviews and recovery records
 - **Design Library** — save, compare, and switch between entirely different designs
 - **Notes** — a private scratchpad that doubles as AI prompts
 - **Board** — a kanban task tracker with cards, drag-and-drop, and linked pages
@@ -38,11 +39,21 @@ VoxelSite is open source under the GNU Affero General Public License v3.0 — se
 - **Team** — invite editors and viewers with role-based access
 - **AEO** — built-in AI discoverability (`llms.txt`, schema, MCP endpoint)
 
-Site supports bounded edits to existing files. Unresolved PHP references are disclosed, and URL propagation is refused when they prevent reliable analysis. Reviewed AI plans and page mutations retain retry/recovery outcomes; incomplete recovery blocks further website writes until a verified Snapshot restore. Studio protects required recovery snapshots during cleanup and verifies file ownership, permissions and page relationships when restoring new manual and Site safety archives. Pages change in preview until Publish; shared assets can affect the published website immediately.
+Pages, styles, scripts, uploaded assets, site data and form definitions stay in the private draft until Publish. Reviews show the exact files and metadata that will change. Stable operation IDs let you check an interrupted request, continue bounded work, or recover retained originals without repeating the edit. Unresolved dependencies are disclosed; unsafe propagation, stale reviews and independent edits are refused. Protected recovery archives remain available until their work is resolved.
+
+Business operations have their own effects: submissions and Action bookings are live records, while account changes, connection management and favicon replacement are explicitly labeled administrative or live actions. Website snapshots do not restore accounts, credentials or business records.
+
+### Connect an external AI tool
+
+In **Settings → Connections**, activate the private workspace, choose **Codex**, **Claude Code**, or **Other MCP client**, and create a credential with the access it needs. The owner flow reveals the secret once and provides an environment-variable configuration example for `https://your-site.example/_studio/mcp.php`. Keep the secret in your client environment, not in website files.
+
+Start with a read: ask the client to inspect the site and summarize its pages. Then ask it to prepare a small edit, review the retained diff, apply it, and inspect Preview. Publish is a separate step. Copying configuration is not proof of a connection; Settings reports authentication, successful use and permission failures from actual requests.
+
+Studio MCP does not call VoxelSite's built-in providers or AI Router. Your external AI service may have its own costs. The visitor endpoint at `/mcp.php` is separate: it exposes published business information and visitor interactions, never private authoring access. Client-specific qualification is recorded separately from supported protocol and tool contracts.
 
 ### Supported AI providers
 
-Anthropic Claude (recommended), OpenAI, Google Gemini, DeepSeek, or any OpenAI-compatible endpoint. You bring your own key; keys are encrypted at rest.
+For built-in Studio generation: Anthropic Claude, OpenAI, Google Gemini, DeepSeek, or an OpenAI-compatible endpoint. You bring your own key; provider keys are encrypted at rest. You can install for external AI only, or choose to set up AI later.
 
 **Output limits:** Settings shows your configured ceiling, the effective generation limit, and the model's context window. Section edits use at most 16,000 tokens. Compatible endpoints can use documented output/context overrides for each exact model ID and server URL. Empty responses report an error; responses that reach their limit after saving files report partial completion.
 
@@ -113,7 +124,7 @@ git clone https://github.com/NowSquare/VoxelSite.git .
 
 The clone includes `vendor/` and the pre-built Studio assets, so it runs immediately — no `composer install`, no `npm install`.
 
-**No SSH or Git on your host?** Download the latest [release archive](https://github.com/NowSquare/VoxelSite/releases), extract it, and upload the contents with FTP/SFTP or your control panel's file manager. The result is identical.
+**No SSH or Git on your host?** Download the latest [release archive](https://github.com/NowSquare/VoxelSite/releases), extract it, and upload the contents with FTP/SFTP or your control panel's file manager. Use `voxelsite-v1.33.0.zip` for a fresh installation. Existing sites use the separate `voxelsite-v1.33.0-upgrade.zip`, which preserves the homepage, favicon and hosting configuration.
 
 ### Step 2 — Point your web server at the project root
 
@@ -130,25 +141,21 @@ Open `yourdomain.com/_studio/`. With no configuration yet, VoxelSite takes you s
 | Step | What happens |
 |------|-------------|
 | System check | Verifies your PHP version, required extensions, and writable directories |
-| AI provider | Pick a provider and paste your API key (encrypted at rest) |
+| AI setup | Choose built-in AI, an external AI tool, or setup later; only built-in AI needs a provider key |
 | Admin account | Creates your Studio login |
 | Site name | Names your site and finishes setup |
 
-When it finishes you land in the Studio. Describe the website you want and VoxelSite builds it.
+When it finishes you land in Studio. Use built-in chat, connect an external tool in Settings → Connections, or work with the editor. Private workspace activation verifies hosting access protection before external authoring is enabled.
 
-> Your site's root URL returns 403 until your first publish — that is expected. Work in `/_studio/` and publish when you are ready.
+> A fresh installation shows the shipped placeholder until your first publish. Work in `/_studio/` and publish when you are ready.
 
 ---
 
 ## Updating
 
-Update from **Studio → Settings**, on two paths.
+Use **Studio → Settings → Updates** to stage an upgrade ZIP or, on supported Git hosts, an exact Git commit. Staging does not activate code. Inspect the replacement and preservation list, approve the exact review as owner, then apply it. If a request is interrupted, use the retained status and continuation controls.
 
-- **Git updates (recommended for Git installs).** When VoxelSite is a Git checkout, Settings shows a **Git Updates** card. It reports your branch and whether a new version is available, then applies it in one click — it pulls the latest release and runs any pending database migrations. It refuses to run if you have local changes or are ahead of the repository, and never touches your pages, database, settings, or uploads.
-- **Release archive (for shared hosting without Git).** Upload the latest [release archive](https://github.com/NowSquare/VoxelSite/releases) from the same Update card, or drop it in `/dist/` via FTP and apply it there. VoxelSite replaces system files only.
-
-Your pages, settings, SQLite database, and uploaded files are preserved on both paths. The full guide, including the shell `git fetch --tags` / `git checkout <tag>` workflow for pinning a version, is in the [Updating documentation](https://voxelsite.com/docs/getting-started/updating).
-
+For an existing site, choose **`voxelsite-v1.33.0-upgrade.zip`**. The fresh-install ZIP contains a default homepage and hosting files; it is not an in-place upgrade archive. Both update paths protect the private workspace, database, configuration, uploads, website files and recovery records. Git staging requires supported host capabilities; ZIP updates require no shell access. See the [Updating guide](https://voxelsite.com/docs/getting-started/updating).
 ---
 
 ## Package structure
@@ -156,8 +163,9 @@ Your pages, settings, SQLite database, and uploaded files are preserved on both 
 ```
 /                   → Your live website (generated by AI)
 /_studio/           → Admin Studio, installer, engine, compiled UI
-/_partials/         → Shared site partials (header, footer, nav)
-/assets/            → CSS, JS, images, fonts, data, forms
+/_partials/         → Published site partials (header, footer, nav)
+/_studio/preview/   → Private draft, including its own mutable assets
+/assets/            → Published CSS, JS, images, fonts, data, forms
 /_data/             → Form submissions and uploads (private)
 /vendor/            → PHP dependencies (required — do not delete)
 ```
@@ -188,7 +196,7 @@ Demo mode never modifies your live workspace — it reads shipped fixture data. 
 
 | Problem | Fix |
 |---|---|
-| Root URL returns 403 | Normal before your first publish. Go to `yourdomain.com/_studio/` instead |
+| Root URL returns 403 | Check the host permissions and default placeholder; open `yourdomain.com/_studio/` for setup |
 | Installer says "Cannot reach server" | **Apache:** enable `mod_rewrite` and `AllowOverride All`. **Any server:** verify PHP 8.2+ runs and `.php` files are processed |
 | Blank page / 500 error | Verify PHP 8.2+ is active and the required extensions are installed |
 | Permission errors | Make `_studio/data`, `_studio/preview`, and `assets` writable (`755` or `775`) |
@@ -204,7 +212,8 @@ Demo mode never modifies your live workspace — it reads shipped fixture data. 
 
 - The Studio is protected by login, session tokens, and CSRF checks
 - Use HTTPS in production
-- Keep regular backups of `_studio/data/`, `assets/`, and `_data/`
+- Keep regular backups of the private workspace, `_studio/data/`, published website files, `assets/`, and `_data/`
+- Connection credentials are account-bound and audience-specific; revoke a lost credential in Settings → Connections
 - Do not remove the shipped `.htaccess` files — they protect the Studio, data, and uploads
 
 ---

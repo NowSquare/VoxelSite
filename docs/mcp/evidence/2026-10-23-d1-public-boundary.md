@@ -1,0 +1,13 @@
+# D1 migration checkpoints and public data boundary
+
+Focused verification passes on PHP 8.2.35 and 8.5.7: six suites, 597 checks per runtime, three PHP lints per runtime, and no diagnostics in the final runs. All execution used a disposable outer copy. Peer review is pending.
+
+The new migration suite executes the actual migration sequence through 017, 023, 031, 032 and 037, seeds representative retained credentials, scopes, account bindings, pending/completed operations, reservations, release/review metadata, approval/secret metadata and old Action journal payloads, then runs the current Migrator twice. It verifies exact preservation of existing columns and rows, later tables and telemetry defaults, and a second no-op migration. It reports 252 checks per runtime.
+
+The new public-data suite reports 99 checks per runtime. Actual REST HTTP calls read all four public documents while the private draft differs, including category/FAQ filters, closed input schemas, 200-character and 64 KiB boundaries, invalid JSON, symlinks, missing data, current credentials and an active private reservation. The actual generated public MCP endpoint and separately hosted PHP export return the same published data. Static export is separately hosted and declares that public MCP is omitted. Public discovery and explicit resource reads exclude authoring memory; exports contain no Studio runtime or authoring context.
+
+A real publication regression failed on both runtimes: the publisher copied `assets/data/memory.json` and `assets/data/design-intelligence.json` to public URLs. The narrow correction excludes only those exact paths before generation and candidate inventory while retaining them in the private source seal. Regression coverage proves direct public 404s, continuing private FileManager access, exact reviewed deletion of already managed copies, refusal after external drift, preservation of unowned live files, and normal ownership conflict rejection. This is a discovered release-boundary defect; it is not asserted to be a shipped 1.32 customer regression.
+
+Related existing suites pass unchanged: publication 99, export 71, legacy generated publication 44 and legacy publication upgrade 32 checks. Local provider/Router transport tripwires report zero attempts. One test-only PHP 8.5 deprecation in response-header inspection was replaced by cURL status inspection before the final passing runs.
+
+This evidence supports the public-interface boundary, not private draft-read equivalence or native client qualification. Final D1 ZIP and client qualification remain separate gates. Exact source hashes, runtime paths and retained logs are in [the JSON record](2026-10-23-d1-public-boundary.json).

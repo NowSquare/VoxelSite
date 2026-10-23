@@ -1,0 +1,40 @@
+{
+  "status": "focused_green",
+  "file": "_studio/tests/McpBusinessRestRoutesTest.php",
+  "sha256": "16dac36aa41612860f7d9f61fe6f28a2b2fc1163a3a75b405a469dd9c39934f9",
+  "source_copy": "/private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-generated-publish-review-vhlkuzpc",
+  "runtimes": [
+    "PHP 8.2.35",
+    "PHP 8.5.7"
+  ],
+  "checks_per_runtime": 58,
+  "lint_checks": 2,
+  "diagnostics": 0,
+  "provider_attempts": 0,
+  "coverage": [
+    "Actual HTTP list_forms excludes private draft schemas",
+    "Actual Action discovery and availability; capacity occupied then restored by cancellation",
+    "Create/cancel stable identity and exact replay; changed request refusal and capacity refusal",
+    "Actual stored records checked for unique identity, API source and exact data/status",
+    "Form and Action inbox source filters plus legacy action_ identifier",
+    "Mixed cursor pages exhaust actual records once; changed-filter and contradictory-source rejection"
+  ],
+  "logs": [
+    {
+      "path": "docs/mcp/evidence/d1-business-rest-2026-10-23/d1-business-rest-lint-85.log",
+      "sha256": "2c9969098e893e6aa4ab45c8129a262de23fade8d7aa33ed11d7b45ba2b3fe90"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-business-rest-2026-10-23/d1-business-rest-85.log",
+      "sha256": "95c385b518d21b83867750ef747389f62401966ea649dfaa604a40a947a44496"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-business-rest-2026-10-23/d1-business-rest-82.log",
+      "sha256": "95c385b518d21b83867750ef747389f62401966ea649dfaa604a40a947a44496"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-business-rest-2026-10-23/d1-business-rest-lint-82.log",
+      "sha256": "2c9969098e893e6aa4ab45c8129a262de23fade8d7aa33ed11d7b45ba2b3fe90"
+    }
+  ]
+}

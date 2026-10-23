@@ -1,0 +1,60 @@
+{
+  "task": "T17",
+  "recorded_on": "2026-10-20",
+  "status": "focused_service_and_portability_checks_passed",
+  "checks": [
+    {
+      "command": "php _studio/tests/McpExportTest.php",
+      "passed": 65,
+      "failed": 0,
+      "environment": "Disposable canonical temporary roots; approved localhost PHP server serves extracted export without Studio or vendor."
+    },
+    {
+      "command": "php _studio/tests/McpPreviewTest.php",
+      "passed": 44,
+      "failed": 0
+    },
+    {
+      "command": "php _studio/tests/McpPublishTest.php",
+      "passed": 98,
+      "failed": 0
+    },
+    {
+      "command": "php -l (10 touched PHP files); git diff --check",
+      "failed": 0
+    }
+  ],
+  "verified": [
+    "Exact reviewed draft/published source version, canonical source hashes, sealed ZIP hash, compressed/uncompressed bytes, file inventory, expiry and dependency disclosure",
+    "Source and output prospective byte limits, 700-entry ceiling, memory-derived lower host budget, explicit request-time qualification; ZIP STORE avoids compression CPU workload",
+    "Retained request and creation identities with actor/site isolation, exact digest matching, retry receipts and compact expired tombstones",
+    "Single-use 120-second hashed download grants in URL fragments; strict-origin POST exchange clears fragment and never puts bearer token in HTTP request URL",
+    "Current account role, credential revocation, scope narrowing, same-size archive tampering and expiry checked at download; verified bounded same handle streamed",
+    "Independent extracted PHP document root renders recursive pages/partials, stores standalone form submissions without Studio/SQLite, and serves only public read MCP tools and resources",
+    "Static nested links, query/fragment, assets, responsive sources and CSS paths preserved; literal icons embedded; preview instrumentation and runtime omitted",
+    "Unowned public PHP, Studio internals, authoring memory, credential/configuration and existing private submissions excluded; only validated published ownership manifest read",
+    "Studio POST/export shares service while retaining direct ZIP response; MCP catalog/factory integration owned by parent",
+    "Partial expiry cleanup is bounded to 200 entries/50ms; quota released only after complete deletion"
+  ],
+  "interfaces": {
+    "service": "VoxelSite\\ExportService(Database, ActorPolicy, SiteWorkspace, DownloadGrantStore, PublishPlanService)",
+    "methods": "prepare/create/status/download(OperationActor, stdClass)",
+    "schemas": "inputSchema(method), outputSchema(method)",
+    "scopes": [
+      "export:read",
+      "files:read",
+      "assets:read",
+      "forms:read"
+    ],
+    "migration": "026_agent_exports.php / 1.33.0.13",
+    "retention": "PrivateRoot/exports; 30-minute archives; DownloadGrantStore::pruneExpired maximum four rows and 200 entries/50ms; compact request/digest tombstones survive"
+  },
+  "limitations": [
+    "No named external MCP-client qualification claimed",
+    "Static pages still require PHP hosting for standalone form fallback; optional mail delivery and custom Action controls need target-host configuration/adaptation",
+    "Studio management MCP and Action execution are not included; portable public MCP preserves the existing read-only tool/resource subset",
+    "External URLs are retained and reported; no implicit fetch or claim of offline availability",
+    "Dynamic client-side URLs/runtime-generated icon names, visual QA, external availability and target production deployment remain explicitly unverified",
+    "Authored PHP retains the existing installation code-trust boundary; portable rendering is bounded output/preflight, not a PHP sandbox"
+  ]
+}

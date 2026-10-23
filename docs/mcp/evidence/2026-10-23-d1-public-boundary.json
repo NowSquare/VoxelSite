@@ -1,0 +1,212 @@
+{
+  "status": "focused_green_peer_pending",
+  "scope": "D1 early-MCP checkpoint migration and published/public data boundary; native client and final ZIP qualification remain separate",
+  "source_copy": "/private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-generated-publish-review-vhlkuzpc",
+  "changed_files": {
+    "_studio/engine/Agent/PublishPlanService.php": "b2b8148c723d4d143ef76ae75c977f873f107139513090470d8bc301880ca1e9",
+    "_studio/tests/McpPublicDataBoundaryTest.php": "153fef50b845477c88216e5ccb45767dbde4c0736f4bf97157db3d67db0ec7a4",
+    "_studio/tests/McpEarlyMigrationCheckpointTest.php": "5dbe506c316dabd1d9199779c72480193e01abc9775aa22cc7833cf9943b40f1"
+  },
+  "runtimes": [
+    {
+      "php_binary": "/Users/admin/Library/Application Support/Herd/bin/php82",
+      "version": "8.2.35",
+      "checks": 597,
+      "suites": [
+        {
+          "suite": "McpEarlyMigrationCheckpointTest",
+          "exit": 0,
+          "last": "252 early MCP migration checkpoint checks passed",
+          "diagnostics": false
+        },
+        {
+          "suite": "McpPublicDataBoundaryTest",
+          "exit": 0,
+          "last": "99 public-data boundary checks passed",
+          "diagnostics": false
+        },
+        {
+          "suite": "McpPublishTest",
+          "exit": 0,
+          "last": "MCP publish: 99 checks, 0 failures",
+          "diagnostics": false
+        },
+        {
+          "suite": "McpExportTest",
+          "exit": 0,
+          "last": "71 export checks passed",
+          "diagnostics": false
+        },
+        {
+          "suite": "McpLegacyGeneratedPublishTest",
+          "exit": 0,
+          "last": "44 legacy generated publication checks passed",
+          "diagnostics": false
+        },
+        {
+          "suite": "McpLegacyPublishUpgradeTest",
+          "exit": 0,
+          "last": "32 legacy publish upgrade checks passed",
+          "diagnostics": false
+        },
+        {
+          "lint": "_studio/tests/McpEarlyMigrationCheckpointTest.php",
+          "exit": 0,
+          "output": "No syntax errors detected in _studio/tests/McpEarlyMigrationCheckpointTest.php\n"
+        },
+        {
+          "lint": "_studio/tests/McpPublicDataBoundaryTest.php",
+          "exit": 0,
+          "output": "No syntax errors detected in _studio/tests/McpPublicDataBoundaryTest.php\n"
+        },
+        {
+          "lint": "_studio/engine/Agent/PublishPlanService.php",
+          "exit": 0,
+          "output": "No syntax errors detected in _studio/engine/Agent/PublishPlanService.php\n"
+        }
+      ]
+    },
+    {
+      "php_binary": "/opt/homebrew/bin/php",
+      "version": "8.5.7",
+      "checks": 597,
+      "suites": [
+        {
+          "suite": "McpEarlyMigrationCheckpointTest",
+          "exit": 0,
+          "last": "252 early MCP migration checkpoint checks passed",
+          "diagnostics": false
+        },
+        {
+          "suite": "McpPublicDataBoundaryTest",
+          "exit": 0,
+          "last": "99 public-data boundary checks passed",
+          "diagnostics": false
+        },
+        {
+          "suite": "McpPublishTest",
+          "exit": 0,
+          "last": "MCP publish: 99 checks, 0 failures",
+          "diagnostics": false
+        },
+        {
+          "suite": "McpExportTest",
+          "exit": 0,
+          "last": "71 export checks passed",
+          "diagnostics": false
+        },
+        {
+          "suite": "McpLegacyGeneratedPublishTest",
+          "exit": 0,
+          "last": "44 legacy generated publication checks passed",
+          "diagnostics": false
+        },
+        {
+          "suite": "McpLegacyPublishUpgradeTest",
+          "exit": 0,
+          "last": "32 legacy publish upgrade checks passed",
+          "diagnostics": false
+        },
+        {
+          "lint": "_studio/tests/McpEarlyMigrationCheckpointTest.php",
+          "exit": 0,
+          "output": "No syntax errors detected in _studio/tests/McpEarlyMigrationCheckpointTest.php\n"
+        },
+        {
+          "lint": "_studio/tests/McpPublicDataBoundaryTest.php",
+          "exit": 0,
+          "output": "No syntax errors detected in _studio/tests/McpPublicDataBoundaryTest.php\n"
+        },
+        {
+          "lint": "_studio/engine/Agent/PublishPlanService.php",
+          "exit": 0,
+          "output": "No syntax errors detected in _studio/engine/Agent/PublishPlanService.php\n"
+        }
+      ]
+    }
+  ],
+  "red_evidence": {
+    "82": "d1-public-data-red-82.log",
+    "85": "d1-public-data-red-85.log",
+    "failure": "Real publication copied memory.json and design-intelligence.json into public assets/data despite MCP/export filtering"
+  },
+  "limits": [
+    "Generated public MCP coverage is read-only public data; not equivalent to private draft files_read or Studio management tools.",
+    "No claim is made that the frozen historical 1.32 release had the same publication defect.",
+    "Early checkpoint fixtures execute the real ordered migrations and seed retained rows where their tables exist; they are not customer databases."
+  ],
+  "logs": [
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-McpEarlyMigrationCheckpointTest-82.log",
+      "sha256": "663ccbe7f2df169c9f12453a8185a924eecb275136c2b01aeb772092db4afd80"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-McpEarlyMigrationCheckpointTest-85.log",
+      "sha256": "663ccbe7f2df169c9f12453a8185a924eecb275136c2b01aeb772092db4afd80"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-McpExportTest-82.log",
+      "sha256": "2763cb3d22d353df3713810245e1eb7e4fdbb3afe1da936d9a950e029f6dee60"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-McpExportTest-85.log",
+      "sha256": "2763cb3d22d353df3713810245e1eb7e4fdbb3afe1da936d9a950e029f6dee60"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-McpLegacyGeneratedPublishTest-82.log",
+      "sha256": "a3825f209804056c439e761fc76a024558fb7fe30ec6707f5e3e36d62a1a6b85"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-McpLegacyGeneratedPublishTest-85.log",
+      "sha256": "a3825f209804056c439e761fc76a024558fb7fe30ec6707f5e3e36d62a1a6b85"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-McpLegacyPublishUpgradeTest-82.log",
+      "sha256": "fd0425d64f964ceb0f10a55d11bbbfd133f7cee2254df729cc5774b2adbe30bb"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-McpLegacyPublishUpgradeTest-85.log",
+      "sha256": "fd0425d64f964ceb0f10a55d11bbbfd133f7cee2254df729cc5774b2adbe30bb"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-McpPublicDataBoundaryTest-82.log",
+      "sha256": "26f435c147766ed9ed54d34a5740cc993c42b1cbd83cfdb6b764f6f171e20510"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-McpPublicDataBoundaryTest-85.log",
+      "sha256": "26f435c147766ed9ed54d34a5740cc993c42b1cbd83cfdb6b764f6f171e20510"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-McpPublishTest-82.log",
+      "sha256": "a9b25136067a4f4366098cdf7e2ec439c937313c212d1f87f5571349e8309b8b"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-McpPublishTest-85.log",
+      "sha256": "a9b25136067a4f4366098cdf7e2ec439c937313c212d1f87f5571349e8309b8b"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-early-migrations-82.log",
+      "sha256": "663ccbe7f2df169c9f12453a8185a924eecb275136c2b01aeb772092db4afd80"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-early-migrations-85.log",
+      "sha256": "663ccbe7f2df169c9f12453a8185a924eecb275136c2b01aeb772092db4afd80"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-public-data-red-82.log",
+      "sha256": "b27add4252980e7898c2dde498bea4dacfa51a8b324a18b61038540066231280"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-public-data-red-85.log",
+      "sha256": "b27add4252980e7898c2dde498bea4dacfa51a8b324a18b61038540066231280"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-public-lint-82.log",
+      "sha256": "0591dd859595ee2d68f116c3cea97b1948c0eaa38d241c95ed5ab579eb3d2b84"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-public-boundary-2026-10-23/d1-public-lint-85.log",
+      "sha256": "0591dd859595ee2d68f116c3cea97b1948c0eaa38d241c95ed5ab579eb3d2b84"
+    }
+  ]
+}

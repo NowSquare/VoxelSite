@@ -1,0 +1,3825 @@
+{
+  "date": "2026-10-23",
+  "release": "1.33.0",
+  "status": "focused_contract_evidence_with_explicit_limitations",
+  "runtime_note": "Own adapter/navigation/mapping runs use Herd PHP8.2.35 and8.5.12; independently owned workflow/public/REST/restore runs use8.2.35 andHomebrew8.5.7. No conflation of patch versions.",
+  "source_hashes": {
+    "_studio/engine/Agent/ModelBudgetService.php": "a44d3c757f232f8ae8c918c987aeb20e1d868044aaade124ecf5b97d87fe7e00",
+    "_studio/engine/GenerationBudget.php": "35ac1959dc1c048f25fa77bb00c232dff3399f957bac80daea591d4f80c8f616",
+    "_studio/engine/ModelCapabilities.php": "9a5efe6009bfe16374baf1fd37884bca6fbcacbdd02d4c862a4bc4740f5f4b37",
+    "_studio/api/endpoints/settings.php": "57ded7e22cf2d86b134843944229479885a0f43d63d5982628fc30db103bac7f",
+    "_studio/engine/Agent/ExternalActivityService.php": "5ebcbeeca64f00ce8b1b7d60fdf5cae7e5439443081126e293c234552a2de57d",
+    "_studio/engine/Agent/ConnectionService.php": "3472d582f7a219107039c939546ec37eb116704b46267a8e5ffb3dbbad10c0f8",
+    "_studio/engine/Agent/LegacySiteControlService.php": "ef71a9fde8ff4ff4afbb67d34f93b8175ff75803e9276ce8173a36567b0df159",
+    "_studio/engine/SitePlanStore.php": "fe888a30cc1f2b4305e9bb420187b19a001e500800a486ae55f31604f1012181",
+    "_studio/engine/Agent/NavigationPreflightService.php": "9dcf80cd9999e01f7c1b4d49cac74d1cc358f6df71aeba15aa5ddf2b6adedf19",
+    "_studio/api/endpoints/site-control.php": "89503a99657c8d859af20e0d31419b11347aae0a2a04b93bfe533e34167aac9d",
+    "_studio/engine/Agent/CapabilityCatalog.php": "0dfff0fd68222f17a430265ceedf25c17a5294f2a1a0af9b08c57f6be5971777",
+    "_studio/engine/Agent/McpApplication.php": "4a635f1f94b535633ff6c8b1afc1c0b0b1b6e5abfc181be11dbc190fe38c2a31",
+    "_studio/tests/McpModelBudgetTest.php": "883f19cc67dee7e68c02ea2d0874d0f3be174b4b887eb2c0e9a2fb0eab0aa62d",
+    "_studio/tests/helpers/call-model-budget.php": "1d84a0a87a21358b06d4fb12720ed883b16daadff5920bb3d07e7c7379bf97da",
+    "_studio/tests/McpExternalActivityTest.php": "273e272e11fffe1c96f43af1d439d5078d885889d1d49d6b3b3910d74a20ec1e",
+    "_studio/tests/helpers/call-site-activity.php": "1408dc21b8ef19dcb9c23a30fc840ebe918c4e3cd09d7090e687664a6f35d4d7",
+    "_studio/tests/McpLegacySiteControlTest.php": "2fa2ca61a4441fa8dd296be36cc02eb1575951cd968f4fe4da123a2d0a7650f2",
+    "_studio/tests/McpNavigationPreflightTest.php": "20820c29b5ee1a466f65b19e7eab95b161f15dc4c89f7ce690ec73eb6d66ff71",
+    "_studio/tests/helpers/call-navigation-preflight.php": "142d66a50d43f689a4d136b91ca759137e6b827ecd129a965f52b137007fe4c7",
+    "_studio/tests/McpOwnerRoutesTest.php": "87b5a59f89203bfe8abafa2835b77969c306dafe6c18cf8816a35f6577c8993c",
+    "_studio/tests/helpers/DisposableStudioHttp.php": "c198f3b5d9d01e7728ab690be98e62eb08e38877717556ac4a9020777354a44d",
+    "_studio/tests/McpUpdateRoutesTest.php": "87930911c5b0778b37749099744501a99bb2e865e3bb0ec02f3715cbe52a5dfc",
+    "_studio/tests/McpDiscoveryBudgetTest.php": "c4d61ec64bdabef960f6bdb328728cd0750a3402a753138175cc81a3c8c1b25f"
+  },
+  "manifest_sha256": "b2c4e73c988c69d500558119fae66ccaaa4916153e8170404248e23df5f29f78",
+  "documentation_hashes": {
+    ".ai/VoxelSite-03-pr.md": "864a663ab105d7e07c60a758716a64fb3436882839223bfa8e1656bd564df14b",
+    "README.md": "1f1f6d05b084b174451b70f5bfa5b12fe3da7c0877d26843bed8920e07bbbe82"
+  },
+  "counts": {
+    "verified": 217,
+    "boundary": 52
+  },
+  "row_changes": [
+    {
+      "id": "agent_rest.delete.pages.slug",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpPagesCompileTest.php",
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact delete/url structural intents preserve source preconditions, registry identity and inbound references. Homepage restrictions and stale state are refused; publication is separate."
+    },
+    {
+      "id": "agent_rest.get.pages",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_pages_list"
+      ],
+      "tests": [
+        "_studio/tests/McpPagesCompileTest.php",
+        "_studio/tests/McpManagementBindingTest.php",
+        "_studio/tests/McpStudioAuthoringRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Bounded private page inventory with captured version; observational reads do not synchronize registry rows."
+    },
+    {
+      "id": "agent_rest.get.pages.slug",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_pages_read"
+      ],
+      "tests": [
+        "_studio/tests/McpPagesCompileTest.php",
+        "_studio/tests/McpManagementBindingTest.php",
+        "_studio/tests/McpStudioAuthoringRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact private page source and metadata share the captured draft version and content hash."
+    },
+    {
+      "id": "agent_rest.get.submissions.actions",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_submissions_list"
+      ],
+      "tests": [
+        "_studio/tests/McpBusinessRestRoutesTest.php",
+        "_studio/tests/McpBusinessBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Typed source=action/form filters preserve actual REST branch semantics, retained actor attribution, stable cursor/filter binding and bounded mixed inbox reads."
+    },
+    {
+      "id": "agent_rest.get.submissions.forms",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_submissions_list"
+      ],
+      "tests": [
+        "_studio/tests/McpBusinessRestRoutesTest.php",
+        "_studio/tests/McpBusinessBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Typed source=action/form filters preserve actual REST branch semantics, retained actor attribution, stable cursor/filter binding and bounded mixed inbox reads."
+    },
+    {
+      "id": "agent_rest.get.tools",
+      "from": "pending",
+      "to": "boundary",
+      "tools": [],
+      "tests": [
+        "_studio/tests/McpPublicDataBoundaryTest.php",
+        "_studio/tests/McpBusinessRestRoutesTest.php",
+        "_studio/tests/McpExportTest.php"
+      ],
+      "boundary": "public_interface",
+      "notes": "Published visitor data/catalog is an explicit public-interface boundary. Existing REST requests remain credential-authenticated; the generated public MCP and portable PHP export expose bounded published values, never private draft memory. Private management files_read is not an equivalent alias."
+    },
+    {
+      "id": "agent_rest.post.pages",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_pages_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpPagesCompileTest.php",
+        "_studio/tests/McpManagementBindingTest.php",
+        "_studio/tests/McpStudioAuthoringRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Outcome-equivalent typed page_create/page_update/page_navigation/pages_reorder intents prepare exact source and page_changes. Inspect retained review, apply its digest, and explicitly continue; stable replay preserves page IDs and creates one revision."
+    },
+    {
+      "id": "agent_rest.post.tools.invoke.action_availability",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_actions_availability"
+      ],
+      "tests": [
+        "_studio/tests/McpBusinessRestRoutesTest.php",
+        "_studio/tests/McpBusinessBindingTest.php",
+        "_studio/tests/McpFormsActionsTest.php"
+      ],
+      "boundary": null,
+      "notes": "Actual REST availability before booking, while occupied and after cancellation uses the shared current Action version/capacity policy."
+    },
+    {
+      "id": "agent_rest.post.tools.invoke.action_cancel",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_actions_invoke"
+      ],
+      "tests": [
+        "_studio/tests/McpBusinessRestRoutesTest.php",
+        "_studio/tests/McpBusinessBindingTest.php",
+        "_studio/tests/McpFormsActionsTest.php"
+      ],
+      "boundary": null,
+      "notes": "Typed create/cancel invocation preserves exact version, API actor/source, stable request identity and retained replay. Capacity, changed input and narrowed authority are refused without duplicate records."
+    },
+    {
+      "id": "agent_rest.post.tools.invoke.action_make",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_actions_invoke"
+      ],
+      "tests": [
+        "_studio/tests/McpBusinessRestRoutesTest.php",
+        "_studio/tests/McpBusinessBindingTest.php",
+        "_studio/tests/McpFormsActionsTest.php"
+      ],
+      "boundary": null,
+      "notes": "Typed create/cancel invocation preserves exact version, API actor/source, stable request identity and retained replay. Capacity, changed input and narrowed authority are refused without duplicate records."
+    },
+    {
+      "id": "agent_rest.post.tools.invoke.get_business_info",
+      "from": "pending",
+      "to": "boundary",
+      "tools": [],
+      "tests": [
+        "_studio/tests/McpPublicDataBoundaryTest.php",
+        "_studio/tests/McpBusinessRestRoutesTest.php",
+        "_studio/tests/McpExportTest.php"
+      ],
+      "boundary": "public_interface",
+      "notes": "Published visitor data/catalog is an explicit public-interface boundary. Existing REST requests remain credential-authenticated; the generated public MCP and portable PHP export expose bounded published values, never private draft memory. Private management files_read is not an equivalent alias."
+    },
+    {
+      "id": "agent_rest.post.tools.invoke.get_faq",
+      "from": "pending",
+      "to": "boundary",
+      "tools": [],
+      "tests": [
+        "_studio/tests/McpPublicDataBoundaryTest.php",
+        "_studio/tests/McpBusinessRestRoutesTest.php",
+        "_studio/tests/McpExportTest.php"
+      ],
+      "boundary": "public_interface",
+      "notes": "Published visitor data/catalog is an explicit public-interface boundary. Existing REST requests remain credential-authenticated; the generated public MCP and portable PHP export expose bounded published values, never private draft memory. Private management files_read is not an equivalent alias."
+    },
+    {
+      "id": "agent_rest.post.tools.invoke.get_form_schema",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_forms_get"
+      ],
+      "tests": [
+        "_studio/tests/McpBusinessRestRoutesTest.php",
+        "_studio/tests/McpBusinessBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Use source=published for the exact published form schema. The private draft form contract is selected separately."
+    },
+    {
+      "id": "agent_rest.post.tools.invoke.get_menu",
+      "from": "pending",
+      "to": "boundary",
+      "tools": [],
+      "tests": [
+        "_studio/tests/McpPublicDataBoundaryTest.php",
+        "_studio/tests/McpBusinessRestRoutesTest.php",
+        "_studio/tests/McpExportTest.php"
+      ],
+      "boundary": "public_interface",
+      "notes": "Published visitor data/catalog is an explicit public-interface boundary. Existing REST requests remain credential-authenticated; the generated public MCP and portable PHP export expose bounded published values, never private draft memory. Private management files_read is not an equivalent alias."
+    },
+    {
+      "id": "agent_rest.post.tools.invoke.get_services",
+      "from": "pending",
+      "to": "boundary",
+      "tools": [],
+      "tests": [
+        "_studio/tests/McpPublicDataBoundaryTest.php",
+        "_studio/tests/McpBusinessRestRoutesTest.php",
+        "_studio/tests/McpExportTest.php"
+      ],
+      "boundary": "public_interface",
+      "notes": "Published visitor data/catalog is an explicit public-interface boundary. Existing REST requests remain credential-authenticated; the generated public MCP and portable PHP export expose bounded published values, never private draft memory. Private management files_read is not an equivalent alias."
+    },
+    {
+      "id": "agent_rest.post.tools.invoke.list_forms",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_forms_list"
+      ],
+      "tests": [
+        "_studio/tests/McpBusinessRestRoutesTest.php",
+        "_studio/tests/McpBusinessBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Use source=published; actual REST list excludes private-only forms and retains bounded published inventory semantics."
+    },
+    {
+      "id": "agent_rest.post.tools.invoke.submit_form",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_forms_submit"
+      ],
+      "tests": [
+        "_studio/tests/McpBusinessRestRoutesTest.php",
+        "_studio/tests/McpBusinessBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Submission uses published schema version, exact request identity and typed validation. Replay does not duplicate business records."
+    },
+    {
+      "id": "agent_rest.put.pages.slug",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_pages_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpPagesCompileTest.php",
+        "_studio/tests/McpManagementBindingTest.php",
+        "_studio/tests/McpStudioAuthoringRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Outcome-equivalent typed page_create/page_update/page_navigation/pages_reorder intents prepare exact source and page_changes. Inspect retained review, apply its digest, and explicitly continue; stable replay preserves page IDs and creates one revision."
+    },
+    {
+      "id": "studio.delete.pages.slug",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpPagesCompileTest.php",
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact delete/url structural intents preserve source preconditions, registry identity and inbound references. Homepage restrictions and stale state are refused; publication is separate."
+    },
+    {
+      "id": "studio.delete.settings.api.keys.id",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_credentials_prepare",
+        "voxelsite_credentials_get",
+        "voxelsite_credentials_apply"
+      ],
+      "tests": [
+        "_studio/tests/McpCredentialAdministrationTest.php",
+        "_studio/tests/McpConnectionCorrectnessTest.php",
+        "_studio/tests/ExternalOnlyInstallTest.php"
+      ],
+      "boundary": null,
+      "notes": "Shared reviewed credential administration enforces owner account, exact version and stable identity. Fresh owner approval and one-time secret reveal remain separate session boundaries; replay receipts contain no plaintext secret."
+    },
+    {
+      "id": "studio.delete.settings.mcp.connections.id",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_credentials_prepare",
+        "voxelsite_credentials_get",
+        "voxelsite_credentials_apply"
+      ],
+      "tests": [
+        "_studio/tests/McpCredentialAdministrationTest.php",
+        "_studio/tests/McpConnectionCorrectnessTest.php",
+        "_studio/tests/ExternalOnlyInstallTest.php"
+      ],
+      "boundary": null,
+      "notes": "Shared reviewed credential administration enforces owner account, exact version and stable identity. Fresh owner approval and one-time secret reveal remain separate session boundaries; replay receipts contain no plaintext secret."
+    },
+    {
+      "id": "studio.delete.snapshots.id",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_snapshots_delete_review",
+        "voxelsite_snapshots_delete",
+        "voxelsite_operations_get"
+      ],
+      "tests": [
+        "_studio/tests/McpSnapshotDeletionTest.php",
+        "_studio/tests/McpSnapshotDeletionBindingTest.php",
+        "_studio/tests/McpSnapshotHttpTest.php"
+      ],
+      "boundary": null,
+      "notes": "Deletion requires reviewed archive version and stable operation identity; protected archives and changed bytes are refused, retained retry does not delete another archive."
+    },
+    {
+      "id": "studio.get.ai.actions",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_context",
+        "voxelsite_authoring_brief",
+        "voxelsite_authoring_get",
+        "voxelsite_rules_read"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpContextTest.php",
+        "_studio/tests/PromptContractTest.php"
+      ],
+      "boundary": null,
+      "notes": "Advertised action enum matches ActionRegistry; each action has bounded canonical rules and a retained brief. This is the external authoring recipe contract, not an identical native provider wizard response."
+    },
+    {
+      "id": "studio.get.ai.actions.id",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_context",
+        "voxelsite_authoring_brief",
+        "voxelsite_authoring_get",
+        "voxelsite_rules_read"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpContextTest.php",
+        "_studio/tests/PromptContractTest.php"
+      ],
+      "boundary": null,
+      "notes": "Advertised action enum matches ActionRegistry; each action has bounded canonical rules and a retained brief. This is the external authoring recipe contract, not an identical native provider wizard response."
+    },
+    {
+      "id": "studio.get.ai.conversations.id",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_diagnostics_conversation"
+      ],
+      "tests": [
+        "_studio/tests/McpSettingsDiagnosticsTest.php",
+        "_studio/tests/McpManagementBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Typed singular conversation read preserves current actor scope, pagination and redaction; no invented conversation-list alias."
+    },
+    {
+      "id": "studio.get.files.content.root_seo",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_seo_read"
+      ],
+      "tests": [
+        "_studio/tests/McpPagesCompileTest.php",
+        "_studio/tests/McpManagementBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Reads exact private _root/robots.txt or llms.txt source, version and hash; absence is explicit. Public generated bytes are a different domain."
+    },
+    {
+      "id": "studio.get.pages",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_pages_list"
+      ],
+      "tests": [
+        "_studio/tests/McpPagesCompileTest.php",
+        "_studio/tests/McpManagementBindingTest.php",
+        "_studio/tests/McpStudioAuthoringRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Bounded private page inventory with captured version; observational reads do not synchronize registry rows."
+    },
+    {
+      "id": "studio.get.pages.slug",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_pages_read"
+      ],
+      "tests": [
+        "_studio/tests/McpPagesCompileTest.php",
+        "_studio/tests/McpManagementBindingTest.php",
+        "_studio/tests/McpStudioAuthoringRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact private page source and metadata share the captured draft version and content hash."
+    },
+    {
+      "id": "studio.get.preview.diff",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_publish_diff"
+      ],
+      "tests": [
+        "_studio/tests/McpPublicationDiffTest.php",
+        "_studio/tests/McpOwnerRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact Studio and MCP publication diff is a bounded observational comparison of draft, retained published source and managed live drift; it creates no plan, operation, revision or version."
+    },
+    {
+      "id": "studio.get.settings.api.keys",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_credentials_list"
+      ],
+      "tests": [
+        "_studio/tests/McpCredentialAdministrationTest.php",
+        "_studio/tests/McpConnectionCorrectnessTest.php",
+        "_studio/tests/ExternalOnlyInstallTest.php"
+      ],
+      "boundary": null,
+      "notes": "Shared reviewed credential administration enforces owner account, exact version and stable identity. Fresh owner approval and one-time secret reveal remain separate session boundaries; replay receipts contain no plaintext secret."
+    },
+    {
+      "id": "studio.get.settings.mcp",
+      "from": "implemented",
+      "to": "boundary",
+      "tools": [],
+      "tests": [
+        "_studio/tests/McpConnectionCorrectnessTest.php",
+        "_studio/tests/McpConnectionTelemetryTest.php",
+        "_studio/tests/ExternalOnlyInstallTest.php"
+      ],
+      "boundary": "interactive_owner_or_session_flow",
+      "notes": "Interactive owner-only connection setup/status includes activation or disabling, pending one-time secret deliveries, client qualification and telemetry. Credential list/prepare is not an alias for this owner-session flow."
+    },
+    {
+      "id": "studio.get.settings.mcp.activity",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_activity"
+      ],
+      "tests": [
+        "_studio/tests/McpExternalActivityTest.php",
+        "_studio/tests/McpConnectionCorrectnessTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact shared latest external-revision summary retains recorded actor label after local Studio edits or credential revocation/deletion. Bounds paths and attribution; never exposes credential IDs or secrets."
+    },
+    {
+      "id": "studio.get.site.control.mutations.id",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_control_mutation_read"
+      ],
+      "tests": [
+        "_studio/tests/McpLegacySiteControlTest.php"
+      ],
+      "boundary": null,
+      "notes": "Bounded current-account read of actual native 32-hex mutation history. Opaque historical payload requires form and operation read scopes; absent records are not created and applying history is never recovered by a read."
+    },
+    {
+      "id": "studio.get.site.control.nav.preflight",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_navigation"
+      ],
+      "tests": [
+        "_studio/tests/McpNavigationPreflightTest.php",
+        "_studio/tests/SiteControlNavReorderTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact shared five-state navigation preflight includes pinned Home, movable tree and current position; reads do not execute PHP, normalize nav, synchronize pages or change history. Linked/oversized source and narrowed authority are refused."
+    },
+    {
+      "id": "studio.get.site.control.plans.id",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_control_plan_read"
+      ],
+      "tests": [
+        "_studio/tests/McpLegacySiteControlTest.php",
+        "_studio/tests/SitePlanStoreTest.php"
+      ],
+      "boundary": null,
+      "notes": "Bounded current-account read of the actual native 48-hex plan, with digest-pinned UTF-8 continuation and path-specific form authority. It preserves historical state and performs no recovery-on-GET."
+    },
+    {
+      "id": "studio.get.site.reset",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_get",
+        "voxelsite_reset_get",
+        "voxelsite_operations_get"
+      ],
+      "tests": [
+        "_studio/tests/McpOwnerRoutesTest.php",
+        "_studio/tests/McpResetTest.php",
+        "_studio/tests/McpResetCrashTest.php",
+        "_studio/tests/McpBusinessBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Pure status, exact reset review and retained operation reads preserve their separate identifiers and never advance work."
+    },
+    {
+      "id": "studio.get.site.reset.install",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_get",
+        "voxelsite_factory_reset_get"
+      ],
+      "tests": [
+        "_studio/tests/McpFactoryResetTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php",
+        "_studio/tests/McpOwnerRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Read workspace state or an exact installation-deletion review; reads cannot start deletion."
+    },
+    {
+      "id": "studio.get.snapshots",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_snapshots_list"
+      ],
+      "tests": [
+        "_studio/tests/McpApplicationTest.php",
+        "_studio/tests/McpSnapshotHttpTest.php",
+        "_studio/tests/McpRestoreTest.php"
+      ],
+      "boundary": null,
+      "notes": "Bounded retained archive inventory with explicit cursor; listing metadata does not claim archive bytes were verified."
+    },
+    {
+      "id": "studio.get.snapshots.id.delete.review",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_snapshots_delete_review"
+      ],
+      "tests": [
+        "_studio/tests/McpSnapshotDeletionTest.php",
+        "_studio/tests/McpSnapshotDeletionBindingTest.php",
+        "_studio/tests/McpSnapshotHttpTest.php"
+      ],
+      "boundary": null,
+      "notes": "Read exact archive hash/version and current protection; references and recovery archives remain protected."
+    },
+    {
+      "id": "studio.get.update.dist.packages",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_updates_packages"
+      ],
+      "tests": [
+        "_studio/tests/McpUpdateTest.php",
+        "_studio/tests/McpUpdateRoutesTest.php",
+        "_studio/tests/McpUpdateRuntimeTest.php",
+        "_studio/tests/McpUpdateGitTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "List bounded known local packages without activation."
+    },
+    {
+      "id": "studio.get.update.git.status",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_updates_inspect"
+      ],
+      "tests": [
+        "_studio/tests/McpUpdateTest.php",
+        "_studio/tests/McpUpdateRoutesTest.php",
+        "_studio/tests/McpUpdateRuntimeTest.php",
+        "_studio/tests/McpUpdateGitTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Inspect installed version and explicit host Git capability; unsupported hosts refuse Git staging."
+    },
+    {
+      "id": "studio.get.update.inspect",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_updates_inspect"
+      ],
+      "tests": [
+        "_studio/tests/McpUpdateTest.php",
+        "_studio/tests/McpUpdateRoutesTest.php",
+        "_studio/tests/McpUpdateRuntimeTest.php",
+        "_studio/tests/McpUpdateGitTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Read current installed version and host capabilities without staging or executing an update. Current shared contract and actual route evidence retained; named-client qualification remains independent."
+    },
+    {
+      "id": "studio.post.assets.upload",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_assets_upload_begin",
+        "voxelsite_assets_upload_chunk",
+        "voxelsite_assets_upload_finish",
+        "voxelsite_changes_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpAssetsAndImportTest.php",
+        "_studio/tests/McpAssetTransferTest.php",
+        "_studio/tests/McpAssetDocumentTest.php",
+        "_studio/tests/McpAssetUiTest.mjs"
+      ],
+      "boundary": null,
+      "notes": "Upload stages inert bounded bytes. Attaching the finalized upload uses an immutable change review and changes only private draft; live activation requires separate publication."
+    },
+    {
+      "id": "studio.post.settings.api.keys",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_credentials_prepare",
+        "voxelsite_credentials_get",
+        "voxelsite_credentials_apply"
+      ],
+      "tests": [
+        "_studio/tests/McpCredentialAdministrationTest.php",
+        "_studio/tests/McpConnectionCorrectnessTest.php",
+        "_studio/tests/ExternalOnlyInstallTest.php"
+      ],
+      "boundary": null,
+      "notes": "Shared reviewed credential administration enforces owner account, exact version and stable identity. Fresh owner approval and one-time secret reveal remain separate session boundaries; replay receipts contain no plaintext secret."
+    },
+    {
+      "id": "studio.post.settings.mcp",
+      "from": "implemented",
+      "to": "boundary",
+      "tools": [],
+      "tests": [
+        "_studio/tests/McpConnectionCorrectnessTest.php",
+        "_studio/tests/McpConnectionTelemetryTest.php",
+        "_studio/tests/ExternalOnlyInstallTest.php"
+      ],
+      "boundary": "interactive_owner_or_session_flow",
+      "notes": "Interactive owner-only connection setup/status includes activation or disabling, pending one-time secret deliveries, client qualification and telemetry. Credential list/prepare is not an alias for this owner-session flow."
+    },
+    {
+      "id": "studio.post.settings.mcp.connections",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_credentials_prepare",
+        "voxelsite_credentials_get",
+        "voxelsite_credentials_apply"
+      ],
+      "tests": [
+        "_studio/tests/McpCredentialAdministrationTest.php",
+        "_studio/tests/McpConnectionCorrectnessTest.php",
+        "_studio/tests/ExternalOnlyInstallTest.php"
+      ],
+      "boundary": null,
+      "notes": "Shared reviewed credential administration enforces owner account, exact version and stable identity. Fresh owner approval and one-time secret reveal remain separate session boundaries; replay receipts contain no plaintext secret."
+    },
+    {
+      "id": "studio.post.settings.mcp.rest.bind",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_credentials_prepare",
+        "voxelsite_credentials_get",
+        "voxelsite_credentials_apply"
+      ],
+      "tests": [
+        "_studio/tests/McpCredentialAdministrationTest.php",
+        "_studio/tests/McpConnectionCorrectnessTest.php",
+        "_studio/tests/ExternalOnlyInstallTest.php"
+      ],
+      "boundary": null,
+      "notes": "Shared reviewed credential administration enforces owner account, exact version and stable identity. Fresh owner approval and one-time secret reveal remain separate session boundaries; replay receipts contain no plaintext secret."
+    },
+    {
+      "id": "studio.post.settings.model.budget",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_settings_model_budget"
+      ],
+      "tests": [
+        "_studio/tests/McpModelBudgetTest.php",
+        "_studio/tests/GenerationBudgetTest.php",
+        "_studio/tests/ModelCapabilitySettingsTest.php",
+        "_studio/tests/PromptContractTest.php"
+      ],
+      "boundary": null,
+      "notes": "Pure local configured/focused model-budget read uses documented limits, saved metadata and endpoint-bound overrides. No provider construction, key decryption, model discovery or transport occurs. Native provider tests/discovery remain a separate boundary."
+    },
+    {
+      "id": "studio.post.site.control.apply",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_control_plan_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpLegacySiteControlTest.php",
+        "_studio/tests/McpApplyRecoveryTest.php"
+      ],
+      "boundary": null,
+      "notes": "Import an unexpired ready native plan through pure PatchExecutor conversion into a separate immutable change review under the common writer lock. Revalidate account, digest, whole-site fingerprint, every source hash and unique anchors. Shared apply/replay/recovery never executes the native plan or rewrites historical outcome."
+    },
+    {
+      "id": "studio.post.site.reset",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_reset_apply"
+      ],
+      "tests": [
+        "_studio/tests/McpOwnerRoutesTest.php",
+        "_studio/tests/McpResetTest.php",
+        "_studio/tests/McpResetCrashTest.php",
+        "_studio/tests/McpBusinessBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Apply only an already owner-approved exact reset plan/digest. Fresh Studio approval is not supplied by an MCP confirmation. Bounded apply/replay uses one retained operation."
+    },
+    {
+      "id": "studio.post.site.reset.continue",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpOwnerRoutesTest.php",
+        "_studio/tests/McpResetTest.php",
+        "_studio/tests/McpResetCrashTest.php",
+        "_studio/tests/McpBusinessBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Explicit shared continuation for kind=site.reset requires the returned checkpoint; wrong kind, stale checkpoint and unauthorized continuation are refused."
+    },
+    {
+      "id": "studio.post.site.reset.install",
+      "from": "pending",
+      "to": "boundary",
+      "tools": [],
+      "tests": [
+        "_studio/tests/McpFactoryResetTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php",
+        "_studio/tests/McpOwnerRoutesTest.php"
+      ],
+      "boundary": "interactive_owner_or_session_flow",
+      "notes": "Factory reset completion and review discard require an interactive owner/session. MCP may prepare/read the exact review but cannot start installation deletion or claim its fresh owner confirmation."
+    },
+    {
+      "id": "studio.post.site.reset.install.discard",
+      "from": "pending",
+      "to": "boundary",
+      "tools": [],
+      "tests": [
+        "_studio/tests/McpFactoryResetTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php",
+        "_studio/tests/McpOwnerRoutesTest.php"
+      ],
+      "boundary": "interactive_owner_or_session_flow",
+      "notes": "Factory reset completion and review discard require an interactive owner/session. MCP may prepare/read the exact review but cannot start installation deletion or claim its fresh owner confirmation."
+    },
+    {
+      "id": "studio.post.site.reset.install.prepare",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_factory_reset_prepare"
+      ],
+      "tests": [
+        "_studio/tests/McpFactoryResetTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php",
+        "_studio/tests/McpOwnerRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Prepare bounded exact installation-deletion and preservation inventory for a separate owner review; no activation occurs."
+    },
+    {
+      "id": "studio.post.site.reset.prepare",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_reset_prepare"
+      ],
+      "tests": [
+        "_studio/tests/McpOwnerRoutesTest.php",
+        "_studio/tests/McpResetTest.php",
+        "_studio/tests/McpResetCrashTest.php",
+        "_studio/tests/McpBusinessBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Prepare an exact website reset review; uploads, hosting files, business data and installation identity remain outside this reset."
+    },
+    {
+      "id": "studio.post.site.reset.recover",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_operations_recover"
+      ],
+      "tests": [
+        "_studio/tests/McpOwnerRoutesTest.php",
+        "_studio/tests/McpResetTest.php",
+        "_studio/tests/McpResetCrashTest.php",
+        "_studio/tests/McpBusinessBindingTest.php",
+        "_studio/tests/McpApplyRecoveryTest.php"
+      ],
+      "boundary": null,
+      "notes": "Explicit reset recovery preserves independent edits and the earliest original failure; successful restoration reports failed_restored rather than converting failure into success. Owner takeover remains separate."
+    },
+    {
+      "id": "studio.post.snapshots",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_snapshots_create",
+        "voxelsite_operations_get",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpApplicationTest.php",
+        "_studio/tests/McpSnapshotHttpTest.php",
+        "_studio/tests/McpRestoreTest.php"
+      ],
+      "boundary": null,
+      "notes": "Capture explicit website domains through bounded retained work; business/configuration data are excluded. Retry and continuation retain one snapshot."
+    },
+    {
+      "id": "studio.post.snapshots.id.restore",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_snapshots_inspect",
+        "voxelsite_restore_prepare",
+        "voxelsite_restore_get",
+        "voxelsite_restore_apply",
+        "voxelsite_operations_get",
+        "voxelsite_operations_continue",
+        "voxelsite_operations_recover"
+      ],
+      "tests": [
+        "_studio/tests/McpApplicationTest.php",
+        "_studio/tests/McpRestoreTest.php",
+        "_studio/tests/McpSnapshotHttpTest.php",
+        "_studio/tests/SiteSnapshotRecoveryTest.php",
+        "_studio/tests/SiteSnapshotRetentionTest.php",
+        "_studio/tests/McpRestorePublicBoundaryTest.php"
+      ],
+      "boundary": null,
+      "notes": "Restore only exact reviewed explicit domains; draft restoration and live restoration have separate authority. Preserve metadata/modes, business/configuration domains and earliest failure truth through interruption and recovery. Forward published-domain restoration also refuses the exact authoring-only memory paths; draft inspection/restoration and before-state rollback remain available. See 2026-10-23-d1-restore-boundary evidence."
+    },
+    {
+      "id": "studio.post.update.apply",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_updates_apply"
+      ],
+      "tests": [
+        "_studio/tests/McpUpdateTest.php",
+        "_studio/tests/McpUpdateRoutesTest.php",
+        "_studio/tests/McpUpdateRuntimeTest.php",
+        "_studio/tests/McpUpdateGitTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Activate only the exact owner-approved update; retained operation and independent maintenance bridge handle continuation and recovery. Current shared contract and actual route evidence retained; named-client qualification remains independent."
+    },
+    {
+      "id": "studio.post.update.apply.local",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_updates_stage_local"
+      ],
+      "tests": [
+        "_studio/tests/McpUpdateTest.php",
+        "_studio/tests/McpUpdateRoutesTest.php",
+        "_studio/tests/McpUpdateRuntimeTest.php",
+        "_studio/tests/McpUpdateGitTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Stage the exact supported local archive as inert data; separate prepare/owner approval/apply activates it."
+    },
+    {
+      "id": "studio.post.update.cleanup",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_update_package_cleanup"
+      ],
+      "tests": [
+        "_studio/tests/McpUpdateTest.php",
+        "_studio/tests/McpUpdateRoutesTest.php",
+        "_studio/tests/McpUpdateRuntimeTest.php",
+        "_studio/tests/McpUpdateGitTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Bounded expired staging cleanup preserves active jobs, reviews, recovery originals and retained request identities. Current shared contract and actual route evidence retained; named-client qualification remains independent."
+    },
+    {
+      "id": "studio.post.update.git.update",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_updates_stage_git"
+      ],
+      "tests": [
+        "_studio/tests/McpUpdateTest.php",
+        "_studio/tests/McpUpdateRoutesTest.php",
+        "_studio/tests/McpUpdateRuntimeTest.php",
+        "_studio/tests/McpUpdateGitTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Stage an exact supported Git commit in private storage. Real local-repository HTTP test proves stable replay with live HEAD/version/files unchanged before activation."
+    },
+    {
+      "id": "studio.post.update.package.begin",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_update_package_begin"
+      ],
+      "tests": [
+        "_studio/tests/McpUpdateTest.php",
+        "_studio/tests/McpUpdateRoutesTest.php",
+        "_studio/tests/McpUpdateRuntimeTest.php",
+        "_studio/tests/McpUpdateGitTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Shared bounded inert package transfer; PHP activation requires a separate exact review and owner approval. Current shared contract and actual route evidence retained; named-client qualification remains independent."
+    },
+    {
+      "id": "studio.post.update.package.chunk",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_update_package_chunk"
+      ],
+      "tests": [
+        "_studio/tests/McpUpdateTest.php",
+        "_studio/tests/McpUpdateRoutesTest.php",
+        "_studio/tests/McpUpdateRuntimeTest.php",
+        "_studio/tests/McpUpdateGitTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Shared bounded inert package transfer; PHP activation requires a separate exact review and owner approval. Current shared contract and actual route evidence retained; named-client qualification remains independent."
+    },
+    {
+      "id": "studio.post.update.package.finish",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_update_package_finish"
+      ],
+      "tests": [
+        "_studio/tests/McpUpdateTest.php",
+        "_studio/tests/McpUpdateRoutesTest.php",
+        "_studio/tests/McpUpdateRuntimeTest.php",
+        "_studio/tests/McpUpdateGitTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Shared bounded inert package transfer; PHP activation requires a separate exact review and owner approval. Current shared contract and actual route evidence retained; named-client qualification remains independent."
+    },
+    {
+      "id": "studio.post.update.package.get",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_update_package_get"
+      ],
+      "tests": [
+        "_studio/tests/McpUpdateTest.php",
+        "_studio/tests/McpUpdateRoutesTest.php",
+        "_studio/tests/McpUpdateRuntimeTest.php",
+        "_studio/tests/McpUpdateGitTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Shared bounded inert package transfer; PHP activation requires a separate exact review and owner approval. Current shared contract and actual route evidence retained; named-client qualification remains independent."
+    },
+    {
+      "id": "studio.post.update.prepare",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_updates_prepare"
+      ],
+      "tests": [
+        "_studio/tests/McpUpdateTest.php",
+        "_studio/tests/McpUpdateRoutesTest.php",
+        "_studio/tests/McpUpdateRuntimeTest.php",
+        "_studio/tests/McpUpdateGitTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "Retain exact replacement and migration inventory for owner review; staging does not activate code. Current shared contract and actual route evidence retained; named-client qualification remains independent."
+    },
+    {
+      "id": "studio.post.update.upload",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_update_package_begin",
+        "voxelsite_update_package_chunk",
+        "voxelsite_update_package_finish",
+        "voxelsite_update_package_get"
+      ],
+      "tests": [
+        "_studio/tests/McpUpdateTest.php",
+        "_studio/tests/McpUpdateRoutesTest.php",
+        "_studio/tests/McpUpdateRuntimeTest.php",
+        "_studio/tests/McpUpdateGitTest.php",
+        "_studio/tests/McpUpdateFactoryBindingTest.php"
+      ],
+      "boundary": null,
+      "notes": "External equivalent of multipart upload is bounded private chunk transfer with exact package digest/checkpoint; host upload limits and invalid archive refusal are retained. Transfer never activates PHP."
+    },
+    {
+      "id": "studio.put.files.content.root_seo",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "The seo_override intent reviews exact private root override creation/replacement/deletion. Applying changes only the draft; publication separately activates generated public output."
+    },
+    {
+      "id": "studio.put.pages.reorder",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_pages_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpPagesCompileTest.php",
+        "_studio/tests/McpManagementBindingTest.php",
+        "_studio/tests/McpStudioAuthoringRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Outcome-equivalent typed page_create/page_update/page_navigation/pages_reorder intents prepare exact source and page_changes. Inspect retained review, apply its digest, and explicitly continue; stable replay preserves page IDs and creates one revision."
+    },
+    {
+      "id": "studio.put.pages.slug.metadata",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_pages_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpPagesCompileTest.php",
+        "_studio/tests/McpManagementBindingTest.php",
+        "_studio/tests/McpStudioAuthoringRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Outcome-equivalent typed page_create/page_update/page_navigation/pages_reorder intents prepare exact source and page_changes. Inspect retained review, apply its digest, and explicitly continue; stable replay preserves page IDs and creates one revision."
+    },
+    {
+      "id": "studio.put.pages.slug.nav",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_pages_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpPagesCompileTest.php",
+        "_studio/tests/McpManagementBindingTest.php",
+        "_studio/tests/McpStudioAuthoringRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Outcome-equivalent typed page_create/page_update/page_navigation/pages_reorder intents prepare exact source and page_changes. Inspect retained review, apply its digest, and explicitly continue; stable replay preserves page IDs and creates one revision."
+    },
+    {
+      "id": "studio.put.pages.slug.url",
+      "from": "pending",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpPagesCompileTest.php",
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringRoutesTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact delete/url structural intents preserve source preconditions, registry identity and inbound references. Homepage restrictions and stale state are refused; publication is separate."
+    },
+    {
+      "id": "workflow.authoring.add_page",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_context",
+        "voxelsite_authoring_brief",
+        "voxelsite_authoring_get",
+        "voxelsite_rules_read",
+        "voxelsite_changes_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpContextTest.php",
+        "_studio/tests/McpAuthoringTest.php",
+        "_studio/tests/McpChangeSetTest.php",
+        "_studio/tests/PromptContractTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact add_page recipe: discovered action enum, canonical rules and retained brief followed by full HTTP review/diff/apply/continuation/replay with exact expected source, metadata and private/live effects. This is scripted outcome equivalence, not model-led authorship or design-quality qualification."
+    },
+    {
+      "id": "workflow.authoring.add_section",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_context",
+        "voxelsite_authoring_brief",
+        "voxelsite_authoring_get",
+        "voxelsite_rules_read",
+        "voxelsite_changes_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpContextTest.php",
+        "_studio/tests/McpAuthoringTest.php",
+        "_studio/tests/McpChangeSetTest.php",
+        "_studio/tests/PromptContractTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact add_section recipe: discovered action enum, canonical rules and retained brief followed by full HTTP review/diff/apply/continuation/replay with exact expected source, metadata and private/live effects. This is scripted outcome equivalence, not model-led authorship or design-quality qualification."
+    },
+    {
+      "id": "workflow.authoring.change_design",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_context",
+        "voxelsite_authoring_brief",
+        "voxelsite_authoring_get",
+        "voxelsite_rules_read",
+        "voxelsite_changes_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpContextTest.php",
+        "_studio/tests/McpAuthoringTest.php",
+        "_studio/tests/McpChangeSetTest.php",
+        "_studio/tests/PromptContractTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact change_design recipe: discovered action enum, canonical rules and retained brief followed by full HTTP review/diff/apply/continuation/replay with exact expected source, metadata and private/live effects. This is scripted outcome equivalence, not model-led authorship or design-quality qualification."
+    },
+    {
+      "id": "workflow.authoring.create_site",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_context",
+        "voxelsite_authoring_brief",
+        "voxelsite_authoring_get",
+        "voxelsite_rules_read",
+        "voxelsite_changes_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpContextTest.php",
+        "_studio/tests/McpAuthoringTest.php",
+        "_studio/tests/McpChangeSetTest.php",
+        "_studio/tests/PromptContractTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact create_site recipe: discovered action enum, canonical rules and retained brief followed by full HTTP review/diff/apply/continuation/replay with exact expected source, metadata and private/live effects. This is scripted outcome equivalence, not model-led authorship or design-quality qualification."
+    },
+    {
+      "id": "workflow.authoring.edit_page",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_context",
+        "voxelsite_authoring_brief",
+        "voxelsite_authoring_get",
+        "voxelsite_rules_read",
+        "voxelsite_changes_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpContextTest.php",
+        "_studio/tests/McpAuthoringTest.php",
+        "_studio/tests/McpChangeSetTest.php",
+        "_studio/tests/PromptContractTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact edit_page recipe: discovered action enum, canonical rules and retained brief followed by full HTTP review/diff/apply/continuation/replay with exact expected source, metadata and private/live effects. This is scripted outcome equivalence, not model-led authorship or design-quality qualification."
+    },
+    {
+      "id": "workflow.authoring.free_prompt",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_context",
+        "voxelsite_authoring_brief",
+        "voxelsite_authoring_get",
+        "voxelsite_rules_read",
+        "voxelsite_changes_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpContextTest.php",
+        "_studio/tests/McpAuthoringTest.php",
+        "_studio/tests/McpChangeSetTest.php",
+        "_studio/tests/PromptContractTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact free_prompt recipe: discovered action enum, canonical rules and retained brief followed by full HTTP review/diff/apply/continuation/replay with exact expected source, metadata and private/live effects. This is scripted outcome equivalence, not model-led authorship or design-quality qualification."
+    },
+    {
+      "id": "workflow.authoring.import_site",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_context",
+        "voxelsite_authoring_brief",
+        "voxelsite_authoring_get",
+        "voxelsite_rules_read",
+        "voxelsite_changes_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpContextTest.php",
+        "_studio/tests/McpAuthoringTest.php",
+        "_studio/tests/McpChangeSetTest.php",
+        "_studio/tests/PromptContractTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact import_site recipe: discovered action enum, canonical rules and retained brief followed by full HTTP review/diff/apply/continuation/replay with exact expected source, metadata and private/live effects. This is scripted outcome equivalence, not model-led authorship or design-quality qualification."
+    },
+    {
+      "id": "workflow.authoring.inline_edit",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_context",
+        "voxelsite_authoring_brief",
+        "voxelsite_authoring_get",
+        "voxelsite_rules_read",
+        "voxelsite_changes_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpContextTest.php",
+        "_studio/tests/McpAuthoringTest.php",
+        "_studio/tests/McpChangeSetTest.php",
+        "_studio/tests/PromptContractTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact inline_edit recipe: discovered action enum, canonical rules and retained brief followed by full HTTP review/diff/apply/continuation/replay with exact expected source, metadata and private/live effects. This is scripted outcome equivalence, not model-led authorship or design-quality qualification."
+    },
+    {
+      "id": "workflow.authoring.optimize_aeo",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_context",
+        "voxelsite_authoring_brief",
+        "voxelsite_authoring_get",
+        "voxelsite_rules_read",
+        "voxelsite_changes_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpContextTest.php",
+        "_studio/tests/McpAuthoringTest.php",
+        "_studio/tests/McpChangeSetTest.php",
+        "_studio/tests/PromptContractTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact optimize_aeo recipe: discovered action enum, canonical rules and retained brief followed by full HTTP review/diff/apply/continuation/replay with exact expected source, metadata and private/live effects. This is scripted outcome equivalence, not model-led authorship or design-quality qualification."
+    },
+    {
+      "id": "workflow.authoring.restyle_site",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_context",
+        "voxelsite_authoring_brief",
+        "voxelsite_authoring_get",
+        "voxelsite_rules_read",
+        "voxelsite_changes_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpContextTest.php",
+        "_studio/tests/McpAuthoringTest.php",
+        "_studio/tests/McpChangeSetTest.php",
+        "_studio/tests/PromptContractTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact restyle_site recipe: discovered action enum, canonical rules and retained brief followed by full HTTP review/diff/apply/continuation/replay with exact expected source, metadata and private/live effects. This is scripted outcome equivalence, not model-led authorship or design-quality qualification."
+    },
+    {
+      "id": "workflow.authoring.section_edit",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_site_context",
+        "voxelsite_authoring_brief",
+        "voxelsite_authoring_get",
+        "voxelsite_rules_read",
+        "voxelsite_changes_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpContextTest.php",
+        "_studio/tests/McpAuthoringTest.php",
+        "_studio/tests/McpChangeSetTest.php",
+        "_studio/tests/PromptContractTest.php"
+      ],
+      "boundary": null,
+      "notes": "Exact section_edit recipe: discovered action enum, canonical rules and retained brief followed by full HTTP review/diff/apply/continuation/replay with exact expected source, metadata and private/live effects. This is scripted outcome equivalence, not model-led authorship or design-quality qualification."
+    },
+    {
+      "id": "workflow.visual_edit.add_class_token",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_discover",
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringUiTest.mjs"
+      ],
+      "boundary": null,
+      "notes": "Exact add_class_token outcome over unique hash-anchored source through structure_prepare(type=visual) and normal shared changes. Reorder/insert uses a reviewed enclosing source region; ambiguous/stale anchors are refused. This does not claim generic DOM selector support or native browser gesture qualification."
+    },
+    {
+      "id": "workflow.visual_edit.delete_node",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_discover",
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringUiTest.mjs"
+      ],
+      "boundary": null,
+      "notes": "Exact delete_node outcome over unique hash-anchored source through structure_prepare(type=visual) and normal shared changes. Reorder/insert uses a reviewed enclosing source region; ambiguous/stale anchors are refused. This does not claim generic DOM selector support or native browser gesture qualification."
+    },
+    {
+      "id": "workflow.visual_edit.fallback",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_discover",
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringUiTest.mjs"
+      ],
+      "boundary": null,
+      "notes": "Exact fallback outcome over unique hash-anchored source through structure_prepare(type=visual) and normal shared changes. Reorder/insert uses a reviewed enclosing source region; ambiguous/stale anchors are refused. This does not claim generic DOM selector support or native browser gesture qualification."
+    },
+    {
+      "id": "workflow.visual_edit.insert_node",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_discover",
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringUiTest.mjs"
+      ],
+      "boundary": null,
+      "notes": "Exact insert_node outcome over unique hash-anchored source through structure_prepare(type=visual) and normal shared changes. Reorder/insert uses a reviewed enclosing source region; ambiguous/stale anchors are refused. This does not claim generic DOM selector support or native browser gesture qualification."
+    },
+    {
+      "id": "workflow.visual_edit.move_after",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_discover",
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringUiTest.mjs"
+      ],
+      "boundary": null,
+      "notes": "Exact move_after outcome over unique hash-anchored source through structure_prepare(type=visual) and normal shared changes. Reorder/insert uses a reviewed enclosing source region; ambiguous/stale anchors are refused. This does not claim generic DOM selector support or native browser gesture qualification."
+    },
+    {
+      "id": "workflow.visual_edit.move_before",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_discover",
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringUiTest.mjs"
+      ],
+      "boundary": null,
+      "notes": "Exact move_before outcome over unique hash-anchored source through structure_prepare(type=visual) and normal shared changes. Reorder/insert uses a reviewed enclosing source region; ambiguous/stale anchors are refused. This does not claim generic DOM selector support or native browser gesture qualification."
+    },
+    {
+      "id": "workflow.visual_edit.remove_class_token",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_discover",
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringUiTest.mjs"
+      ],
+      "boundary": null,
+      "notes": "Exact remove_class_token outcome over unique hash-anchored source through structure_prepare(type=visual) and normal shared changes. Reorder/insert uses a reviewed enclosing source region; ambiguous/stale anchors are refused. This does not claim generic DOM selector support or native browser gesture qualification."
+    },
+    {
+      "id": "workflow.visual_edit.replace_html",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_discover",
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringUiTest.mjs"
+      ],
+      "boundary": null,
+      "notes": "Exact replace_html outcome over unique hash-anchored source through structure_prepare(type=visual) and normal shared changes. Reorder/insert uses a reviewed enclosing source region; ambiguous/stale anchors are refused. This does not claim generic DOM selector support or native browser gesture qualification."
+    },
+    {
+      "id": "workflow.visual_edit.set_attribute",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_discover",
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringUiTest.mjs"
+      ],
+      "boundary": null,
+      "notes": "Exact set_attribute outcome over unique hash-anchored source through structure_prepare(type=visual) and normal shared changes. Reorder/insert uses a reviewed enclosing source region; ambiguous/stale anchors are refused. This does not claim generic DOM selector support or native browser gesture qualification."
+    },
+    {
+      "id": "workflow.visual_edit.set_class_list",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_discover",
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringUiTest.mjs"
+      ],
+      "boundary": null,
+      "notes": "Exact set_class_list outcome over unique hash-anchored source through structure_prepare(type=visual) and normal shared changes. Reorder/insert uses a reviewed enclosing source region; ambiguous/stale anchors are refused. This does not claim generic DOM selector support or native browser gesture qualification."
+    },
+    {
+      "id": "workflow.visual_edit.set_text",
+      "from": "implemented",
+      "to": "verified",
+      "tools": [
+        "voxelsite_structure_discover",
+        "voxelsite_structure_prepare",
+        "voxelsite_changes_get",
+        "voxelsite_changes_diff",
+        "voxelsite_changes_apply",
+        "voxelsite_operations_continue"
+      ],
+      "tests": [
+        "_studio/tests/McpWorkflowHttpTest.php",
+        "_studio/tests/McpSiteStructureTest.php",
+        "_studio/tests/McpStudioAuthoringUiTest.mjs"
+      ],
+      "boundary": null,
+      "notes": "Exact set_text outcome over unique hash-anchored source through structure_prepare(type=visual) and normal shared changes. Reorder/insert uses a reviewed enclosing source region; ambiguous/stale anchors are refused. This does not claim generic DOM selector support or native browser gesture qualification."
+    }
+  ],
+  "runs": [
+    {
+      "label": "adapter82",
+      "source": "/private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-review-current-enkc15ki",
+      "source_sha256": "37fc916dbc7ec2966d85bf6308c7819edd232674649f30d68d86b869f676c973",
+      "php": "/Users/admin/Library/Application Support/Herd/bin/php82",
+      "passed": 14,
+      "total": 14,
+      "results": [
+        {
+          "test": "GenerationBudgetTest.php",
+          "exit": 0,
+          "seconds": 3.52,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter82-GenerationBudgetTest.php.log",
+            "sha256": "87bf52259784b7f3403826a63d4fab006a974111199a9d2dfa1b5d1a66be4534"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "McpApplyRecoveryTest.php",
+          "exit": 0,
+          "seconds": 1.03,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter82-McpApplyRecoveryTest.php.log",
+            "sha256": "ba322971bfd120d7d3201cae427e4c06f3edec6a50a3a03811e620ed4679d0d1"
+          },
+          "summary_lines": [
+            "Apply/recovery: 65 checks passed, including real process termination."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpConnectionCorrectnessTest.php",
+          "exit": 0,
+          "seconds": 2.31,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter82-McpConnectionCorrectnessTest.php.log",
+            "sha256": "a5681a8132303820f071ec79c208d1925fe0049bf3797078604810b906d4aced"
+          },
+          "summary_lines": [
+            "MCP credential administration: 54 combined checks passed",
+            "PASS Workspace storage read failures retain their operational exception",
+            "MCP connection correctness: 20 checks, 0 failures"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpConnectionTelemetryTest.php",
+          "exit": 0,
+          "seconds": 0.18,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter82-McpConnectionTelemetryTest.php.log",
+            "sha256": "3dc1cdd94d46c33102d575a6885dc96531a85a3b7b12f56df99cd847cc587307"
+          },
+          "summary_lines": [
+            "PASS Unknown or malformed credentials cannot attribute failures to another connection",
+            "39 connection telemetry checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpDiscoveryBudgetTest.php",
+          "exit": 0,
+          "seconds": 0.94,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter82-McpDiscoveryBudgetTest.php.log",
+            "sha256": "7a5486c843362f6b589538cfd76c434b316aaf88cb1aca2ba62441994d5d0573"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-074a9aa3e386",
+            "MCP discovery budgets: 82 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpExternalActivityTest.php",
+          "exit": 0,
+          "seconds": 0.61,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter82-McpExternalActivityTest.php.log",
+            "sha256": "9abc02e1a6ed867a716af0c40409cc97b6438bd06ba1f574728e949469b71f74"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-6d4c8d0fa9c8",
+            "MCP external activity: 80 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpLegacySiteControlTest.php",
+          "exit": 0,
+          "seconds": 0.97,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter82-McpLegacySiteControlTest.php.log",
+            "sha256": "7e81e8c64fc42b65e51a4d5df54f4e6c7a56cd3b83976d78b01540b643d4791f"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-12486b077c52",
+            "MCP legacy Site control: 172 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpModelBudgetTest.php",
+          "exit": 0,
+          "seconds": 0.77,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter82-McpModelBudgetTest.php.log",
+            "sha256": "b289715fb2aef89b0d1d40f3c08b912e2a30e6892f914fd129a4cd288e9d0867"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-9ea7260f4458",
+            "MCP model budget: 104 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpNoProviderCallsTest.php",
+          "exit": 0,
+          "seconds": 0.08,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter82-McpNoProviderCallsTest.php.log",
+            "sha256": "5298e458296f0ba6fb6ac24ee1bb685b42ffefc54f7b049efb980f69e09e10ef"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "McpOwnerRoutesTest.php",
+          "exit": 0,
+          "seconds": 0.56,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter82-McpOwnerRoutesTest.php.log",
+            "sha256": "ab085b8a642ea843344d1c0aa232e704f2410971bdb02fa76fe4697022861eae"
+          },
+          "summary_lines": [
+            "24 owner route checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpUpdateRoutesTest.php",
+          "exit": 0,
+          "seconds": 3.2,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter82-McpUpdateRoutesTest.php.log",
+            "sha256": "5ffd6ca24f6adce31195c9ce4452262044bee9cd6e46cd698c2b31cfd7d9d29e"
+          },
+          "summary_lines": [
+            "70 combined update route checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "ModelCapabilitySettingsTest.php",
+          "exit": 0,
+          "seconds": 0.66,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter82-ModelCapabilitySettingsTest.php.log",
+            "sha256": "5db259eac015904186615c3751c78c5dd03a2db44404139759c35850ecf42e96"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "PromptContractTest.php",
+          "exit": 0,
+          "seconds": 0.13,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter82-PromptContractTest.php.log",
+            "sha256": "c2848b09aa05f553d78d2f6cdce3fb79d56a988b7ef15d85780d4457bf3365f5"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "SitePlanStoreTest.php",
+          "exit": 0,
+          "seconds": 0.14,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter82-SitePlanStoreTest.php.log",
+            "sha256": "1a3dd69f5ad0990022b99306bc237252cb868a9ec87b70f3555437cc2f1d38cf"
+          },
+          "summary_lines": [
+            "11 checks passed. Fixture: /var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-plan-store-57e5977d854e"
+          ],
+          "diagnostics": []
+        }
+      ]
+    },
+    {
+      "label": "adapter85",
+      "source": "/private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-review-current-enkc15ki",
+      "source_sha256": "37fc916dbc7ec2966d85bf6308c7819edd232674649f30d68d86b869f676c973",
+      "php": "/Users/admin/Library/Application Support/Herd/bin/php85",
+      "passed": 14,
+      "total": 14,
+      "results": [
+        {
+          "test": "GenerationBudgetTest.php",
+          "exit": 0,
+          "seconds": 3.72,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter85-GenerationBudgetTest.php.log",
+            "sha256": "87bf52259784b7f3403826a63d4fab006a974111199a9d2dfa1b5d1a66be4534"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "McpApplyRecoveryTest.php",
+          "exit": 0,
+          "seconds": 1.07,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter85-McpApplyRecoveryTest.php.log",
+            "sha256": "ba322971bfd120d7d3201cae427e4c06f3edec6a50a3a03811e620ed4679d0d1"
+          },
+          "summary_lines": [
+            "Apply/recovery: 65 checks passed, including real process termination."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpConnectionCorrectnessTest.php",
+          "exit": 0,
+          "seconds": 2.79,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter85-McpConnectionCorrectnessTest.php.log",
+            "sha256": "a5681a8132303820f071ec79c208d1925fe0049bf3797078604810b906d4aced"
+          },
+          "summary_lines": [
+            "MCP credential administration: 54 combined checks passed",
+            "PASS Workspace storage read failures retain their operational exception",
+            "MCP connection correctness: 20 checks, 0 failures"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpConnectionTelemetryTest.php",
+          "exit": 0,
+          "seconds": 0.18,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter85-McpConnectionTelemetryTest.php.log",
+            "sha256": "3dc1cdd94d46c33102d575a6885dc96531a85a3b7b12f56df99cd847cc587307"
+          },
+          "summary_lines": [
+            "PASS Unknown or malformed credentials cannot attribute failures to another connection",
+            "39 connection telemetry checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpDiscoveryBudgetTest.php",
+          "exit": 0,
+          "seconds": 0.99,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter85-McpDiscoveryBudgetTest.php.log",
+            "sha256": "7575fc59d742914a07a55aebea885fe3328c25e5f64847aeed9da216df7c5958"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-ab1ed9fe75b4",
+            "MCP discovery budgets: 82 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpExternalActivityTest.php",
+          "exit": 0,
+          "seconds": 0.61,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter85-McpExternalActivityTest.php.log",
+            "sha256": "7b2ffc03a4cc4c87212daf8bd9140fef3b331df54a3ed631c1eb72474c14a038"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-d4abbd27f8f3",
+            "MCP external activity: 80 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpLegacySiteControlTest.php",
+          "exit": 0,
+          "seconds": 1.2,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter85-McpLegacySiteControlTest.php.log",
+            "sha256": "a986e242fae70f0c918901bcec6962147f19e632b4329367b7fb950d24bec438"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-5eae5374755d",
+            "MCP legacy Site control: 172 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpModelBudgetTest.php",
+          "exit": 0,
+          "seconds": 0.73,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter85-McpModelBudgetTest.php.log",
+            "sha256": "092669aba2768d83bcbcccfc96fe005420a02cee4a0277478bde75e0c9a0fb0f"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-1f8785942aba",
+            "MCP model budget: 104 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpNoProviderCallsTest.php",
+          "exit": 0,
+          "seconds": 0.08,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter85-McpNoProviderCallsTest.php.log",
+            "sha256": "5298e458296f0ba6fb6ac24ee1bb685b42ffefc54f7b049efb980f69e09e10ef"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "McpOwnerRoutesTest.php",
+          "exit": 0,
+          "seconds": 0.56,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter85-McpOwnerRoutesTest.php.log",
+            "sha256": "ab085b8a642ea843344d1c0aa232e704f2410971bdb02fa76fe4697022861eae"
+          },
+          "summary_lines": [
+            "24 owner route checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpUpdateRoutesTest.php",
+          "exit": 0,
+          "seconds": 3.22,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter85-McpUpdateRoutesTest.php.log",
+            "sha256": "5ffd6ca24f6adce31195c9ce4452262044bee9cd6e46cd698c2b31cfd7d9d29e"
+          },
+          "summary_lines": [
+            "70 combined update route checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "ModelCapabilitySettingsTest.php",
+          "exit": 0,
+          "seconds": 0.61,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter85-ModelCapabilitySettingsTest.php.log",
+            "sha256": "5db259eac015904186615c3751c78c5dd03a2db44404139759c35850ecf42e96"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "PromptContractTest.php",
+          "exit": 0,
+          "seconds": 0.12,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter85-PromptContractTest.php.log",
+            "sha256": "c2848b09aa05f553d78d2f6cdce3fb79d56a988b7ef15d85780d4457bf3365f5"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "SitePlanStoreTest.php",
+          "exit": 0,
+          "seconds": 0.13,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/adapter85-SitePlanStoreTest.php.log",
+            "sha256": "a4edfb6f9567493cc339092eb99e59496d5c30d88aa2c1dfaa65df43edc5b4e8"
+          },
+          "summary_lines": [
+            "11 checks passed. Fixture: /var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-plan-store-55710830d3d3"
+          ],
+          "diagnostics": []
+        }
+      ]
+    },
+    {
+      "label": "navigation82",
+      "source": "/private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-review-current-cfqkdw8j",
+      "source_sha256": "087efd001acdfe8339a9752ceaad75681ef935ec3208092cd24647dc447bd18a",
+      "php": "/Users/admin/Library/Application Support/Herd/bin/php82",
+      "passed": 6,
+      "total": 6,
+      "results": [
+        {
+          "test": "McpCapabilityRegistryTest.php",
+          "exit": 0,
+          "seconds": 0.04,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/navigation82-McpCapabilityRegistryTest.php.log",
+            "sha256": "69c5a7ecf0748ab23aaea97395c0218661a9ced6b68ada5200ea764eb7839708"
+          },
+          "summary_lines": [
+            "Capability registry: 16 checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpDiscoveryBudgetTest.php",
+          "exit": 0,
+          "seconds": 0.99,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/navigation82-McpDiscoveryBudgetTest.php.log",
+            "sha256": "6f59607adf0db537ecb078347035d5a0f5d1f6deffbe440233221218eb3d0e14"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-3cf7ee12c996",
+            "MCP discovery budgets: 82 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpManagementBindingTest.php",
+          "exit": 0,
+          "seconds": 1.13,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/navigation82-McpManagementBindingTest.php.log",
+            "sha256": "281e0eb168e6e9ac176e3e3dd843db2dae975f30a4140bd2bbc6fb4f8598ea44"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-db4eca48765f",
+            "MCP management binding: 253 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpNavigationPreflightTest.php",
+          "exit": 0,
+          "seconds": 0.79,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/navigation82-McpNavigationPreflightTest.php.log",
+            "sha256": "c606ddfce9bf87e1735d036be2e86e4dd317d61f0f87904478ea9b62a47877fb"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-ef1e5d048889",
+            "MCP navigation preflight: 83 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpSiteStructureTest.php",
+          "exit": 0,
+          "seconds": 0.76,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/navigation82-McpSiteStructureTest.php.log",
+            "sha256": "2e930a0777edb7ffeb1bdb371ffc544b56adfaf1c3eb0c82dc5227dbd37f1ca5"
+          },
+          "summary_lines": [
+            "58 structural checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "SiteControlNavReorderTest.php",
+          "exit": 0,
+          "seconds": 1.05,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/navigation82-SiteControlNavReorderTest.php.log",
+            "sha256": "fbad449bc7396a3974b2861de2dc440f7cb6010ad406efabdd4d1c0d44641af7"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        }
+      ]
+    },
+    {
+      "label": "navigation85",
+      "source": "/private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-review-current-cfqkdw8j",
+      "source_sha256": "087efd001acdfe8339a9752ceaad75681ef935ec3208092cd24647dc447bd18a",
+      "php": "/Users/admin/Library/Application Support/Herd/bin/php85",
+      "passed": 6,
+      "total": 6,
+      "results": [
+        {
+          "test": "McpCapabilityRegistryTest.php",
+          "exit": 0,
+          "seconds": 0.04,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/navigation85-McpCapabilityRegistryTest.php.log",
+            "sha256": "69c5a7ecf0748ab23aaea97395c0218661a9ced6b68ada5200ea764eb7839708"
+          },
+          "summary_lines": [
+            "Capability registry: 16 checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpDiscoveryBudgetTest.php",
+          "exit": 0,
+          "seconds": 1.04,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/navigation85-McpDiscoveryBudgetTest.php.log",
+            "sha256": "2606083f10e3cc03685b45f237a024dbc145f0cb3cef87b4e491cac4759e587b"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-234804853d2f",
+            "MCP discovery budgets: 82 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpManagementBindingTest.php",
+          "exit": 0,
+          "seconds": 1.26,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/navigation85-McpManagementBindingTest.php.log",
+            "sha256": "ca8578306f7f95fc91af4e51ff0aa1185b2154677b2d55dd1bd2ffbdb018de52"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-18a23f48c2bc",
+            "MCP management binding: 253 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpNavigationPreflightTest.php",
+          "exit": 0,
+          "seconds": 0.76,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/navigation85-McpNavigationPreflightTest.php.log",
+            "sha256": "27f33b07408a57988626c191d890807f7b7551e24ec2b7959fe0eb04f8716362"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-43db1dd9815b",
+            "MCP navigation preflight: 83 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpSiteStructureTest.php",
+          "exit": 0,
+          "seconds": 0.78,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/navigation85-McpSiteStructureTest.php.log",
+            "sha256": "2e930a0777edb7ffeb1bdb371ffc544b56adfaf1c3eb0c82dc5227dbd37f1ca5"
+          },
+          "summary_lines": [
+            "58 structural checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "SiteControlNavReorderTest.php",
+          "exit": 0,
+          "seconds": 1.04,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/navigation85-SiteControlNavReorderTest.php.log",
+            "sha256": "fbad449bc7396a3974b2861de2dc440f7cb6010ad406efabdd4d1c0d44641af7"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        }
+      ]
+    },
+    {
+      "label": "mapping82",
+      "source": "/private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-review-current-awbtibr8",
+      "source_sha256": "3610cf6b58e899431bad7d27c8876a4dd048f909e21b6c4105c4f8a97cd8adfa",
+      "php": "/Users/admin/Library/Application Support/Herd/bin/php82",
+      "passed": 45,
+      "total": 46,
+      "results": [
+        {
+          "test": "ExternalOnlyInstallTest.php",
+          "exit": 0,
+          "seconds": 4.72,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-ExternalOnlyInstallTest.php.log",
+            "sha256": "372e368ac75fe4acc638c099e753ffd11a81adae724a3017ee33d69f180325d3"
+          },
+          "summary_lines": [
+            "PASS later: database write failures are not mislabeled as missing workspace setup",
+            "PASS later: workspace state read failures are not mislabeled as missing setup",
+            "External-only installation: 98 checks passed through copied production routes."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "GenerationBudgetTest.php",
+          "exit": 0,
+          "seconds": 3.61,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-GenerationBudgetTest.php.log",
+            "sha256": "87bf52259784b7f3403826a63d4fab006a974111199a9d2dfa1b5d1a66be4534"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "McpApplicationTest.php",
+          "exit": 0,
+          "seconds": 0.56,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpApplicationTest.php.log",
+            "sha256": "fa3a88d49f16bec76d0c68a8b1bc2ea2a4f9f3a9b421fb96887671b07ee63cb5"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-ed75d808932e"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpApplyRecoveryTest.php",
+          "exit": 0,
+          "seconds": 1.1,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpApplyRecoveryTest.php.log",
+            "sha256": "ba322971bfd120d7d3201cae427e4c06f3edec6a50a3a03811e620ed4679d0d1"
+          },
+          "summary_lines": [
+            "Apply/recovery: 65 checks passed, including real process termination."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpAssetDocumentTest.php",
+          "exit": 0,
+          "seconds": 0.13,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpAssetDocumentTest.php.log",
+            "sha256": "3958fee597267e12f60bc577321a6641b347e8be68945af0a823d5bbec6d6616"
+          },
+          "summary_lines": [
+            "27 document asset checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpAssetTransferTest.php",
+          "exit": 0,
+          "seconds": 0.18,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpAssetTransferTest.php.log",
+            "sha256": "c4a74947bb12bb8ac50ed2a1a0f027f8a9e40f820b7c6a0641730640987a8009"
+          },
+          "summary_lines": [
+            "MCP asset transfer: 41 checks, 0 failures"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpAssetUiTest.mjs",
+          "exit": 0,
+          "seconds": 0.24,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpAssetUiTest.mjs.log",
+            "sha256": "b55d103160a1db4279ce6d1f0e2512c221b9a95d2d2f82331e8f584a7a35d946"
+          },
+          "summary_lines": [
+            "# tests 4",
+            "# pass 4",
+            "# fail 0"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpAssetsAndImportTest.php",
+          "exit": 0,
+          "seconds": 0.49,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpAssetsAndImportTest.php.log",
+            "sha256": "77d8e93618e95b834ff84a5121950de33b0ffb84cfd3fda69ff6271f945bba50"
+          },
+          "summary_lines": [
+            "66 asset and reference checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpBusinessBindingTest.php",
+          "exit": 0,
+          "seconds": 0.93,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpBusinessBindingTest.php.log",
+            "sha256": "663d4f38a2b63a06c2752bb89791805940abee84a66ecaecccd5b85e47c7dd9b"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-c7c1ba32c801",
+            "MCP business binding: 86 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpBusinessRestRoutesTest.php",
+          "exit": 0,
+          "seconds": 0.56,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpBusinessRestRoutesTest.php.log",
+            "sha256": "95c385b518d21b83867750ef747389f62401966ea649dfaa604a40a947a44496"
+          },
+          "summary_lines": [
+            "26 REST business checks passed",
+            "58 REST business and HTTP checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpConnectionCorrectnessTest.php",
+          "exit": 0,
+          "seconds": 2.27,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpConnectionCorrectnessTest.php.log",
+            "sha256": "a5681a8132303820f071ec79c208d1925fe0049bf3797078604810b906d4aced"
+          },
+          "summary_lines": [
+            "MCP credential administration: 54 combined checks passed",
+            "PASS Workspace storage read failures retain their operational exception",
+            "MCP connection correctness: 20 checks, 0 failures"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpConnectionTelemetryTest.php",
+          "exit": 255,
+          "seconds": 0.18,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpConnectionTelemetryTest.php.log",
+            "sha256": "ddf43f7fcf5c75ebc9401c974548f61f962aaf9252412a875768f93d617f0abe"
+          },
+          "summary_lines": [
+            "PASS Unknown or malformed credentials cannot attribute failures to another connection"
+          ],
+          "diagnostics": [
+            "PHP Fatal error:  Uncaught RuntimeException: FAIL Qualification derives from a valid versioned record rather than a hardcoded runtime claim in /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-review-matrix-j2smhk5z/fixture/_studio/tests/McpPublishTest.php:9"
+          ]
+        },
+        {
+          "test": "McpContextTest.php",
+          "exit": 0,
+          "seconds": 0.24,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpContextTest.php.log",
+            "sha256": "3eff00a122a0519f206d0f662b6ddcc80cf9a3d6d96830893c397a2468203504"
+          },
+          "summary_lines": [
+            "MCP context: 88 checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpCredentialAdministrationTest.php",
+          "exit": 0,
+          "seconds": 0.3,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpCredentialAdministrationTest.php.log",
+            "sha256": "4102c6c4b9937626f8def5ee434cdd39799c2241e21f0cb9073ec22cde4e117a"
+          },
+          "summary_lines": [
+            "MCP administration: 33 checks passed",
+            "MCP credential administration: 54 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpExportTest.php",
+          "exit": 0,
+          "seconds": 0.56,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpExportTest.php.log",
+            "sha256": "2763cb3d22d353df3713810245e1eb7e4fdbb3afe1da936d9a950e029f6dee60"
+          },
+          "summary_lines": [
+            "71 export checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpExternalActivityTest.php",
+          "exit": 0,
+          "seconds": 0.56,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpExternalActivityTest.php.log",
+            "sha256": "87a2b575abe25abe089c2dbe350b5258cc31eeeb49faf8447a6e3386182392ae"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-0018a7f69270",
+            "MCP external activity: 80 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpFactoryResetTest.php",
+          "exit": 0,
+          "seconds": 0.81,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpFactoryResetTest.php.log",
+            "sha256": "f12f1cb2a395ab7d971b15d55697bee79c1baea1ae3d24b66063021062ea8a07"
+          },
+          "summary_lines": [
+            "43 factory reset checks passed."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpFormsActionsTest.php",
+          "exit": 0,
+          "seconds": 0.56,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpFormsActionsTest.php.log",
+            "sha256": "b4862ed391252a3ae7c5f0154e24cfa4159cff56a84f7433e9a3f783daead786"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "McpLegacySiteControlTest.php",
+          "exit": 0,
+          "seconds": 0.88,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpLegacySiteControlTest.php.log",
+            "sha256": "82e70b2a311c3a37a629241d6a99d7027931b5d019e7c1b0a5bb5ceefc21eee1"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-cad22e203703",
+            "MCP legacy Site control: 172 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpManagementBindingTest.php",
+          "exit": 0,
+          "seconds": 1.04,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpManagementBindingTest.php.log",
+            "sha256": "4182a64e15afc43132d5ba2791e6c8c9ae1233c2110362902b67a7b91567f20a"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-d770a25c2c3f",
+            "MCP management binding: 253 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpModelBudgetTest.php",
+          "exit": 0,
+          "seconds": 0.76,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpModelBudgetTest.php.log",
+            "sha256": "a2607995c19472d13885e4abe1dcf0df3774b05f2704cb6d484099bd77e645de"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-b714fd92d72b",
+            "MCP model budget: 104 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpNavigationPreflightTest.php",
+          "exit": 0,
+          "seconds": 0.72,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpNavigationPreflightTest.php.log",
+            "sha256": "71b3a77464886b98a657c058e4884852a3decb06929ed06d84b0caf1f09c5f1a"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-5d4c91a18a5e",
+            "MCP navigation preflight: 83 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpOwnerRoutesTest.php",
+          "exit": 0,
+          "seconds": 0.5,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpOwnerRoutesTest.php.log",
+            "sha256": "ab085b8a642ea843344d1c0aa232e704f2410971bdb02fa76fe4697022861eae"
+          },
+          "summary_lines": [
+            "24 owner route checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpPagesCompileTest.php",
+          "exit": 0,
+          "seconds": 3.76,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpPagesCompileTest.php.log",
+            "sha256": "84e217fc12dd1f6796efd673c22ce076eb043e1a2ce8a24cfcafd296995aa34f"
+          },
+          "summary_lines": [
+            "Studio authoring: 23 checks passed.",
+            "Studio authoring routes: 42 checks passed.",
+            "Pages and compile: 77 checks passed."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpPublicDataBoundaryTest.php",
+          "exit": 0,
+          "seconds": 1.04,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpPublicDataBoundaryTest.php.log",
+            "sha256": "26f435c147766ed9ed54d34a5740cc993c42b1cbd83cfdb6b764f6f171e20510"
+          },
+          "summary_lines": [
+            "99 public-data boundary checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpPublicationDiffTest.php",
+          "exit": 0,
+          "seconds": 0.67,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpPublicationDiffTest.php.log",
+            "sha256": "f227dac9208619a670023a7b9fbfd4a66110d9d69ddb5f22a3bb7fd25cb02ac2"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-9a229846995e",
+            "MCP publication diff: 78 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpResetCrashTest.php",
+          "exit": 0,
+          "seconds": 0.34,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpResetCrashTest.php.log",
+            "sha256": "6436027816a1e8afefca406ff79cac638856919678cc6d14ea728c6b93dcfd90"
+          },
+          "summary_lines": [
+            "Reset crash recovery: 25 checks passed with real process termination."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpResetTest.php",
+          "exit": 0,
+          "seconds": 0.18,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpResetTest.php.log",
+            "sha256": "b5eb248e0a1a589bb82d6917745fff9478057b883961a853c2ddae7bee6d18c2"
+          },
+          "summary_lines": [
+            "MCP reset: 23 checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpRestoreTest.php",
+          "exit": 0,
+          "seconds": 4.5,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpRestoreTest.php.log",
+            "sha256": "2e7e2dd49bb0d9375e9682280a7cafd3e7cb83f631a7a6403f4dda69fe26b2ea"
+          },
+          "summary_lines": [
+            "MCP restore: 66 checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpSettingsDiagnosticsTest.php",
+          "exit": 0,
+          "seconds": 0.4,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpSettingsDiagnosticsTest.php.log",
+            "sha256": "e47788b1a7b5ab635af1e2d6f4f6e50aeca7a109e61fcb3348e126f54a903fcc"
+          },
+          "summary_lines": [
+            "MCP settings and diagnostics: 47 checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpSiteStructureTest.php",
+          "exit": 0,
+          "seconds": 0.66,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpSiteStructureTest.php.log",
+            "sha256": "2e930a0777edb7ffeb1bdb371ffc544b56adfaf1c3eb0c82dc5227dbd37f1ca5"
+          },
+          "summary_lines": [
+            "58 structural checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpSnapshotDeletionBindingTest.php",
+          "exit": 0,
+          "seconds": 0.72,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpSnapshotDeletionBindingTest.php.log",
+            "sha256": "2e471350bd209a8fe18e2ba26464ef1e82a0d5904e839e09b81fb018d1c635cf"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-615d01d89a3a",
+            "MCP snapshot deletion binding: 75 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpSnapshotDeletionTest.php",
+          "exit": 0,
+          "seconds": 0.18,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpSnapshotDeletionTest.php.log",
+            "sha256": "923dc8e94e0ce82ca5ce5e180ee6ad503b62a143424ec13889953a3dfa3f6519"
+          },
+          "summary_lines": [
+            "32 snapshot deletion checks passed."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpSnapshotHttpTest.php",
+          "exit": 0,
+          "seconds": 0.67,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpSnapshotHttpTest.php.log",
+            "sha256": "2a09dabf91e3ee0a96aa5d083708d80e158a9acd3d8b1b08096e6c76508f9a83"
+          },
+          "summary_lines": [
+            "18 snapshot and conversation HTTP checks passed."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpStudioAuthoringRoutesTest.php",
+          "exit": 0,
+          "seconds": 2.44,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpStudioAuthoringRoutesTest.php.log",
+            "sha256": "8a2c8eeb91a8d694b08c1b46a848aa6e5e2302a6ffa5463f140d9ac964e9fbce"
+          },
+          "summary_lines": [
+            "Studio authoring: 23 checks passed.",
+            "Studio authoring routes: 42 checks passed."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpUpdateFactoryBindingTest.php",
+          "exit": 0,
+          "seconds": 0.4,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpUpdateFactoryBindingTest.php.log",
+            "sha256": "a98c22215a365ca0fdb4c2020d4805969603c48ba86f56295e78db162e757fe7"
+          },
+          "summary_lines": [
+            "20 update/factory binding checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpUpdateGitTest.php",
+          "exit": 0,
+          "seconds": 1.94,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpUpdateGitTest.php.log",
+            "sha256": "5315a5d0ac2d686cb6d6f68935cf6481071caa6625ec5b101d71ba3c786eb99b"
+          },
+          "summary_lines": [
+            "57 combined update/Git checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpUpdateRoutesTest.php",
+          "exit": 0,
+          "seconds": 3.07,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpUpdateRoutesTest.php.log",
+            "sha256": "5ffd6ca24f6adce31195c9ce4452262044bee9cd6e46cd698c2b31cfd7d9d29e"
+          },
+          "summary_lines": [
+            "70 combined update route checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpUpdateRuntimeTest.php",
+          "exit": 0,
+          "seconds": 1.09,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpUpdateRuntimeTest.php.log",
+            "sha256": "7783eed664f369490e636588eadb77f7fa09145b794d5c2f372e4eb1bf7e5511"
+          },
+          "summary_lines": [
+            "82 combined update checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpUpdateTest.php",
+          "exit": 0,
+          "seconds": 0.46,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-McpUpdateTest.php.log",
+            "sha256": "b1a6a2f679436f28e1a38d220a509c59b7d18bd36e484fc5d2028bff0963056f"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "ModelCapabilitySettingsTest.php",
+          "exit": 0,
+          "seconds": 0.61,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-ModelCapabilitySettingsTest.php.log",
+            "sha256": "5db259eac015904186615c3751c78c5dd03a2db44404139759c35850ecf42e96"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "PromptContractTest.php",
+          "exit": 0,
+          "seconds": 0.12,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-PromptContractTest.php.log",
+            "sha256": "c2848b09aa05f553d78d2f6cdce3fb79d56a988b7ef15d85780d4457bf3365f5"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "SiteControlNavReorderTest.php",
+          "exit": 0,
+          "seconds": 1.04,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-SiteControlNavReorderTest.php.log",
+            "sha256": "fbad449bc7396a3974b2861de2dc440f7cb6010ad406efabdd4d1c0d44641af7"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "SitePlanStoreTest.php",
+          "exit": 0,
+          "seconds": 0.07,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-SitePlanStoreTest.php.log",
+            "sha256": "5f01d8b4acf2dd46d01ac2c37a75886b79082e1a4a5d81a86dda6822c3cfee83"
+          },
+          "summary_lines": [
+            "11 checks passed. Fixture: /var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-plan-store-db78cb35d54a"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "SiteSnapshotRecoveryTest.php",
+          "exit": 0,
+          "seconds": 0.66,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-SiteSnapshotRecoveryTest.php.log",
+            "sha256": "dda1d271e8b0bb0db5d27f791846c4e28ba88871077c80449a40da67a61aebe0"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "SiteSnapshotRetentionTest.php",
+          "exit": 0,
+          "seconds": 0.77,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping82-SiteSnapshotRetentionTest.php.log",
+            "sha256": "a5e99417cea64cda5231525b10466a5ffb2113dfceb2c8f55529a357100c3d5a"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        }
+      ]
+    },
+    {
+      "label": "mapping85",
+      "source": "/private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-review-current-awbtibr8",
+      "source_sha256": "3610cf6b58e899431bad7d27c8876a4dd048f909e21b6c4105c4f8a97cd8adfa",
+      "php": "/Users/admin/Library/Application Support/Herd/bin/php85",
+      "passed": 45,
+      "total": 46,
+      "results": [
+        {
+          "test": "ExternalOnlyInstallTest.php",
+          "exit": 0,
+          "seconds": 5.75,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-ExternalOnlyInstallTest.php.log",
+            "sha256": "372e368ac75fe4acc638c099e753ffd11a81adae724a3017ee33d69f180325d3"
+          },
+          "summary_lines": [
+            "PASS later: database write failures are not mislabeled as missing workspace setup",
+            "PASS later: workspace state read failures are not mislabeled as missing setup",
+            "External-only installation: 98 checks passed through copied production routes."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "GenerationBudgetTest.php",
+          "exit": 0,
+          "seconds": 3.81,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-GenerationBudgetTest.php.log",
+            "sha256": "87bf52259784b7f3403826a63d4fab006a974111199a9d2dfa1b5d1a66be4534"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "McpApplicationTest.php",
+          "exit": 0,
+          "seconds": 0.6,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpApplicationTest.php.log",
+            "sha256": "2c390e5b7d094b9dc66eb29450ee29383479d71a964f8a1dd1558af18ea079d3"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-bbf3bed8c45e"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpApplyRecoveryTest.php",
+          "exit": 0,
+          "seconds": 1.09,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpApplyRecoveryTest.php.log",
+            "sha256": "ba322971bfd120d7d3201cae427e4c06f3edec6a50a3a03811e620ed4679d0d1"
+          },
+          "summary_lines": [
+            "Apply/recovery: 65 checks passed, including real process termination."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpAssetDocumentTest.php",
+          "exit": 0,
+          "seconds": 0.13,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpAssetDocumentTest.php.log",
+            "sha256": "3958fee597267e12f60bc577321a6641b347e8be68945af0a823d5bbec6d6616"
+          },
+          "summary_lines": [
+            "27 document asset checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpAssetTransferTest.php",
+          "exit": 0,
+          "seconds": 0.13,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpAssetTransferTest.php.log",
+            "sha256": "c4a74947bb12bb8ac50ed2a1a0f027f8a9e40f820b7c6a0641730640987a8009"
+          },
+          "summary_lines": [
+            "MCP asset transfer: 41 checks, 0 failures"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpAssetUiTest.mjs",
+          "exit": 0,
+          "seconds": 0.08,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpAssetUiTest.mjs.log",
+            "sha256": "186f52e6801a3530812440b582b52b0f3f9360a66ead32ae7416f9fd07dae6c1"
+          },
+          "summary_lines": [
+            "# tests 4",
+            "# pass 4",
+            "# fail 0"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpAssetsAndImportTest.php",
+          "exit": 0,
+          "seconds": 0.45,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpAssetsAndImportTest.php.log",
+            "sha256": "77d8e93618e95b834ff84a5121950de33b0ffb84cfd3fda69ff6271f945bba50"
+          },
+          "summary_lines": [
+            "66 asset and reference checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpBusinessBindingTest.php",
+          "exit": 0,
+          "seconds": 0.72,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpBusinessBindingTest.php.log",
+            "sha256": "c53bc23d271a95837a03be83827ce4fd2ab3e7d0cc76f31bc474dcc4ad190b6d"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-531f5b2da0ea",
+            "MCP business binding: 86 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpBusinessRestRoutesTest.php",
+          "exit": 0,
+          "seconds": 0.61,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpBusinessRestRoutesTest.php.log",
+            "sha256": "95c385b518d21b83867750ef747389f62401966ea649dfaa604a40a947a44496"
+          },
+          "summary_lines": [
+            "26 REST business checks passed",
+            "58 REST business and HTTP checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpConnectionCorrectnessTest.php",
+          "exit": 0,
+          "seconds": 2.78,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpConnectionCorrectnessTest.php.log",
+            "sha256": "a5681a8132303820f071ec79c208d1925fe0049bf3797078604810b906d4aced"
+          },
+          "summary_lines": [
+            "MCP credential administration: 54 combined checks passed",
+            "PASS Workspace storage read failures retain their operational exception",
+            "MCP connection correctness: 20 checks, 0 failures"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpConnectionTelemetryTest.php",
+          "exit": 255,
+          "seconds": 0.18,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpConnectionTelemetryTest.php.log",
+            "sha256": "c1dfbd8c46971d9419d89e4cde0669723a3ff11232cf6510b546b3faab0fb653"
+          },
+          "summary_lines": [
+            "PASS Unknown or malformed credentials cannot attribute failures to another connection"
+          ],
+          "diagnostics": [
+            "PHP Fatal error:  Uncaught RuntimeException: FAIL Qualification derives from a valid versioned record rather than a hardcoded runtime claim in /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-review-matrix-c4bxh0w7/fixture/_studio/tests/McpPublishTest.php:9"
+          ]
+        },
+        {
+          "test": "McpContextTest.php",
+          "exit": 0,
+          "seconds": 0.24,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpContextTest.php.log",
+            "sha256": "3eff00a122a0519f206d0f662b6ddcc80cf9a3d6d96830893c397a2468203504"
+          },
+          "summary_lines": [
+            "MCP context: 88 checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpCredentialAdministrationTest.php",
+          "exit": 0,
+          "seconds": 0.78,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpCredentialAdministrationTest.php.log",
+            "sha256": "4102c6c4b9937626f8def5ee434cdd39799c2241e21f0cb9073ec22cde4e117a"
+          },
+          "summary_lines": [
+            "MCP administration: 33 checks passed",
+            "MCP credential administration: 54 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpExportTest.php",
+          "exit": 0,
+          "seconds": 0.56,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpExportTest.php.log",
+            "sha256": "2763cb3d22d353df3713810245e1eb7e4fdbb3afe1da936d9a950e029f6dee60"
+          },
+          "summary_lines": [
+            "71 export checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpExternalActivityTest.php",
+          "exit": 0,
+          "seconds": 0.62,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpExternalActivityTest.php.log",
+            "sha256": "66dee87b03f7d0932d0b648bdd576199de93498e133868182d9c1d2893b8d8f0"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-36a7473afe0a",
+            "MCP external activity: 80 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpFactoryResetTest.php",
+          "exit": 0,
+          "seconds": 0.71,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpFactoryResetTest.php.log",
+            "sha256": "f12f1cb2a395ab7d971b15d55697bee79c1baea1ae3d24b66063021062ea8a07"
+          },
+          "summary_lines": [
+            "43 factory reset checks passed."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpFormsActionsTest.php",
+          "exit": 0,
+          "seconds": 0.55,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpFormsActionsTest.php.log",
+            "sha256": "b4862ed391252a3ae7c5f0154e24cfa4159cff56a84f7433e9a3f783daead786"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "McpLegacySiteControlTest.php",
+          "exit": 0,
+          "seconds": 0.83,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpLegacySiteControlTest.php.log",
+            "sha256": "1d87d0a911c81585c473d08515e1b39f9d18191bea049bc01ca52d73a420d1d4"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-4efb7c024f93",
+            "MCP legacy Site control: 172 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpManagementBindingTest.php",
+          "exit": 0,
+          "seconds": 1.15,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpManagementBindingTest.php.log",
+            "sha256": "5f67e14d0559932f0aa357c36216ef11939d00a426f3ee55060fc4cef9f14df3"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-9d60ea391176",
+            "MCP management binding: 253 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpModelBudgetTest.php",
+          "exit": 0,
+          "seconds": 0.72,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpModelBudgetTest.php.log",
+            "sha256": "f2d2e39cc7dcda02239444cc90fe2bb43b77d07383e202e99bf04cab816145b4"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-35402f6b65ee",
+            "MCP model budget: 104 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpNavigationPreflightTest.php",
+          "exit": 0,
+          "seconds": 0.73,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpNavigationPreflightTest.php.log",
+            "sha256": "e859c220d249df43364ae05cd3dcb40bf67105f349432a217e822106ded089db"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-724bb4c9ac4a",
+            "MCP navigation preflight: 83 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpOwnerRoutesTest.php",
+          "exit": 0,
+          "seconds": 0.61,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpOwnerRoutesTest.php.log",
+            "sha256": "ab085b8a642ea843344d1c0aa232e704f2410971bdb02fa76fe4697022861eae"
+          },
+          "summary_lines": [
+            "24 owner route checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpPagesCompileTest.php",
+          "exit": 0,
+          "seconds": 3.68,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpPagesCompileTest.php.log",
+            "sha256": "84e217fc12dd1f6796efd673c22ce076eb043e1a2ce8a24cfcafd296995aa34f"
+          },
+          "summary_lines": [
+            "Studio authoring: 23 checks passed.",
+            "Studio authoring routes: 42 checks passed.",
+            "Pages and compile: 77 checks passed."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpPublicDataBoundaryTest.php",
+          "exit": 0,
+          "seconds": 1.24,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpPublicDataBoundaryTest.php.log",
+            "sha256": "26f435c147766ed9ed54d34a5740cc993c42b1cbd83cfdb6b764f6f171e20510"
+          },
+          "summary_lines": [
+            "99 public-data boundary checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpPublicationDiffTest.php",
+          "exit": 0,
+          "seconds": 0.72,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpPublicationDiffTest.php.log",
+            "sha256": "c931cdcb9ceccf37ad8fb09015b25d2ec8f315d985e07c4e22ebbe2f848343d7"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-d2e322c26469",
+            "MCP publication diff: 78 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpResetCrashTest.php",
+          "exit": 0,
+          "seconds": 0.29,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpResetCrashTest.php.log",
+            "sha256": "6436027816a1e8afefca406ff79cac638856919678cc6d14ea728c6b93dcfd90"
+          },
+          "summary_lines": [
+            "Reset crash recovery: 25 checks passed with real process termination."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpResetTest.php",
+          "exit": 0,
+          "seconds": 0.18,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpResetTest.php.log",
+            "sha256": "b5eb248e0a1a589bb82d6917745fff9478057b883961a853c2ddae7bee6d18c2"
+          },
+          "summary_lines": [
+            "MCP reset: 23 checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpRestoreTest.php",
+          "exit": 0,
+          "seconds": 4.37,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpRestoreTest.php.log",
+            "sha256": "2e7e2dd49bb0d9375e9682280a7cafd3e7cb83f631a7a6403f4dda69fe26b2ea"
+          },
+          "summary_lines": [
+            "MCP restore: 66 checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpSettingsDiagnosticsTest.php",
+          "exit": 0,
+          "seconds": 0.6,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpSettingsDiagnosticsTest.php.log",
+            "sha256": "e47788b1a7b5ab635af1e2d6f4f6e50aeca7a109e61fcb3348e126f54a903fcc"
+          },
+          "summary_lines": [
+            "MCP settings and diagnostics: 47 checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpSiteStructureTest.php",
+          "exit": 0,
+          "seconds": 0.67,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpSiteStructureTest.php.log",
+            "sha256": "2e930a0777edb7ffeb1bdb371ffc544b56adfaf1c3eb0c82dc5227dbd37f1ca5"
+          },
+          "summary_lines": [
+            "58 structural checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpSnapshotDeletionBindingTest.php",
+          "exit": 0,
+          "seconds": 0.71,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpSnapshotDeletionBindingTest.php.log",
+            "sha256": "7c4091b83667b494b35a6737acc2436f2ed3c60669df67a813bffaf1cd304bb2"
+          },
+          "summary_lines": [
+            "MCP application: 65 checks passed; synthetic wire integration, no real-client qualification. Fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-app-03fa48a128e2",
+            "MCP snapshot deletion binding: 75 combined checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpSnapshotDeletionTest.php",
+          "exit": 0,
+          "seconds": 0.18,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpSnapshotDeletionTest.php.log",
+            "sha256": "923dc8e94e0ce82ca5ce5e180ee6ad503b62a143424ec13889953a3dfa3f6519"
+          },
+          "summary_lines": [
+            "32 snapshot deletion checks passed."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpSnapshotHttpTest.php",
+          "exit": 0,
+          "seconds": 0.66,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpSnapshotHttpTest.php.log",
+            "sha256": "2a09dabf91e3ee0a96aa5d083708d80e158a9acd3d8b1b08096e6c76508f9a83"
+          },
+          "summary_lines": [
+            "18 snapshot and conversation HTTP checks passed."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpStudioAuthoringRoutesTest.php",
+          "exit": 0,
+          "seconds": 2.53,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpStudioAuthoringRoutesTest.php.log",
+            "sha256": "8a2c8eeb91a8d694b08c1b46a848aa6e5e2302a6ffa5463f140d9ac964e9fbce"
+          },
+          "summary_lines": [
+            "Studio authoring: 23 checks passed.",
+            "Studio authoring routes: 42 checks passed."
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpUpdateFactoryBindingTest.php",
+          "exit": 0,
+          "seconds": 0.35,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpUpdateFactoryBindingTest.php.log",
+            "sha256": "a98c22215a365ca0fdb4c2020d4805969603c48ba86f56295e78db162e757fe7"
+          },
+          "summary_lines": [
+            "20 update/factory binding checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpUpdateGitTest.php",
+          "exit": 0,
+          "seconds": 1.57,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpUpdateGitTest.php.log",
+            "sha256": "5315a5d0ac2d686cb6d6f68935cf6481071caa6625ec5b101d71ba3c786eb99b"
+          },
+          "summary_lines": [
+            "57 combined update/Git checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpUpdateRoutesTest.php",
+          "exit": 0,
+          "seconds": 3.03,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpUpdateRoutesTest.php.log",
+            "sha256": "5ffd6ca24f6adce31195c9ce4452262044bee9cd6e46cd698c2b31cfd7d9d29e"
+          },
+          "summary_lines": [
+            "70 combined update route checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpUpdateRuntimeTest.php",
+          "exit": 0,
+          "seconds": 1.09,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpUpdateRuntimeTest.php.log",
+            "sha256": "7783eed664f369490e636588eadb77f7fa09145b794d5c2f372e4eb1bf7e5511"
+          },
+          "summary_lines": [
+            "82 combined update checks passed"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "McpUpdateTest.php",
+          "exit": 0,
+          "seconds": 0.5,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-McpUpdateTest.php.log",
+            "sha256": "b1a6a2f679436f28e1a38d220a509c59b7d18bd36e484fc5d2028bff0963056f"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "ModelCapabilitySettingsTest.php",
+          "exit": 0,
+          "seconds": 0.61,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-ModelCapabilitySettingsTest.php.log",
+            "sha256": "5db259eac015904186615c3751c78c5dd03a2db44404139759c35850ecf42e96"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "PromptContractTest.php",
+          "exit": 0,
+          "seconds": 0.08,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-PromptContractTest.php.log",
+            "sha256": "c2848b09aa05f553d78d2f6cdce3fb79d56a988b7ef15d85780d4457bf3365f5"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "SiteControlNavReorderTest.php",
+          "exit": 0,
+          "seconds": 1.04,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-SiteControlNavReorderTest.php.log",
+            "sha256": "fbad449bc7396a3974b2861de2dc440f7cb6010ad406efabdd4d1c0d44641af7"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "SitePlanStoreTest.php",
+          "exit": 0,
+          "seconds": 0.08,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-SitePlanStoreTest.php.log",
+            "sha256": "8148f434c0c05da678993bd1d04946fa80325ec2d7e4fefba647a73e44b6fd8d"
+          },
+          "summary_lines": [
+            "11 checks passed. Fixture: /var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-plan-store-26190067a6d5"
+          ],
+          "diagnostics": []
+        },
+        {
+          "test": "SiteSnapshotRecoveryTest.php",
+          "exit": 0,
+          "seconds": 0.62,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-SiteSnapshotRecoveryTest.php.log",
+            "sha256": "d6589d2af4e9e7a5cecd7b626f7cc77c655e725418573446c0993b90735d1e2b"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        },
+        {
+          "test": "SiteSnapshotRetentionTest.php",
+          "exit": 0,
+          "seconds": 0.72,
+          "log": {
+            "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/mapping85-SiteSnapshotRetentionTest.php.log",
+            "sha256": "ec1ac1272668ee72c75417312065e1bfb2304a0ab0712aefa354e628e36c01c5"
+          },
+          "summary_lines": [],
+          "diagnostics": []
+        }
+      ]
+    }
+  ],
+  "workflow": [
+    {
+      "php": "8.2.35",
+      "log": {
+        "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/workflow-82.log",
+        "sha256": "3d798146cec97c873fa9589004ca317f27fcc591c9c1fee682e9edd3f563d092"
+      },
+      "summary": [
+        "PASS Saved provider, Router and review settings remain unchanged",
+        "PASS All eleven recipes and eleven visual outcomes retain exactly twenty-two revisions",
+        "PASS Actual HTTP server log has no PHP diagnostics",
+        "Workflow HTTP: 464 checks; 22 cases; fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-client-322d2956da0f"
+      ]
+    },
+    {
+      "php": "8.5.7",
+      "log": {
+        "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/workflow-85.log",
+        "sha256": "4e85e5d81aabc42fa797df56ca6b59f2aff53c9de7739c1bec658891a537b596"
+      },
+      "summary": [
+        "PASS Saved provider, Router and review settings remain unchanged",
+        "PASS All eleven recipes and eleven visual outcomes retain exactly twenty-two revisions",
+        "PASS Actual HTTP server log has no PHP diagnostics",
+        "Workflow HTTP: 464 checks; 22 cases; fixture /private/var/folders/ym/w6jg3_fj2bg44s6rb4djwht00000gn/T/vs-mcp-client-4a7ae2a9e40f"
+      ]
+    }
+  ],
+  "red": [
+    {
+      "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/red-navigation82.log",
+      "sha256": "4dd696eecd560db317008aeab614e2a117906a128d8aa0db89b55daeb0353843"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/red-navigation85.log",
+      "sha256": "6065d7ed8c256091309faa8480e08dea3fd7648f675c276a0a54959004731241"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/red-legacy82.log",
+      "sha256": "972ee40b14eca1b7d769a248a5a8c815e9cd144c51f753a1b470fe504439c774"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/red-legacy85.log",
+      "sha256": "2d80abc87d1844dedc371364e450678dc14b01e9656655349913d43266bc0ba5"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/red-activity82.log",
+      "sha256": "96985080eb7c61e119ae1c82fb54d9232d5835bc67f59447c9a62708c79bf4a3"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/red-activity85.log",
+      "sha256": "3d7e6ba86ee18e53c2be6d43884e98833e5892a30d1f882283b654aeef43ae8b"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/red-budget82.log",
+      "sha256": "218b072fa2c71be391d8c5e039754166505ec36380c75deb94f5dd5c912300d4"
+    },
+    {
+      "path": "docs/mcp/evidence/d1-parity-closure-2026-10-23/red-budget85.log",
+      "sha256": "a3a71fc6da6197f34729250b90af65d15f2083d337b7f7436d345189ed5f2e5e"
+    }
+  ],
+  "discovery_measurements": {
+    "kind": "actual_synthetic_wire_bytes",
+    "php": "8.2.35",
+    "catalogs": [
+      {
+        "grant": "read",
+        "protocol": "2026-07-28",
+        "tool_count": 39,
+        "serialized_value_bytes_by_field": {
+          "name": 1024,
+          "description": 6663,
+          "inputSchema": 9910,
+          "outputSchema": 116453,
+          "annotations": 3474
+        },
+        "body_json_bytes": 140490,
+        "tools_json_bytes": 140294
+      },
+      {
+        "grant": "read",
+        "protocol": "2025-11-25",
+        "tool_count": 39,
+        "serialized_value_bytes_by_field": {
+          "name": 1024,
+          "description": 6663,
+          "inputSchema": 9910,
+          "outputSchema": 116453,
+          "annotations": 3474
+        },
+        "body_json_bytes": 140339,
+        "tools_json_bytes": 140294
+      },
+      {
+        "grant": "edit",
+        "protocol": "2026-07-28",
+        "tool_count": 69,
+        "serialized_value_bytes_by_field": {
+          "name": 1845,
+          "description": 12793,
+          "inputSchema": 32598,
+          "outputSchema": 303127,
+          "annotations": 6146
+        },
+        "body_json_bytes": 361605,
+        "tools_json_bytes": 361409
+      },
+      {
+        "grant": "edit",
+        "protocol": "2025-11-25",
+        "tool_count": 69,
+        "serialized_value_bytes_by_field": {
+          "name": 1845,
+          "description": 12793,
+          "inputSchema": 32598,
+          "outputSchema": 303127,
+          "annotations": 6146
+        },
+        "body_json_bytes": 361454,
+        "tools_json_bytes": 361409
+      },
+      {
+        "grant": "publish",
+        "protocol": "2026-07-28",
+        "tool_count": 72,
+        "serialized_value_bytes_by_field": {
+          "name": 1920,
+          "description": 13257,
+          "inputSchema": 33300,
+          "outputSchema": 323978,
+          "annotations": 6414
+        },
+        "body_json_bytes": 384178,
+        "tools_json_bytes": 383982
+      },
+      {
+        "grant": "publish",
+        "protocol": "2025-11-25",
+        "tool_count": 72,
+        "serialized_value_bytes_by_field": {
+          "name": 1920,
+          "description": 13257,
+          "inputSchema": 33300,
+          "outputSchema": 323978,
+          "annotations": 6414
+        },
+        "body_json_bytes": 384027,
+        "tools_json_bytes": 383982
+      },
+      {
+        "grant": "administrative",
+        "protocol": "2026-07-28",
+        "tool_count": 155,
+        "serialized_value_bytes_by_field": {
+          "name": 4213,
+          "description": 31694,
+          "inputSchema": 71538,
+          "outputSchema": 643577,
+          "annotations": 13804
+        },
+        "body_json_bytes": 776028,
+        "tools_json_bytes": 775832
+      },
+      {
+        "grant": "administrative",
+        "protocol": "2025-11-25",
+        "tool_count": 155,
+        "serialized_value_bytes_by_field": {
+          "name": 4213,
+          "description": 31694,
+          "inputSchema": 71538,
+          "outputSchema": 643577,
+          "annotations": 13804
+        },
+        "body_json_bytes": 775877,
+        "tools_json_bytes": 775832
+      }
+    ],
+    "contexts": [
+      {
+        "requested_bytes": 2048,
+        "actual_bytes": 1772,
+        "declared_chars": 1772,
+        "manifest_count": 0,
+        "section_count": 1,
+        "omissions": [
+          {
+            "reason": "design_tokens:budget",
+            "count": 1
+          },
+          {
+            "reason": "site_memory:budget",
+            "count": 1
+          },
+          {
+            "reason": "design_intelligence:budget",
+            "count": 1
+          },
+          {
+            "reason": "focused_file:budget",
+            "count": 3
+          },
+          {
+            "reason": "dependencies:budget",
+            "count": 1
+          },
+          {
+            "reason": "form_schema:budget",
+            "count": 1
+          },
+          {
+            "reason": "manifest:budget",
+            "count": 19
+          },
+          {
+            "reason": "notes_submissions_logs:separate_scoped_tools",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "requested_bytes": 4096,
+        "actual_bytes": 3649,
+        "declared_chars": 3641,
+        "manifest_count": 1,
+        "section_count": 5,
+        "omissions": [
+          {
+            "reason": "focused_file:budget",
+            "count": 3
+          },
+          {
+            "reason": "form_schema:budget",
+            "count": 1
+          },
+          {
+            "reason": "manifest:budget",
+            "count": 18
+          },
+          {
+            "reason": "notes_submissions_logs:separate_scoped_tools",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "requested_bytes": 8192,
+        "actual_bytes": 7662,
+        "declared_chars": 7654,
+        "manifest_count": 7,
+        "section_count": 9,
+        "omissions": [
+          {
+            "reason": "manifest:budget",
+            "count": 12
+          },
+          {
+            "reason": "notes_submissions_logs:separate_scoped_tools",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "requested_bytes": 32768,
+        "actual_bytes": 9825,
+        "declared_chars": 9817,
+        "manifest_count": 19,
+        "section_count": 9,
+        "omissions": [
+          {
+            "reason": "notes_submissions_logs:separate_scoped_tools",
+            "count": 1
+          }
+        ]
+      }
+    ],
+    "rules": [
+      {
+        "kind": "authoring",
+        "source_bytes": 87502,
+        "chunks": 86,
+        "maximum_response_bytes": 1631,
+        "sha256": "e5e54b8c18c08d96a77121c02062cf86b2747c29d49fd028c199eedbd8243516"
+      },
+      {
+        "kind": "design",
+        "source_bytes": 4019,
+        "chunks": 4,
+        "maximum_response_bytes": 1355,
+        "sha256": "e78daa3427fdd6f53f36a62a9cd3e279a52d4f7b2f63b75f14d5f3b3d04a37e7"
+      },
+      {
+        "kind": "accessibility",
+        "source_bytes": 4400,
+        "chunks": 5,
+        "maximum_response_bytes": 1360,
+        "sha256": "a241275b00ed3c2e47d94f5ea3b0f056542a3b693c710f67bbddf715a249a6e5"
+      },
+      {
+        "kind": "copy",
+        "source_bytes": 2463,
+        "chunks": 3,
+        "maximum_response_bytes": 1377,
+        "sha256": "20969299cf65712f452b5579cb03390eef381016c07e1c4a6a9cad358f5d6f0d"
+      }
+    ]
+  },
+  "related_evidence": [
+    "2026-10-23-d1-public-boundary.json",
+    "2026-10-23-d1-business-rest.json",
+    "2026-10-23-d1-rest-schema.json",
+    "2026-10-23-d1-restore-boundary.json"
+  ],
+  "limitations": [
+    "Owner stopped further edits/tests to finalize release. All listed runs completed before stop.",
+    "Final46-suite mapping run:45passed/1failed on each runtime. McpConnectionTelemetryTest positive oracle still calls load(1.32.0) after copied qualification metadata moved to1.33.0; current implementation truthfully refuses version mismatch. Not reported green.",
+    "No test or release-gate run after final manifest/documentation writes.",
+    "Final privacy restore patch has separate exact focused evidence, not a rerun of all46suites.",
+    "22workflow outcomes are scripted HTTP equivalence, not native-client/model-led authorship or visual acceptance.",
+    "Client qualification remains independently versioned; no new native-client qualification is claimed here."
+  ]
+}

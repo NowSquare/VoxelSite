@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Disposable notes and board review</title><link rel="stylesheet" href="/_studio/ui/dist/studio.css">
+<body style="height:100vh;display:flex;flex-direction:column;background:var(--vs-bg)">
+<nav style="padding:12px;display:flex;flex-wrap:wrap;gap:12px"><button class="vs-btn" id="notes">Notes</button><button class="vs-btn" id="board">Board</button><button class="vs-btn" id="external">Simulate external note edit</button></nav>
+<main id="fixture" style="flex:1;min-height:0"></main>
+<script type="module">
+import {store} from '/_studio/ui/state.js';
+import {api} from '/_studio/ui/api.js';
+import {renderNotesView,cleanupNotes} from '/_studio/ui/src/views/notes.js';
+import {renderBoardView,cleanupBoard} from '/_studio/ui/src/views/board.js';
+store.set('user',{id:1,name:'Fixture owner',role:'owner'}); window.IS_DEMO=false;
+let view=null;
+async function show(next) {
+  for(const flush of (window.__vsFlushCallbacks||new Map()).values())if(await flush()===false)return;
+  if(view==='notes')cleanupNotes();if(view==='board')await cleanupBoard();
+  view=next;store.set('route',next);document.getElementById('fixture').innerHTML=next==='notes'?renderNotesView():renderBoardView();
+}
+document.getElementById('notes').onclick=()=>show('notes');
+document.getElementById('board').onclick=()=>show('board');
+document.getElementById('external').onclick=async()=>{
+  const list=await api.get('/notes');const note=list.data.notes[0];
+  await api.put(`/notes/${note.id}`,{request_id:crypto.randomUUID(),expected_version:note.version,body:'Saved by the external fixture client.'});
+  document.getElementById('external').textContent='External edit saved';
+};
+await show('notes');
+</script></body></html>

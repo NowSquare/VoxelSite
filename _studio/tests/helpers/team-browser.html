@@ -1,0 +1,22 @@
+<!doctype html><html lang="en" style="height:auto;overflow:auto"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Disposable team and connection review</title><link rel="stylesheet" href="/_studio/ui/dist/studio.css">
+<body style="height:auto;overflow:visible;min-height:100vh;background:var(--vs-bg);padding:20px"><nav style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px">
+<button id="team" class="vs-btn">Team</button><button id="connections" class="vs-btn">Connections</button>
+<button id="external" class="vs-btn">Simulate external member edit</button></nav><main id="fixture"></main><div id="fixture-modals"></div>
+<script type="module">
+import {store} from '/_studio/ui/state.js';
+import {api} from '/_studio/ui/api.js';
+import {renderTeamView,renderTeamModals} from '/_studio/ui/src/views/team.js';
+import {bindMcpConnections} from '/_studio/ui/src/views/settings-mcp.js';
+const user={id:1,name:'Owner',role:'owner'};store.set('user',user);window.IS_DEMO=false;
+const root=document.getElementById('fixture');
+document.getElementById('fixture-modals').innerHTML=renderTeamModals();
+document.getElementById('team').onclick=()=>{root.innerHTML=renderTeamView();};
+document.getElementById('connections').onclick=()=>bindMcpConnections(root,{api,user});
+document.getElementById('external').onclick=async()=>{
+ const result=await api.get('/team');const member=result.data.members.find(member=>member.role==='editor');
+ await api.put(`/team/${member.id}`,{operation_id:crypto.randomUUID(),version:member.version,name:'External editor change'});
+ document.getElementById('external').textContent='External edit saved';
+};
+root.innerHTML=renderTeamView();
+</script></body></html>

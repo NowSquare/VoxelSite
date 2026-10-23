@@ -1,0 +1,74 @@
+{
+  "task": "T10",
+  "recorded_on": "2026-10-20",
+  "status": "focused_service_and_adapter_checks_passed",
+  "checks": [
+    {
+      "command": "php _studio/tests/McpPublishTest.php",
+      "passed": 98,
+      "failed": 0
+    },
+    {
+      "command": "php _studio/tests/SiteReleaseMutationTest.php",
+      "passed": 55,
+      "failed": 0
+    },
+    {
+      "command": "php _studio/tests/McpNoProviderCallsTest.php",
+      "passed": 186,
+      "failed": 0,
+      "environment": "Approved isolated loopback test server; no external provider endpoint"
+    },
+    {
+      "command": "php _studio/tests/McpAuthoringTest.php",
+      "passed": 29,
+      "failed": 0
+    },
+    {
+      "command": "php _studio/tests/McpAssetTransferTest.php",
+      "passed": 41,
+      "failed": 0
+    },
+    {
+      "command": "PHP syntax checks for publish services, migration, adapters, generators and provenance helper",
+      "passed": true
+    },
+    {
+      "command": "git diff --check",
+      "passed": true
+    }
+  ],
+  "verified": [
+    "Canonical draft and generated CSS, AEO, forms and Actions artifacts are staged before digest sealing",
+    "Preparation preserves live bytes, draft bytes and page metadata",
+    "Exact source, live, settings, Action-definition and candidate integrity checks before publication",
+    "Actor-bound request and operation identities, role and scope narrowing, expiry and connection revocation",
+    "Bounded explicit continuation with durable workspace reservation and exact per-file replacement",
+    "Actual SIGKILL after recovery capture, after a live file write and after durable commit",
+    "Partial write rollback, explicit incomplete recovery, retained originals and authorized repair",
+    "Managed deletions preserve unrelated hosting files and immutable shared libraries",
+    "Known shipped index.php and submit.php ownership recorded only for exact package hashes during installation and reverified before replacement",
+    "Prospective cumulative recovery storage limits before reading or retaining the next original",
+    "Studio retry and continuation through the shared service, scoped REST actor binding, legacy response fields and release-aware source diff",
+    "Provider-free publication with routing, evaluator and critic settings enabled",
+    "Explicit robots.txt and llms.txt overrides retain whole draft bytes, disclose generated/preserved policy and publish only exact root destinations"
+  ],
+  "interfaces": {
+    "migration": "022_site_releases.php version 1.33.0.9",
+    "service": "PublishPlanService",
+    "prepare": "prepare(OperationActor, stdClass request_id/base_draft_version)",
+    "inspect": "get(OperationActor, plan_id)",
+    "apply": "publish(OperationActor, stdClass plan_id/digest/operation_id)",
+    "continue": "continue(OperationActor, operation_id, checkpoint)",
+    "recover": "recover(OperationActor, operation_id)",
+    "schemas": "inputSchema(prepare|get|publish), outputSchema(prepare|get), resultSchema(); execution returns the shared operation-state envelope",
+    "snapshot": "Private published-domain before/ and exact candidate/ files retained under publish_<id>; site_releases references this plan",
+    "retention": "Never prune an active operation or protected current/archive reference; retain actor/request identity tombstones after verified directory removal"
+  },
+  "limitations": [
+    "No named MCP client qualification is claimed by these focused tests",
+    "Studio JavaScript source continuation changes require the shared UI bundle build",
+    "Existing unrelated live files require separate explicit ownership adoption; publication does not infer their provenance",
+    "Legacy rollback and unpublish endpoint behavior remains outside this exact-publish service evidence"
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "task": "T14",
+  "recorded_on": "2026-10-20",
+  "status": "focused_service_and_shared_regressions_passed",
+  "checks": [
+    {
+      "command": "php _studio/tests/McpSiteStructureTest.php",
+      "passed": 58,
+      "failed": 0
+    },
+    {
+      "command": "php _studio/tests/SiteControlPageRenameTest.php",
+      "passed": 40,
+      "failed": 0
+    },
+    {
+      "command": "php _studio/tests/SiteControlUrlRenameApplyTest.php",
+      "passed": 56,
+      "failed": 0
+    },
+    {
+      "command": "php _studio/tests/SiteControlNavReorderTest.php",
+      "passed": 80,
+      "failed": 0
+    },
+    {
+      "command": "php _studio/tests/SiteControlStructuralMoveTest.php",
+      "passed": 62,
+      "failed": 0
+    },
+    {
+      "command": "php _studio/tests/SiteControlPageDeleteTest.php",
+      "passed": 77,
+      "failed": 0
+    },
+    {
+      "command": "php _studio/tests/McpChangeSetTest.php",
+      "passed": 38,
+      "failed": 0
+    },
+    {
+      "command": "php _studio/tests/McpApplyRecoveryTest.php",
+      "passed": 65,
+      "failed": 0
+    },
+    {
+      "command": "php _studio/tests/McpPublishTest.php",
+      "passed": 98,
+      "failed": 0
+    }
+  ],
+  "verified": [
+    "Graph and blast-radius inspection use bounded source captures and never synchronize page metadata or recover operations implicitly",
+    "Paged graph reads pin a complete relevant inventory and page projection version",
+    "Externally supplied intent uses the same SurfaceDiscovery and RegionScoper without provider orchestration",
+    "Title, URL, filesystem subtree move, deletion, nav visibility and order become retained exact change sets with shared navigation/reference/include transformations",
+    "Structural page and collection preconditions are sealed, rechecked and committed atomically with revision, version and operation result",
+    "Stable page IDs survive URL changes and subtree moves; collection page references survive moves and delete undo/redo",
+    "Homepage protection, collisions, unsupported references, shallow navigation, hidden deep pages and query/fragment-preserving link rewrites",
+    "Visual edits validate unique exact source address, span hash and whole-file hash, then use the shared PatchExecutor pure preparation helper; stale or ambiguous selection never guesses",
+    "Only dedicated SEO intent can alter _root/robots.txt and _root/llms.txt; publish preserves or generates complete reviewed root files and describes the policy",
+    "Whole-operation byte and projection rollback, metadata drift preserved as recovery_required, explicit repaired recovery, current structural scopes at apply/commit",
+    "Private asset planner seam preserves exact server-read binary bytes without structure permissions, SEO elevation or image re-encoding",
+    "All five legacy structural suites now seed independent canonical temporary roots with full migrations and guarded constructors; no installed DB or generated checkout copies"
+  ],
+  "interfaces": {
+    "service": "SiteStructureService(Database, ActorPolicy, SiteWorkspace, ChangeSetService)",
+    "read_methods": "graph, blastRadius, discover: (OperationActor, stdClass)",
+    "prepare": "prepare(OperationActor, stdClass{request_id,base_draft_version,intent})",
+    "intents": [
+      "title",
+      "url",
+      "move",
+      "delete",
+      "nav_visible",
+      "nav_reorder",
+      "visual",
+      "seo_override"
+    ],
+    "schemas": "inputSchema(method), outputSchema(method); prepare uses existing ToolContracts::changeReview",
+    "apply": "Existing changes.get/diff/apply/continue/recover interfaces; no separate structural executor",
+    "trusted_asset_seam": "ChangeSetService::prepareAssets(actor,request,Closure): callback operations plus server-only assets[upload_id]={path,content}; bound exact destination; no SEO or page projection permission",
+    "history": "agent_revision_projections from migration023 retains before/after page and collection projections for shared undo/redo"
+  },
+  "limitations": [
+    "Named MCP client qualification remains pending in the parent release gate",
+    "Ambiguous browser selectors require an explicit current file/hash/source anchor; selectors are not guessed",
+    "Unsupported dynamic PHP links or includes require source correction before route changes",
+    "Direct legacy structural endpoints retain their existing request/response contracts; shared transformations are covered by the legacy regression suites"
+  ]
+}

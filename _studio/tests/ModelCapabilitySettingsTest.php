@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
 require_once __DIR__ . '/helpers/RouterHeadingFixture.php';
+require_once __DIR__ . '/helpers/SettingsServiceFixture.php';
 
 use VoxelSite\Database;
 use VoxelSite\Settings;
@@ -26,8 +27,7 @@ $root = sys_get_temp_dir() . '/voxelsite-capabilities-' . bin2hex(random_bytes(8
 mkdir($root, 0700); mkdir($root . '/logs', 0700);
 file_put_contents($root . '/.governor-settings-test', 'disposable');
 $db = Database::getInstance($root . '/settings.db');
-$db->exec('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)');
-$db->exec('CREATE TABLE prompt_log (id INTEGER PRIMARY KEY, action_data TEXT, error_message TEXT, user_prompt TEXT)');
+initializeSettingsServiceFixture($db, $root);
 $settings = new Settings($db);
 $url = 'http://localhost:11434';
 $limits = ['base_url' => $url, 'models' => ['my-alias' => ['max_output_tokens' => 128000, 'context_window' => 1000000]]];

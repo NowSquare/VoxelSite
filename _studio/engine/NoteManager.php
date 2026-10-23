@@ -13,7 +13,7 @@ namespace VoxelSite;
  *
  * Design decisions:
  * - Soft-delete via `deleted_at` (preserves IDs for future Kanban FKs)
- * - Hard-delete piggybacks on list/search queries (no background job)
+ * - Bounded hard-delete occurs only during explicit mutations
  * - All list queries exclude soft-deleted notes
  * - Pinned notes sort first, then by updated_at DESC
  * - Max 5 pinned notes per user (soft limit, enforced here)
@@ -39,14 +39,12 @@ class NoteManager
 
     /**
      * List all active notes for a user, pinned first, then by updated_at DESC.
-     * Piggybacks hard-delete of expired soft-deleted notes.
+     * Reads never remove expired trash.
      *
      * @return array<int, array<string, mixed>>
      */
     public function listForUser(int $userId): array
     {
-        $this->hardDeleteExpired($userId);
-
         return $this->db->query(
             "SELECT id, title, body, pinned, user_id, created_at, updated_at
              FROM notes
@@ -214,8 +212,6 @@ class NoteManager
      */
     public function search(int $userId, string $query): array
     {
-        $this->hardDeleteExpired($userId);
-
         $likeQuery = '%' . $query . '%';
 
         return $this->db->query(
@@ -238,16 +234,16 @@ class NoteManager
 
     /**
      * Hard-delete notes whose soft-deletion expired.
-     * Runs on every list/search — no background job needed.
+     * Called only within an explicit mutation; each batch is bounded.
      */
-    private function hardDeleteExpired(int $userId): void
+    public function hardDeleteExpired(int $userId,int $limit=100,?int $excludeId=null): void
     {
         $cutoff = gmdate('Y-m-d\TH:i:s\Z', time() - self::HARD_DELETE_AFTER_SECONDS);
 
         $this->db->delete(
             'notes',
-            'user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?',
-            [$userId, $cutoff]
+            'id IN (SELECT id FROM notes WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ? AND id != ? ORDER BY deleted_at,id LIMIT ?)',
+            [$userId, $cutoff,$excludeId??0,min(100,max(0,$limit))]
         );
     }
 }

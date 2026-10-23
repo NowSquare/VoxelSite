@@ -38,85 +38,42 @@ if (DemoMode::isActive()) {
     return;
 }
 
-// ── Owner-only guard (strict — runs after demo check) ──
-if (($user['role'] ?? '') !== 'owner') {
-    jsonResponse(['ok' => false, 'error' => [
-        'code'    => 'forbidden',
-        'message' => 'Only owners can manage API keys.',
-    ]], 403);
-    return;
-}
-
-$auth = new AgentAuth();
-
-// ═══════════════════════════════════════════
-//  GET /settings/api-keys — List keys
-// ═══════════════════════════════════════════
-
-if ($method === 'GET') {
-    $keys = $auth->listKeys();
-    // Parse scopes JSON for each key
-    foreach ($keys as &$key) {
-        $key['scopes'] = json_decode($key['scopes'], true) ?? [];
+// Current database authority is required even when the session contains an older role.
+try {
+    $db=\VoxelSite\Database::getInstance();
+    $policy=new \VoxelSite\Agent\ActorPolicy($db);
+    $owner=new \VoxelSite\Agent\OperationActor('user',(int)($user['id']??0),null,[],'studio_configured',null);
+    $policy->requireOwnerSession($owner);
+    $approvals=new \VoxelSite\Agent\AdminApprovalStore($db,$policy,new \VoxelSite\SiteWorkspace($db),(loadConfig()??[])['app_key']??'');
+    $service=new \VoxelSite\Agent\CredentialAdministrationService($db,$policy,$approvals);
+    if($method==='GET') {
+        $query=['audience'=>'rest'];
+        foreach(['offset','inventory_version'] as $field)if(isset($_GET[$field]))$query[$field]=$field==='offset'?(int)$_GET[$field]:$_GET[$field];
+        $list=$service->list($owner,(object)$query);
+        $keys=$list['credentials'];
+        foreach($keys as &$key) {
+            $display=$db->queryOne('SELECT key_prefix,last_used_at FROM api_keys WHERE id=?',[$key['id']]);
+            $key+=$display??[];
+        }
+        unset($key);
+        jsonResponse(['ok'=>true,'data'=>['keys'=>$keys,'available_scopes'=>AgentAuth::getAllScopes(),
+            'total'=>$list['total'],'next_offset'=>$list['next_offset'],'inventory_version'=>$list['inventory_version'],
+            'pending_secrets'=>array_values(array_filter($approvals->pendingSecrets($owner),static fn($item)=>$item['audience']==='rest'))]]);return;
     }
-    unset($key);
-
-    jsonResponse(['ok' => true, 'data' => [
-        'keys'             => $keys,
-        'available_scopes' => AgentAuth::getAllScopes(),
-    ]]);
-    return;
+    $body=(object)getJsonBody();$c=\VoxelSite\Agent\ToolContracts::class;
+    if($method==='POST' && $path==='/settings/api-keys') {
+        \VoxelSite\Agent\JsonSchema::validate($body,$c::object(['operation_id'=>$c::requestId(),
+            'label'=>['type'=>'string','minLength'=>1,'maxLength'=>100],'role'=>['enum'=>['owner','editor','viewer','agent']],
+            'scopes'=>['type'=>'array','uniqueItems'=>true,'minItems'=>1,'maxItems'=>50,'items'=>['enum'=>AgentAuth::getAllScopes()]]]));
+        $intent=(object)['type'=>'credential.create','audience'=>'rest','user_id'=>$owner->userId,
+            'label'=>$body->label,'role'=>$body->role,'scopes'=>$body->scopes];
+    } elseif($method==='DELETE' && isset($params['id']) && ctype_digit($params['id'])) {
+        \VoxelSite\Agent\JsonSchema::validate($body,$c::object(['operation_id'=>$c::requestId(),'version'=>$c::hash()]));
+        $intent=(object)['type'=>'credential.revoke','credential_id'=>(int)$params['id'],'version'=>$body->version];
+    } else throw new \VoxelSite\Agent\OperationException('invalid_schema','Unknown credential action.');
+    $result=$service->executeStudio($owner,(object)['operation_id'=>$body->operation_id,'intent'=>$intent]);
+    jsonResponse(['ok'=>true,'data'=>$result],$method==='POST'?201:200);
+} catch(\VoxelSite\Agent\OperationException $error) {
+    jsonResponse(['ok'=>false,'error'=>['code'=>$error->errorCode,'message'=>$error->getMessage()]],
+        $error->errorCode==='permission_denied'?403:($error->errorCode==='invalid_schema'?422:409));
 }
-
-// ═══════════════════════════════════════════
-//  POST /settings/api-keys — Create key
-// ═══════════════════════════════════════════
-
-if ($method === 'POST') {
-    $body = getJsonBody();
-    $label = trim($body['label'] ?? '');
-    $role = $body['role'] ?? 'agent';
-    $scopes = $body['scopes'] ?? [];
-
-    if ($label === '') {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'validation',
-            'message' => 'Label is required.',
-        ]], 422);
-        return;
-    }
-
-    try {
-        $result = $auth->createKey($label, $role, $scopes);
-        jsonResponse(['ok' => true, 'data' => $result], 201);
-    } catch (\RuntimeException $e) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'validation',
-            'message' => $e->getMessage(),
-        ]], 422);
-    }
-    return;
-}
-
-// ═══════════════════════════════════════════
-//  DELETE /settings/api-keys/:id — Revoke key
-// ═══════════════════════════════════════════
-
-if ($method === 'DELETE' && isset($params['id'])) {
-    $deleted = $auth->revokeKey((int) $params['id']);
-
-    if ($deleted) {
-        jsonResponse(['ok' => true, 'data' => ['message' => 'API key revoked.']]);
-    } else {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'not_found',
-            'message' => 'API key not found.',
-        ]], 404);
-    }
-    return;
-}
-
-jsonResponse(['ok' => false, 'error' => [
-    'code'    => 'not_found',
-    'message' => 'API keys endpoint not found.',
-]], 404);

@@ -155,13 +155,17 @@
   }
 
   // ── Detect preview mode ──
-  var isPreview = window.location.pathname.indexOf('/_studio/') !== -1 ||
+  var previewRuntime = window.VoxelSitePreview && window.VoxelSitePreview.mode === 'preview' ? window.VoxelSitePreview : null;
+  var isPreview = !!previewRuntime || window.location.pathname.indexOf('/_studio/') !== -1 ||
                   window.location.search.indexOf('_path=') !== -1;
 
   // ── Detect demo root site (meta tag injected by index.php) ──
   var isDemoSite = !!document.querySelector('meta[name="voxelsite-demo"]');
 
-  if (isPreview || isDemoSite) {
+  if (previewRuntime) {
+    MANIFEST_URL = previewRuntime.manifest_url;
+    SUBMIT_URL = previewRuntime.submit_url;
+  } else if (isPreview || isDemoSite) {
     MANIFEST_URL = '/_studio/api/router.php?_path=%2Fagentic%2Fmanifest';
   }
 
@@ -185,7 +189,7 @@
         manifest = data;
         if (!manifest || !manifest.actions || manifest.actions.length === 0) return;
 
-        SUBMIT_URL = manifest.submit_url || SUBMIT_URL;
+        if (!isPreview) SUBMIT_URL = manifest.submit_url || SUBMIT_URL;
         renderBar(manifest);
       });
     });
@@ -809,6 +813,10 @@
 
   // ── Form Submission ──
   function submitAction(action, form, resultEl) {
+    if (isPreview) {
+      showResult(resultEl, form, false, 'This is a draft preview. Nothing was saved or sent.');
+      return;
+    }
     // Clear previous errors
     form.querySelectorAll('.vs-actions-field-error').forEach(function (el) {
       el.textContent = '';

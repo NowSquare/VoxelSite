@@ -21,6 +21,13 @@
 
 declare(strict_types=1);
 
+if (!is_file(__DIR__.'/_studio/update-gate.php')) {
+    http_response_code(503);
+    header('Content-Type:application/json');
+    echo '{"error":"update_runtime_missing"}';
+    exit;
+}
+require_once __DIR__ . '/_studio/update-gate.php';
 require_once __DIR__ . '/vendor/autoload.php';
 
 use VoxelSite\FormValidator;
@@ -59,6 +66,14 @@ class FormHandler
         //    against direct POST requests, and via curl/bots.
         if (file_exists(__DIR__ . '/.demo')) {
             $this->respond(403, 'Form submissions are disabled in demo mode.');
+            return;
+        }
+
+        // Cooperate with reviewed publish/restore/reset before any upload or record write.
+        try {
+            $siteMutationLock = \VoxelSite\SiteMutationLock::acquire(db: \VoxelSite\Database::getInstance());
+        } catch (\VoxelSite\Agent\OperationException $error) {
+            $this->respond(409, 'The website is being updated. Please try again shortly.');
             return;
         }
 
@@ -349,94 +364,13 @@ class FormHandler
      */
     private function notify(array $schema, array $data, int $submissionId): void
     {
-        $emailConfig = $schema['notifications']['email'] ?? null;
-        if (!$emailConfig || !($emailConfig['enabled'] ?? false)) {
-            return;
-        }
-
-        // Load site.json for template placeholders
-        $siteJsonPath = __DIR__ . '/assets/data/site.json';
-        $siteData = file_exists($siteJsonPath)
-            ? json_decode(file_get_contents($siteJsonPath), true)
-            : [];
-
-        // Resolve recipient — fall back to the configured From address
-        // when the schema template (e.g. {{site.contact.email}}) resolves
-        // empty because the site.json path doesn't exist.
-        $recipient = $this->resolveTemplate($emailConfig['recipient'], $data, $siteData ?? [], $submissionId);
-        if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
-            // Fallback: use the mail From address from Studio settings
-            try {
-                $settings = new \VoxelSite\Settings();
-                $recipient = (string) $settings->get('mail.from_address', '');
-            } catch (\Throwable $_) {
-                $recipient = '';
-            }
-            if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
-                Logger::warning('forms', 'No valid notification recipient', [
-                    'template'  => $emailConfig['recipient'],
-                    'resolved'  => $recipient,
-                ]);
-                return;
-            }
-        }
-
-        // Resolve subject line
-        $subject = $this->resolveTemplate($emailConfig['subject'], $data, $siteData ?? [], $submissionId);
-
-        // Build plain-text body
-        $body = 'New submission from ' . ($siteData['name'] ?? 'your website') . "\n";
-        $body .= 'Form: ' . ($schema['name'] ?? $schema['id'] ?? 'Unknown') . "\n";
-        $body .= 'Date: ' . date('Y-m-d H:i:s') . "\n";
-        $body .= 'Source: Web form' . "\n";
-        $referrer = $_SERVER['HTTP_REFERER'] ?? '';
-        if ($referrer) {
-            $body .= 'Page: ' . $referrer . "\n";
-        }
-        $body .= str_repeat('─', 40) . "\n\n";
-
-        foreach ($data as $key => $value) {
-            // Find the human-readable label from the schema
-            $label = $key;
-            foreach ($schema['fields'] as $field) {
-                if ($field['name'] === $key) {
-                    $label = $field['label'] ?? $key;
-                    break;
-                }
-            }
-            $displayValue = is_array($value) ? implode(', ', $value) : (string) $value;
-            $body .= $label . ': ' . $displayValue . "\n";
-        }
-
-        $body .= "\n" . str_repeat('─', 40) . "\n";
-        $body .= 'Submission ID: #' . $submissionId . "\n";
-        $body .= 'IP: ' . ($_SERVER['REMOTE_ADDR'] ?? 'unknown') . "\n";
-
-        // Build options for Mailer
-        $options = [];
-
-        $replyTo = $emailConfig['reply_to'] ?? null;
-        if ($replyTo) {
-            $resolvedReplyTo = $this->resolveTemplate($replyTo, $data, $siteData ?? [], $submissionId);
-            if (filter_var($resolvedReplyTo, FILTER_VALIDATE_EMAIL)) {
-                $options['reply_to'] = $resolvedReplyTo;
-            }
-        }
-
-        // Send via Mailer (handles driver selection, SMTP, fallback, logging)
-        // Best-effort — never fail the submission if mail fails
-        try {
-            \VoxelSite\Mailer::getInstance()->send($recipient, $subject, $body, $options);
-            Logger::info('forms', 'Notification email sent', [
-                'recipient' => $recipient,
-                'subject'   => $subject,
-            ]);
-        } catch (\Throwable $e) {
-            Logger::error('forms', 'Notification email failed', [
-                'recipient' => $recipient,
-                'subject'   => $subject,
-                'exception' => $e->getMessage(),
-            ]);
+        $siteBytes = \VoxelSite\Agent\BusinessContracts::read(__DIR__, 'assets/data/site.json', 1048576);
+        $siteData = json_decode($siteBytes ?? '{}', true) ?: [];
+        $fallback = (string) (new \VoxelSite\Settings())->get('mail.from_address', '');
+        $messages = \VoxelSite\Agent\FormNotificationPlan::build($schema, $data, $siteData, $submissionId, $fallback, 'web', $_SERVER['REMOTE_ADDR'] ?? '');
+        foreach ($messages as $message) {
+            try { \VoxelSite\Mailer::getInstance()->send($message['to'], $message['subject'], $message['body'], $message['options']); }
+            catch (\Throwable $error) { Logger::warning('forms', 'Notification transport failed', ['submission_id' => $submissionId]); }
         }
     }
 

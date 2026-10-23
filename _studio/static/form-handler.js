@@ -17,7 +17,7 @@
   // Matches action="/submit.php", action='/submit.php', and variations
   // with trailing slashes or query strings.
   var forms = document.querySelectorAll(
-    'form[action="/submit.php"], form[action=\'/submit.php\'], form[action="/submit.php/"], form[action="/submit.php?"]'
+    'form[data-voxelsite-preview-form], form[action="/submit.php"], form[action=\'/submit.php\'], form[action="/submit.php/"], form[action="/submit.php?"]'
   );
   // Fallback: also match forms whose action attribute contains submit.php
   if (forms.length === 0) {
@@ -32,6 +32,7 @@
   // Only block submissions when inside the Studio preview iframe,
   // not in any arbitrary iframe (production embeds should work fine).
   function isStudioPreview() {
+    if (window.VoxelSitePreview && window.VoxelSitePreview.mode === 'preview') return true;
     try {
       // Studio adds a data attribute to its preview iframe
       if (window.frameElement && window.frameElement.hasAttribute('data-voxelsite-preview')) {

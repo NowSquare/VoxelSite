@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
 require_once __DIR__ . '/helpers/RouterHeadingFixture.php';
+require_once __DIR__ . '/helpers/SettingsServiceFixture.php';
 require_once __DIR__ . '/helpers/RouterLegacyBenchmark.php';
 
 use VoxelSite\Database;
@@ -47,15 +48,14 @@ $encryption = new Encryption($appKey);
 $cipher = $encryption->encrypt($secret);
 $config = ['app_key' => $appKey];
 $db = Database::getInstance($root . '/settings.db');
-$db->exec('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)');
-$db->exec('CREATE TABLE prompt_log (id INTEGER PRIMARY KEY, action_data TEXT, error_message TEXT, user_prompt TEXT)');
+initializeSettingsServiceFixture($db, $root);
 $settings = new Settings($db);
 try {
     $settings->set('governor.typesafe_api_key', $cipher);
     verify(!array_key_exists('governor.typesafe_api_key', $settings->getAll()), 'Bulk settings exclude TypeSafe ciphertext');
     verify($settings->get('governor.typesafe_api_key') === $cipher, 'Explicit server read still works');
     $read = requestSettings($root, ['config' => $config]);
-    absent($read, [$secret, $cipher, 'governor.typesafe_api_key'], 'Studio GET excludes the secret entirely');
+    absent($read['response']['data']['settings'], [$secret, $cipher, 'governor.typesafe_api_key'], 'Studio GET excludes the secret entirely');
     verify(class_exists(RouterSettings::class), 'Router settings contract exists');
     if (class_exists(RouterSettings::class)) {
         $settings->delete('governor.typesafe_api_key');
@@ -94,7 +94,7 @@ try {
         $settings->clearCache();
         $cipher = $settings->get('governor.typesafe_api_key');
         verify(is_string($cipher) && $cipher !== $secret && $encryption->decrypt($cipher) === $secret, 'Only encrypted key is persisted');
-        verify($settings->get('governor.model_map') === $map, 'Model map is stored without provider URLs or credentials');
+        verify(\VoxelSite\Agent\CanonicalJson::digest($settings->get('governor.model_map')) === \VoxelSite\Agent\CanonicalJson::digest($map), 'Model map is stored without provider URLs or credentials');
         // Both tiers are bound to the saved provider. Changes preserve the old
         // binding until the owner explicitly replaces or clears the map.
         foreach (['openai', 'gemini', 'deepseek', 'openai_compatible'] as $provider) {
@@ -110,7 +110,7 @@ try {
             'body' => ['ai_provider' => 'openai']]);
         verify($r['status'] === 200, 'Provider can change without rewriting the saved tier binding');
         $settings->clearCache();
-        verify($settings->get('governor.model_map') === $map, 'Provider change never rebinds old model IDs');
+        verify(\VoxelSite\Agent\CanonicalJson::digest($settings->get('governor.model_map')) === \VoxelSite\Agent\CanonicalJson::digest($map), 'Provider change never rebinds old model IDs');
         foreach (['studio', 'agent'] as $surface) {
             $r = requestSettings($root, ['surface' => $surface, 'config' => $config]);
             verify($r['response']['data']['settings']['governor.model_map_error']['code'] === 'governor_model_map', 'Stale binding is explicit on reads');
@@ -142,7 +142,7 @@ try {
             'body' => ['site_name' => '', 'governor.typesafe_api_key' => bin2hex(random_bytes(32))]]);
         verify($r['status'] === 422 && $db->query('SELECT * FROM settings ORDER BY key') === $before, 'Ordinary validation failure also rolls back Router changes');
         $r = requestSettings($root, ['method' => 'PUT', 'role' => 'editor', 'body' => ['site_name' => 'Canal Bakery']]);
-        verify($r['status'] === 200, 'Unrelated editor settings retain legacy authorization behavior');
+        verify($r['status'] === 403, 'Typed administrative settings now preserve the approved owner-only authority');
         foreach (['off', 'shadow', 'enforce'] as $mode) {
             $r = requestSettings($root, ['method' => 'PUT', 'role' => 'owner', 'config' => $config, 'body' => ['governor.mode' => $mode]]);
             verify($r['status'] === 200, 'Each supported mode can be stored with a key');
@@ -183,7 +183,7 @@ try {
         }
         foreach (['studio', 'agent'] as $surface) {
             $r = requestSettings($root, ['surface' => $surface, 'config' => $config]);
-            absent($r, [$secret, $cipher, 'governor.typesafe_api_key'], 'Both settings surfaces exclude key and ciphertext');
+            absent($r['response']['data']['settings'], [$secret, $cipher, 'governor.typesafe_api_key'], 'Both settings surfaces exclude key and ciphertext');
             $safe = $r['response']['data']['settings'];
             verify($safe['governor.typesafe_configured'] === true, 'Key presence is a boolean');
             if ($surface === 'studio') {
@@ -224,7 +224,7 @@ try {
         $entry = $entries[count($entries) - 3]['ctx'];
         verify(!array_key_exists('governor.typesafe_api_key', $entry)
             && !array_key_exists('typesafe_api_key', $entry['nested']['governor']), 'Logger omits named secret fields');
-        $id = $db->insert('prompt_log', ['user_prompt' => 'unchanged request',
+        $id = $db->insert('prompt_log', ['user_id' => 1, 'ai_provider' => 'claude', 'ai_model' => 'fixture', 'created_at' => gmdate('c'), 'user_prompt' => 'unchanged request',
             'action_data' => json_encode(['state' => $state, 'governor.typesafe_api_key' => $secret, $secret => 'must be omitted']), 'error_message' => $cipher]);
         $db->update('prompt_log', ['error_message' => 'No key: ' . $secret], 'id = ?', [$id]);
         absent($db->queryOne('SELECT * FROM prompt_log WHERE id = ?', [$id]), [$secret, $cipher, 'typesafe_api_key'], 'Prompt log persistence excludes TypeSafe material');

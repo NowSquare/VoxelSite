@@ -30,19 +30,23 @@ class ActionManager
 
     /** @var array<string, array> Cache of loaded action definitions */
     private array $definitionCache = [];
+    /** Site data belongs to this instance's configured source root. */
+    private ?array $siteDataCache = null;
 
     public function __construct(
         ?string $actionsDir = null,
         ?string $dbPath = null,
-        ?string $siteDataPath = null
+        ?string $siteDataPath = null,
+        ?string $uploadsDir = null,
+        ?string $templatesDir = null
     ) {
         $studioDir = dirname(__DIR__);
         $root = dirname($studioDir);
         $this->actionsDir    = $actionsDir   ?? $studioDir . '/data/actions';
-        $this->templatesDir  = $studioDir . '/action-templates';
+        $this->templatesDir  = $templatesDir ?? $studioDir . '/action-templates';
         $this->dbPath        = $dbPath       ?? $root . '/_data/actions.db';
-        $this->siteDataPath  = $siteDataPath ?? $studioDir . '/assets/data/site.json';
-        $this->uploadsDir    = $root . '/_data/uploads/actions';
+        $this->siteDataPath  = $siteDataPath ?? $root . '/assets/data/site.json';
+        $this->uploadsDir    = $uploadsDir ?? dirname($this->dbPath) . '/uploads/actions';
     }
 
     // ══════════════════════════════════════════════
@@ -182,17 +186,19 @@ class ActionManager
             // Main action: make_{id} or {id}
             $mainToolName = $this->actionIdToToolName($id, 'make');
             if ($toolName === $mainToolName || $toolName === $id) {
+                $lock = $sandbox ? null : SiteMutationLock::acquire(db: Database::getInstance());
                 $input['action_id'] = $id;
                 return $this->createRecord($action, $input, $ip, $sandbox);
             }
 
             // Companion: check_{id}_availability
-            if ($toolName === "check_{$id}_availability") {
+            if ($toolName === "check_{$id}_availability" && ($action['companion_tools']['check_availability'] ?? false)) {
                 return $this->checkAvailability($action, $input);
             }
 
             // Companion: cancel_{id}
-            if ($toolName === "cancel_{$id}") {
+            if ($toolName === "cancel_{$id}" && ($action['companion_tools']['cancel_by_code'] ?? false)) {
+                $lock = SiteMutationLock::acquire(db: Database::getInstance());
                 return $this->cancelByCode($action, $input['confirmation_code'] ?? '');
             }
         }
@@ -210,6 +216,7 @@ class ActionManager
     private function createRecord(array $action, array $input, string $ip, bool $sandbox = false): array
     {
         $actionId = $action['id'];
+        if ($sandbox) return $this->validateSubmission($action, $input);
 
         // Rate limit check (skip in sandbox)
         if (!$sandbox && !$this->checkRateLimit($actionId, $ip, $action)) {
@@ -239,6 +246,7 @@ class ActionManager
 
             // File fields: process upload from $_FILES, not from $input
             if ($type === 'file') {
+                if ($sandbox) continue;
                 $fileResult = $this->processFileUpload($field, $action['id']);
                 if ($fileResult !== null) {
                     $data[$name] = $fileResult;
@@ -334,6 +342,7 @@ class ActionManager
                 $now,
             ]);
 
+            $recordId = (int) $db->lastInsertId();
             $db->exec('COMMIT');
         } catch (\Throwable $e) {
             $db->exec('ROLLBACK');
@@ -371,6 +380,7 @@ class ActionManager
             'message' => $message,
             'confirmation_code' => $code,
             'status' => $defaultStatus,
+            'record_id' => $recordId,
         ];
     }
 
@@ -459,6 +469,7 @@ class ActionManager
             if (in_array($field['name'], $slotFields, true) && !empty($field['options']) && !isset($input[$field['name']])) {
                 // Enumerate options for this field
                 foreach ($field['options'] as $option) {
+                    if (count($available) >= 100) throw new \VoxelSite\Agent\OperationException('size_limit', 'Specify more slot fields to keep availability checks below 100 slots.');
                     $slotInput = array_merge($input, [$field['name'] => $option]);
                     $count = $this->countRecordsForSlot($action['id'], $slotFields, $slotInput, $countStatuses);
                     $remaining = max(0, $maxPerSlot - $count);
@@ -1009,8 +1020,9 @@ class ActionManager
             return null;
         }
 
-        $root = dirname(dirname(__DIR__));
-        $absPath = $root . '/' . $relativePath;
+        $suffix=substr($relativePath,strlen('_data/uploads/actions/'));
+        try { $absPath=SiteWorkspace::resolveWithin($this->uploadsDir,$suffix); }
+        catch (\RuntimeException) { return null; }
 
         if (!file_exists($absPath) || !is_file($absPath)) {
             return null;
@@ -1019,7 +1031,7 @@ class ActionManager
         // Verify the resolved path is actually within our uploads directory
         $realPath = realpath($absPath);
         $realUploadsDir = realpath($this->uploadsDir);
-        if ($realPath === false || $realUploadsDir === false || !str_starts_with($realPath, $realUploadsDir)) {
+        if ($realPath === false || $realUploadsDir === false || !str_starts_with($realPath, $realUploadsDir . '/')) {
             return null;
         }
 
@@ -1143,7 +1155,7 @@ class ActionManager
 
         // Get paginated records
         $offset = ($page - 1) * $perPage;
-        $sql .= ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+        $sql .= ' ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?';
         $params[] = $perPage;
         $params[] = $offset;
 
@@ -1170,21 +1182,22 @@ class ActionManager
     /**
      * Update a record's status.
      */
-    public function updateStatus(int $recordId, string $status): bool
+    public function updateStatus(int $recordId, string $status, ?string $actionId = null): bool
     {
         $allowed = ['confirmed', 'pending', 'cancelled', 'completed', 'no-show'];
         if (!in_array($status, $allowed, true)) {
             return false;
         }
 
-        $stmt = $this->db()->prepare('UPDATE action_records SET status = ?, updated_at = ? WHERE id = ?');
-        return $stmt->execute([$status, date('c'), $recordId]);
+        $stmt = $this->db()->prepare('UPDATE action_records SET status = ?, updated_at = ? WHERE id = ?' . ($actionId === null ? '' : ' AND action_id = ?'));
+        $stmt->execute(array_merge([$status, date('c'), $recordId], $actionId === null ? [] : [$actionId]));
+        return $stmt->rowCount() === 1;
     }
 
     /**
      * Bulk status update for multiple records.
      */
-    public function bulkUpdateStatus(array $recordIds, string $status): int
+    public function bulkUpdateStatus(array $recordIds, string $status, ?string $actionId = null): int
     {
         $allowed = ['confirmed', 'pending', 'cancelled', 'completed', 'no-show'];
         if (!in_array($status, $allowed, true) || empty($recordIds)) {
@@ -1195,8 +1208,9 @@ class ActionManager
         $params = array_merge([$status, date('c')], array_map('intval', $recordIds));
 
         $stmt = $this->db()->prepare(
-            "UPDATE action_records SET status = ?, updated_at = ? WHERE id IN ({$placeholders})"
+            "UPDATE action_records SET status = ?, updated_at = ? WHERE id IN ({$placeholders})" . ($actionId === null ? '' : ' AND action_id = ?')
         );
+        if ($actionId !== null) $params[] = $actionId;
         $stmt->execute($params);
 
         return $stmt->rowCount();
@@ -1205,10 +1219,11 @@ class ActionManager
     /**
      * Delete a record permanently.
      */
-    public function deleteRecord(int $recordId): bool
+    public function deleteRecord(int $recordId, ?string $actionId = null): bool
     {
-        $stmt = $this->db()->prepare('DELETE FROM action_records WHERE id = ?');
-        return $stmt->execute([$recordId]);
+        $stmt = $this->db()->prepare('DELETE FROM action_records WHERE id = ?' . ($actionId === null ? '' : ' AND action_id = ?'));
+        $stmt->execute($actionId === null ? [$recordId] : [$recordId, $actionId]);
+        return $stmt->rowCount() === 1;
     }
 
     /**
@@ -1261,8 +1276,15 @@ class ActionManager
             return '';
         }
 
-        $result = $this->listRecords($actionId, array_merge($filters, ['per_page' => 10000]));
+        $result = $this->listRecords($actionId, array_merge($filters, ['page' => 1, 'per_page' => 100]));
+        if ($result['total'] > 10000) throw new \RuntimeException('Export exceeds 10,000 records. Narrow the filters.');
         $records = $result['records'];
+        for ($page = 2; count($records) < $result['total']; $page++) {
+            $more = $this->listRecords($actionId, array_merge($filters, ['page' => $page, 'per_page' => 100]))['records'];
+            if (!$more) break;
+            array_push($records, ...$more);
+            if (strlen(json_encode($records)) > 8388608) throw new \RuntimeException('Export exceeds 8 MiB. Narrow the filters.');
+        }
 
         if (empty($records)) {
             return '';
@@ -1275,7 +1297,7 @@ class ActionManager
         $headers = array_merge(['Ref'], $fieldLabels, ['Status', 'Source', 'Created']);
 
         $output = fopen('php://temp', 'r+');
-        fputcsv($output, $headers);
+        fputcsv($output, array_map([\VoxelSite\Agent\BusinessContracts::class, 'csvCell'], $headers), ',', '"', '');
 
         foreach ($records as $record) {
             $row = [$record['confirmation_code']];
@@ -1299,7 +1321,7 @@ class ActionManager
             };
             $row[] = $sourceLabel;
             $row[] = $record['created_at'];
-            fputcsv($output, $row);
+            fputcsv($output, array_map([\VoxelSite\Agent\BusinessContracts::class, 'csvCell'], $row), ',', '"', '');
         }
 
         rewind($output);
@@ -1340,8 +1362,8 @@ class ActionManager
 
             foreach ($data as $value) {
                 if (is_array($value) && isset($value['path']) && str_starts_with($value['path'], '_data/uploads/actions/')) {
-                    $filePath = $root . '/' . $value['path'];
-                    if (file_exists($filePath) && is_file($filePath)) {
+                    $filePath = $this->getUploadAbsolutePath($value['path']);
+                    if ($filePath !== null && str_starts_with($value['path'], '_data/uploads/actions/' . $actionId . '/')) {
                         @unlink($filePath);
                     }
                 }
@@ -1364,12 +1386,13 @@ class ActionManager
             return $this->definitionCache[$actionId];
         }
 
-        $path = $this->actionsDir . '/' . $actionId . '.json';
+        if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,63}$/D', $actionId)) return null;
+        $path = SiteWorkspace::resolveWithin($this->actionsDir, $actionId . '.json');
         if (!file_exists($path)) {
             return null;
         }
 
-        $content = file_get_contents($path);
+        $content = \VoxelSite\Agent\BusinessContracts::read($this->actionsDir, $actionId . '.json');
         if ($content === false) {
             return null;
         }
@@ -1394,12 +1417,16 @@ class ActionManager
             return [];
         }
 
-        $actions = [];
-        foreach (glob($this->actionsDir . '/*.json') as $file) {
-            $content = file_get_contents($file);
-            if ($content === false) continue;
-            $def = json_decode($content, true);
-            if (!is_array($def)) continue;
+        $actions = []; $entries = 0; $total = 0;
+        foreach (new \DirectoryIterator($this->actionsDir) as $entry) {
+            if ($entry->isDot()) continue;
+            if (++$entries > 240) throw new \VoxelSite\Agent\OperationException('size_limit', 'Action directory exceeds its inventory bound.');
+            if (!preg_match('/^([a-z0-9][a-z0-9_-]{0,63})\.json$/D', $entry->getFilename(), $match)) continue;
+            $content = \VoxelSite\Agent\BusinessContracts::read($this->actionsDir, $entry->getFilename());
+            $total += strlen($content);
+            if ($total > 1048576 || count($actions) >= 100) throw new \VoxelSite\Agent\OperationException('size_limit', 'Action definitions exceed the public runtime bound.');
+            $def = json_decode($content, true, 32, JSON_THROW_ON_ERROR);
+            if (!is_array($def) || ($def['id'] ?? null) !== $match[1]) throw new \VoxelSite\Agent\OperationException('invalid_schema', 'Action ID must match its source filename.');
             $actions[] = $def;
         }
 
@@ -1423,15 +1450,13 @@ class ActionManager
     public function saveAction(array $definition): bool
     {
         $id = $definition['id'] ?? '';
-        if (empty($id)) {
-            return false;
-        }
+        if (!is_string($id) || !preg_match('/^[a-z0-9][a-z0-9_-]{0,63}$/D', $id)) return false;
 
         if (!is_dir($this->actionsDir)) {
             mkdir($this->actionsDir, 0755, true);
         }
 
-        $path = $this->actionsDir . '/' . $id . '.json';
+        $path = SiteWorkspace::resolveWithin($this->actionsDir, $id . '.json', true);
         $json = json_encode($definition, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         $tmpPath = $path . '.tmp.' . getmypid();
@@ -1457,7 +1482,8 @@ class ActionManager
      */
     public function deleteAction(string $actionId): bool
     {
-        $path = $this->actionsDir . '/' . $actionId . '.json';
+        if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,63}$/D', $actionId)) return false;
+        $path = SiteWorkspace::resolveWithin($this->actionsDir, $actionId . '.json');
         if (file_exists($path)) {
             unlink($path);
             unset($this->definitionCache[$actionId]);
@@ -1492,6 +1518,7 @@ class ActionManager
             }
         }
 
+        if ($this->loadAction($newId) !== null) return null;
         $duplicate = $source;
         $duplicate['id'] = $newId;
         $duplicate['name'] = $source['name'] . ' (Copy)';
@@ -1514,13 +1541,14 @@ class ActionManager
             return [];
         }
 
-        $templates = [];
-        foreach (glob($this->templatesDir . '/*.json') as $file) {
-            $content = file_get_contents($file);
-            if ($content === false) continue;
-            $def = json_decode($content, true);
-            if (!is_array($def)) continue;
-            $templates[] = $def;
+        $templates = []; $count = 0;
+        foreach (new \DirectoryIterator($this->templatesDir) as $entry) {
+            if ($entry->isDot()) continue;
+            if (++$count > 100) throw new \VoxelSite\Agent\OperationException('size_limit', 'Template inventory exceeds its bound.');
+            if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,63}\.json$/D', $entry->getFilename())) continue;
+            $content = \VoxelSite\Agent\BusinessContracts::read($this->templatesDir, $entry->getFilename());
+            $def = json_decode($content, true, 32, JSON_THROW_ON_ERROR);
+            if (is_array($def)) $templates[] = $def;
         }
 
         return $templates;
@@ -1531,7 +1559,8 @@ class ActionManager
      */
     public function createFromTemplate(string $templateId, ?string $customId = null): ?array
     {
-        $templatePath = $this->templatesDir . '/' . $templateId . '.json';
+        if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,63}$/D', $templateId)) return null;
+        $templatePath = SiteWorkspace::resolveWithin($this->templatesDir, $templateId . '.json');
         if (!file_exists($templatePath)) {
             return null;
         }
@@ -1875,22 +1904,18 @@ class ActionManager
      */
     private function loadSiteData(): array
     {
-        static $cache = null;
-        if ($cache !== null) return $cache;
+        if ($this->siteDataCache !== null) return $this->siteDataCache;
 
         if (!file_exists($this->siteDataPath)) {
-            $cache = [];
-            return $cache;
+            return $this->siteDataCache = [];
         }
 
-        $content = file_get_contents($this->siteDataPath);
+        $content = \VoxelSite\Agent\BusinessContracts::read(dirname($this->siteDataPath), basename($this->siteDataPath), 1048576);
         if ($content === false) {
-            $cache = [];
-            return $cache;
+            return $this->siteDataCache = [];
         }
 
-        $cache = json_decode($content, true) ?: [];
-        return $cache;
+        return $this->siteDataCache = json_decode($content, true) ?: [];
     }
 
     /**
@@ -1902,7 +1927,8 @@ class ActionManager
             return $this->db;
         }
 
-        // Ensure _data directory exists
+        // Never follow database or ancestor links into a different installation.
+        SiteWorkspace::resolveWithin(dirname($this->dbPath), basename($this->dbPath));
         $dataDir = dirname($this->dbPath);
         if (!is_dir($dataDir)) {
             mkdir($dataDir, 0755, true);
@@ -1990,7 +2016,7 @@ class ActionManager
         $emailField = $action['notifications']['guest_email_field'] ?? 'email';
         $guestEmail = $data[$emailField] ?? null;
 
-        if (empty($guestEmail) || !filter_var($guestEmail, FILTER_VALIDATE_EMAIL)) {
+        if (!($action['notifications']['guest_notify'] ?? true) || empty($guestEmail) || !filter_var($guestEmail, FILTER_VALIDATE_EMAIL)) {
             // Even without a guest email, try to notify the owner
             $this->sendOwnerNotification($action, $data, $code, null);
             return;
@@ -2037,6 +2063,7 @@ class ActionManager
      */
     private function sendOwnerNotification(array $action, array $data, string $code, ?string $guestEmail = null): void
     {
+        if (!($action['notifications']['owner_notify'] ?? true)) return;
         // Resolve owner email: try dedicated setting, then fall back to
         // the SMTP from-address — same pattern as submit.php for forms.
         $settings = new Settings();
@@ -2099,5 +2126,83 @@ class ActionManager
             'multiselect' => 'array',
             default => 'string',
         };
+    }
+    /** Pure validation: no persistent database, upload, record, code or email is created. */
+    public function validateSubmission(array $action,array $input):array
+    {
+        $data=[];$errors=[];
+        foreach($action['fields']??[] as $field) {
+            $name=$field['name'];$type=$field['type']??'text';
+            if($type==='file') {if($field['required']??false)$errors[]='Required file '.$name.' must use the website upload form.';continue;}
+            if(array_key_exists($name,$input)) {
+                $value=$input[$name];
+                if(is_array($value) && ($type!=='multiselect' || array_filter($value,fn($v)=>!is_string($v))))$errors[]=$name.' has an invalid value type.';
+                elseif(is_object($value))$errors[]=$name.' has an invalid value type.';
+                else $data[$name]=$value;
+            }
+        }
+        if(!$errors)$errors=$this->validateInput($action,$data);
+        if(!$errors) {
+            $previous=$this->db;
+            try {
+                if(is_file($this->dbPath)) {$this->db=new \PDO('sqlite:'.$this->dbPath);$this->db->setAttribute(\PDO::ATTR_ERRMODE,\PDO::ERRMODE_EXCEPTION);$this->db->exec('PRAGMA query_only=ON');}
+                else {$this->db=new \PDO('sqlite::memory:');$this->ensureSchema();}
+                if($constraint=$this->checkConstraints($action,$data))$errors[]=$constraint;
+            }finally{$this->db=$previous;}
+        }
+        return ['ok'=>!$errors,'valid'=>!$errors,'errors'=>$errors,'data'=>$data,'mode'=>'validation_only','record_created'=>false,'email_sent'=>false];
+    }
+    public function businessDatabase():\PDO {return $this->db();}
+    /** Called only inside the source receipt transaction; all checks reuse the public engine. */
+    public function invokeStored(array $action,string $kind,array $input,string $sourceIdentity,string $source='mcp'):array
+    {
+        if($kind==='cancel') {
+            if(!($action['companion_tools']['cancel_by_code']??false))throw new \VoxelSite\Agent\OperationException('permission_denied','Cancellation is not enabled for this Action.');
+            $result=$this->cancelByCode($action,(string)($input['confirmation_code']??''));
+            if(!$result['ok'])throw new \VoxelSite\Agent\OperationException('validation_failed',$result['message']);
+            $q=$this->db()->prepare('SELECT id FROM action_records WHERE action_id=? AND confirmation_code=?');$q->execute([$action['id'],strtoupper(trim($input['confirmation_code']))]);
+            return $result+['record_id'=>(int)$q->fetchColumn(),'status'=>'cancelled','record_created'=>false];
+        }
+        if(!$this->checkRateLimit($action['id'],$sourceIdentity,$action))throw new \VoxelSite\Agent\OperationException('rate_limited','This Action has reached its configured submission rate limit.');
+        $validation=$this->validateSubmission($action,$input);
+        if(!$validation['valid'])throw new \VoxelSite\Agent\OperationException('validation_failed',implode(' ',array_slice($validation['errors'],0,10)));
+        $data=$validation['data'];
+        if($error=$this->checkConstraints($action,$data))throw new \VoxelSite\Agent\OperationException('validation_failed',$error);
+        $confirmation=$action['confirmation']??[];$code=$this->generateCode((int)($confirmation['code_length']??8),3,$confirmation['code_alphabet']??'ABCDEFGHJKLMNPQRSTUVWXYZ23456789');
+        $status=($confirmation['auto_confirm']??true)?($confirmation['default_status']??'confirmed'):'pending';$now=date('c');
+        $this->db()->prepare('INSERT INTO action_records (action_id,data,status,confirmation_code,locale,meta,ip_address,source,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+            ->execute([$action['id'],json_encode($data,JSON_THROW_ON_ERROR),$status,$code,null,'{}','',$source,$now,$now]);
+        $id=(int)$this->db()->lastInsertId();$this->recordRateLimitHit($action['id'],$sourceIdentity);$data['confirmation_code']=$code;
+        return ['ok'=>true,'record_id'=>$id,'status'=>$status,'confirmation_code'=>$code,'record_created'=>true,
+            'message'=>$this->interpolate($action['responses']['success']??'Confirmed. Your confirmation code is {confirmation_code}.',$data)];
+    }
+    public function availability(array $action,array $data):array
+    {
+        if(!($action['companion_tools']['check_availability']??false))throw new \VoxelSite\Agent\OperationException('permission_denied','Availability is not enabled for this Action.');
+        $previous=$this->db;
+        try {
+            if(is_file($this->dbPath)) {$this->db=new \PDO('sqlite:'.$this->dbPath);$this->db->exec('PRAGMA query_only=ON');}
+            else {$this->db=new \PDO('sqlite::memory:');$this->ensureSchema();}
+            return $this->checkAvailability($action,$data);
+        }finally{$this->db=$previous;}
+    }
+    /** Deterministic notification plan. Transport runs only after durable intent commit. */
+    public function notificationPlan(array $action,array $data,string $code,?string $ownerEmail):array
+    {
+        $notifications=$action['notifications']??[];$field=$notifications['guest_email_field']??'email';$guest=$data[$field]??null;
+        $site=$this->getSiteName();$name=$action['name']??$action['id'];$details='';
+        foreach($action['fields']??[] as $item)if(isset($data[$item['name']]))$details.=($item['label']??$item['name']).': '.\VoxelSite\Agent\BusinessContracts::csvCell($data[$item['name']])."\n";
+        $messages=[];
+        if(($notifications['guest_notify']??true)&&is_string($guest)&&filter_var($guest,FILTER_VALIDATE_EMAIL))$messages[]=['to'=>$guest,'subject'=>$name.' — Request '.$code,'body'=>"This is a confirmation of your request {$code}.\n\nDetails:\n\n".$details."\n".$site,'options'=>['from_name'=>$site]];
+        if(($notifications['owner_notify']??true)&&$ownerEmail&&filter_var($ownerEmail,FILTER_VALIDATE_EMAIL)) {
+            $options=['from_name'=>$site.' Studio'];if(is_string($guest)&&filter_var($guest,FILTER_VALIDATE_EMAIL))$options['reply_to']=$guest;
+            $messages[]=['to'=>$ownerEmail,'subject'=>'New '.$name.' — '.$code,'body'=>"New {$name} received.\n\nCode: {$code}\n\n".$details,'options'=>$options];
+        }
+        return $messages;
+    }
+    public function getRecord(string $actionId,int $recordId):?array
+    {
+        $q=$this->db()->prepare('SELECT * FROM action_records WHERE id=? AND action_id=?');$q->execute([$recordId,$actionId]);$row=$q->fetch(\PDO::FETCH_ASSOC);
+        if(!$row)return null;$row['data']=json_decode($row['data'],true,32,JSON_THROW_ON_ERROR);$row['meta']=json_decode($row['meta']??'{}',true,32,JSON_THROW_ON_ERROR);return $row;
     }
 }

@@ -23,6 +23,13 @@ use VoxelSite\GenerationBudget;
 $method = $_REQUEST['_route_method'];
 $path = $_REQUEST['_route_path'];
 
+$managedConfigurationPaths = ['/settings', '/settings/system', '/settings/mail', '/settings/mail/test', '/settings/mail/log',
+    '/settings/usage', '/settings/logs', '/settings/logs/download', '/settings/favicon'];
+if (in_array($path, $managedConfigurationPaths, true)) {
+    require __DIR__ . '/configuration.php';
+    return;
+}
+
 $settings = new Settings();
 
 // ═══════════════════════════════════════════
@@ -50,6 +57,7 @@ if ($method === 'GET' && $path === '/settings') {
 
     // Include available providers
     $masked['available_providers'] = AIProviderFactory::listProviders();
+    $masked['ai_configured'] = \VoxelSite\AiSetup::configured($settings);
     $masked = array_merge($masked, (new RouterSettings($settings))->publicStatus());
 
     jsonResponse(['ok' => true, 'data' => ['settings' => $masked,
@@ -65,26 +73,11 @@ if ($method === 'GET' && $path === '/settings') {
 if ($method === 'POST' && $path === '/settings/model-budget') {
     $body = getJsonBody();
     try {
-        $providerId = $body['provider'] ?? $settings->get('ai_provider', 'claude');
-        $model = $body['model'] ?? '';
-        $baseUrl = $body['base_url'] ?? $settings->get('ai_openai_compatible_base_url', '');
-        if (!is_string($providerId) || !in_array($providerId, ['claude', 'openai', 'gemini', 'deepseek', 'openai_compatible'], true)
-            || !is_string($model) || strlen($model) > 256 || !is_string($baseUrl) || strlen($baseUrl) > 2048) {
-            throw new RuntimeException('Choose a valid provider, model and server URL.', 422);
-        }
-        $requested = ModelCapabilitySettings::validateMaxTokens($body['max_tokens'] ?? 32000);
-        $overrides = array_key_exists('model_limits', $body)
-            ? ModelCapabilitySettings::validateOverrides($body['model_limits'], $baseUrl) : null;
-        $capabilities = ModelCapabilitySettings::forProvider($settings, $providerId, $baseUrl, $overrides);
-        $provider = AIProviderFactory::createWithKey($providerId, '', $model, $baseUrl, $capabilities);
-        if ($model === '') {
-            $model = $provider->getModels()[0]['id'] ?? '';
-        }
-        jsonResponse(['ok' => true, 'data' => [
-            'budget' => GenerationBudget::resolve($provider, $model, $requested),
-            'focused_budget' => GenerationBudget::resolve($provider, $model, $requested, 'section_edit'),
-            'source' => ModelCapabilities::resolve($providerId, $model, $capabilities)['source'],
-        ]]);
+        // Historical Studio clients encode an empty model map as []; normalize
+        // that one empty shape while the MCP contract remains an explicit object.
+        if (($body['model_limits']['models'] ?? null) === []) $body['model_limits']['models'] = (object) [];
+        $input = json_decode(json_encode((object) $body, JSON_THROW_ON_ERROR), false, 32, JSON_THROW_ON_ERROR);
+        jsonResponse(['ok' => true, 'data' => \VoxelSite\Agent\ModelBudgetService::preview($settings, $input)]);
     } catch (RuntimeException $e) {
         jsonResponse(['ok' => false, 'error' => ['code' => 'validation', 'message' => $e->getMessage()]], 422);
     }
@@ -273,6 +266,10 @@ if ($method === 'POST' && $path === '/settings/test-api') {
 
 if ($method === 'GET' && $path === '/settings/models') {
     $providerId = $settings->get('ai_provider', 'claude');
+    if (!\VoxelSite\AiSetup::configured($settings)) {
+        jsonResponse(['ok'=>true,'data'=>['models'=>[],'provider'=>$providerId,'configured'=>false]]);
+        return;
+    }
     try {
         $provider = AIProviderFactory::create($settings);
         $models = $provider->listModels();

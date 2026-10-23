@@ -44,7 +44,7 @@ class FormValidator
             return null;
         }
 
-        $schema = json_decode(file_get_contents($schemaPath), true);
+        $schema = json_decode(\VoxelSite\Agent\BusinessContracts::read($this->formsDir, $formId . '.json') ?? '{}', true);
         return is_array($schema) && !empty($schema['fields']) ? $schema : null;
     }
 
@@ -122,6 +122,11 @@ class FormValidator
             // Trim string values
             if (is_string($value)) {
                 $value = trim($value);
+            }
+
+            if (is_object($value) || (is_array($value) && ($type !== 'multiselect' || array_filter($value, static fn($item) => !is_scalar($item))))) {
+                $errors[$name] = 'Invalid field value type';
+                continue;
             }
 
             // Required check
@@ -222,7 +227,7 @@ class FormValidator
                 if (isset($validation['max_length']) && mb_strlen($value) > $validation['max_length']) {
                     $errors[$name] = 'Must be no more than ' . $validation['max_length'] . ' characters';
                 }
-                if (isset($validation['pattern']) && !preg_match('/' . $validation['pattern'] . '/', $value)) {
+                if (isset($validation['pattern']) && (!is_string($validation['pattern']) || strlen($validation['pattern']) > 1000 || @preg_match('/(*LIMIT_MATCH=100000)(*LIMIT_DEPTH=1000)' . $validation['pattern'] . '/', $value) !== 1)) {
                     $errors[$name] = $validation['pattern_message'] ?? 'Invalid format';
                 }
             }
@@ -252,7 +257,7 @@ class FormValidator
             $filename = basename($field['options_from']); // Security: strip path components
             $dataFile = $this->dataDir . '/' . $filename;
             if (file_exists($dataFile)) {
-                $fileData = json_decode(file_get_contents($dataFile), true);
+                $fileData = json_decode(\VoxelSite\Agent\BusinessContracts::read($this->dataDir, $filename, 1048576) ?? '{}', true);
                 if (is_array($fileData)) {
                     $options = [];
                     array_walk_recursive($fileData, function ($value, $key) use (&$options) {

@@ -5,33 +5,16 @@ declare(strict_types=1);
 namespace VoxelSite;
 
 /**
- * Git-based self-update service.
- *
- * Companion to the ZIP updater (api/endpoints/update.php). When the install is
- * a real Git checkout AND the server allows process execution, this provides a
- * one-click "pull latest" that is safe for non-interactive server updates — the
- * ZIP path stays the fallback for shared hosting that has neither git nor exec.
- *
- * Why not a naive `git pull`:
- *  - It must never hang a web request waiting for a credential/passphrase
- *    prompt (GIT_TERMINAL_PROMPT=0, ssh BatchMode=yes, hard wall-clock timeout,
- *    http low-speed limits).
- *  - It does real status detection: repo? git? upstream? clean tree?
- *    behind/ahead counts?
- *  - It refuses to destroy local work: aborts on a dirty tracked tree or when
- *    the install is ahead of the remote.
- *  - It applies deterministically with `fetch` + `reset --hard @{u}` — which
- *    only ever touches TRACKED files. It never runs `git clean`, so untracked
- *    user content (database, config, uploads, generated pages) is left alone.
- *
- * Every git invocation uses proc_open with an argv array (no shell), so there
- * is no command-injection surface and no shell parsing of paths.
+ * Local Git capability inspection and bounded exact-commit archive staging.
+ * Activation belongs to Agent\UpdateService and its reviewed native runtime.
+ * All commands use argv arrays, non-interactive credentials and time limits.
  */
 final class GitUpdater
 {
     private string $root;
     private string $lockFile;
     private ?string $gitBin = null;
+    private ?float $deadline = null;
 
     public function __construct(string $root, ?string $lockFile = null)
     {
@@ -59,6 +42,67 @@ final class GitUpdater
             return ['ok' => false, 'reason' => 'The git command is not available on this server.'];
         }
         return ['ok' => true, 'reason' => null];
+    }
+
+    /** Stage an exact fetched commit without resetting or cleaning the checkout. */
+    public function stageCandidate(string $archivePath, ?array $retained = null, ?callable $retain = null, int $maxBytes = 134217728): array
+    {
+        $parent=realpath(dirname($archivePath));
+        if(!$parent||is_link(dirname($archivePath))||is_link($archivePath)||file_exists($archivePath))throw new \RuntimeException('Use a new private archive destination.');
+        $this->deadline=microtime(true)+8;
+        try {
+            if ($retained === null) {
+                $status=$this->status(true);
+                if(!$status['can_update'])return ['ok'=>false,'state'=>$status['state'],'message'=>$status['message']];
+                $target=$this->git(['rev-parse','--verify','@{u}^{commit}']);
+                if($target['code']!==0||!preg_match('/^[a-f0-9]{40,64}$/D',$target['out']))return ['ok'=>false,'state'=>'unsupported_host','message'=>'The exact upstream commit could not be resolved.'];
+                $retained=['from_sha'=>$status['current_sha'],'to_sha'=>$target['out']];
+                if ($retain !== null) $retain($retained);
+            }
+            if (!preg_match('/^[a-f0-9]{40,64}$/D', $retained['to_sha'] ?? '')
+                || !preg_match('/^[a-f0-9]{40,64}$/D', $retained['from_sha'] ?? '')) {
+                throw new \RuntimeException('The retained Git commit identity is invalid.');
+            }
+            $this->archiveBounded($retained['to_sha'],$archivePath,$maxBytes);
+            return ['ok'=>true,'state'=>'staged']+$retained+['archive'=>$archivePath];
+        } finally {$this->deadline=null;}
+    }
+
+    /** Stream stdout into an already reserved private budget; git never writes the destination itself. */
+    private function archiveBounded(string $commit, string $destination, int $maxBytes): void
+    {
+        if ($maxBytes < 1 || $maxBytes > 134217728) throw new \InvalidArgumentException('Invalid Git archive budget.');
+        $out=fopen($destination,'xb');
+        if (!$out) throw new \RuntimeException('Cannot create the private Git archive.');
+        chmod($destination,0600);
+        $process=null;$pipes=[];$complete=false;
+        try {
+            $process=proc_open([$this->gitBin(),'-C',$this->root,'archive','--format=zip',$commit],
+                [0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes,$this->root,$this->env());
+            if (!is_resource($process)) throw new \RuntimeException('Cannot start the bounded Git archive.');
+            fclose($pipes[0]);stream_set_blocking($pipes[1],false);stream_set_blocking($pipes[2],false);
+            $written=0;$errors=0;$exit=-1;
+            while (true) {
+                $info=proc_get_status($process);
+                if (!$info['running'] && $info['exitcode']>=0) $exit=$info['exitcode'];
+                $chunk=fread($pipes[1],65536);$err=fread($pipes[2],8192);
+                if ($chunk===false || $err===false) throw new \RuntimeException('The Git archive stream failed.');
+                if ($written+strlen($chunk)>$maxBytes) throw new \RuntimeException('The Git archive exceeds the reserved package size.');
+                if ($chunk!=='' && fwrite($out,$chunk)!==strlen($chunk)) throw new \RuntimeException('Cannot retain the Git archive.');
+                $written+=strlen($chunk);$errors+=strlen($err);
+                if ($errors>1048576 || microtime(true)>=($this->deadline??0)) throw new \RuntimeException('Git staging exceeded its host execution budget.');
+                if (!$info['running'] && feof($pipes[1]) && feof($pipes[2])) break;
+                if ($chunk==='' && $err==='') usleep(10000);
+            }
+            foreach ([1,2] as $index) fclose($pipes[$index]);
+            $code=proc_close($process);$process=null;
+            if (($code===-1?$exit:$code)!==0 || $written===0) throw new \RuntimeException('The exact Git commit could not be archived.');
+            $complete=true;
+        } finally {
+            if (is_resource($process)) {proc_terminate($process,9);foreach($pipes as $pipe)if(is_resource($pipe))fclose($pipe);proc_close($process);}
+            fclose($out);
+            if (!$complete && is_file($destination)) unlink($destination);
+        }
     }
 
     /**
@@ -170,124 +214,10 @@ final class GitUpdater
         return $s;
     }
 
-    /**
-     * Apply pending updates: fetch, hard-reset to the upstream, then run the
-     * supplied migration callback. Guarded by an exclusive non-blocking lock so
-     * two updates can't overlap, and re-validates status under the lock.
-     *
-     * @param (callable():mixed)|null $migrate Run AFTER files update; its return
-     *        value is attached as migrations.result. A throw is captured, not fatal.
-     * @return array<string,mixed>
-     */
+    /** Legacy callers must enter the shared reviewed workflow. */
     public function update(?callable $migrate = null): array
     {
-        $res = [
-            'ok'           => false,
-            'state'        => null,
-            'message'      => '',
-            'from_sha'     => null,
-            'to_sha'       => null,
-            'from_version' => $this->versionFile(),
-            'to_version'   => null,
-            'migrations'   => null,
-            'output'       => '',
-        ];
-
-        $lock = @fopen($this->lockFile, 'c');
-        if ($lock === false || !flock($lock, LOCK_EX | LOCK_NB)) {
-            if (is_resource($lock)) {
-                fclose($lock);
-            }
-            $res['state']   = 'locked';
-            $res['message'] = 'Another update is already running. Try again in a moment.';
-            return $res;
-        }
-
-        try {
-            // Re-check under the lock, WITH a fresh fetch.
-            $st = $this->status(true);
-
-            if (!$st['is_repo'] || $st['state'] === 'no_upstream') {
-                $res['state'] = $st['state'];
-                $res['message'] = $st['message'];
-                return $res;
-            }
-            if ($st['dirty']) {
-                $res['state']   = 'dirty';
-                $res['message'] = $st['message'];
-                $res['output']  = implode("\n", $st['dirty_files']);
-                return $res;
-            }
-            if ($st['fetched'] && $st['fetch_ok'] === false) {
-                $res['state']   = 'setup_needed';
-                $res['message'] = $st['message'];
-                return $res;
-            }
-            if ($st['ahead'] > 0) {
-                $res['state']   = 'ahead';
-                $res['message'] = $st['message'];
-                return $res;
-            }
-
-            $res['from_sha'] = $st['short_sha'];
-
-            if ($st['behind'] === 0) {
-                $res['ok']         = true;
-                $res['state']      = 'up_to_date';
-                $res['message']    = 'Already up to date.';
-                $res['to_sha']     = $st['short_sha'];
-                $res['to_version'] = $this->versionFile();
-                return $res;
-            }
-
-            // Apply — tracked files only. No `git clean`: untracked user data stays.
-            $reset = $this->git(['reset', '--hard', '@{u}'], 120);
-            $res['output'] = trim($reset['out'] . "\n" . $reset['err']);
-            if ($reset['code'] !== 0) {
-                $res['state']   = 'failed';
-                $res['message'] = 'git reset failed. ' . (self::firstLine($reset['err']) ?: 'See output.');
-                return $res;
-            }
-
-            $to = $this->git(['rev-parse', 'HEAD']);
-            $res['to_sha']     = $to['code'] === 0 ? substr($to['out'], 0, 12) : null;
-            $res['to_version'] = $this->versionFile();
-
-            // Recompile bytecode so the new PHP is used on the next request.
-            if (function_exists('opcache_reset')) {
-                @opcache_reset();
-            }
-
-            // Run migrations against the freshly-updated code. A migration
-            // failure is a FAILED update — the files are new but the schema is
-            // not, so we must never report success. We do NOT auto-roll-back the
-            // code: a partially-applied migration leaves the DB in an unknown
-            // state, so reverting code could deepen the mismatch rather than fix
-            // it. The operator restores a DB backup or fixes forward, then retries.
-            if ($migrate !== null) {
-                try {
-                    $res['migrations'] = ['ok' => true, 'result' => $migrate()];
-                } catch (\Throwable $e) {
-                    $res['migrations'] = ['ok' => false, 'error' => $e->getMessage()];
-                    $res['ok']      = false;
-                    $res['state']   = 'migration_failed';
-                    $res['message'] = 'Files updated to v' . $res['to_version']
-                        . ', but database migrations failed: ' . self::firstLine($e->getMessage())
-                        . '. The site may be in an inconsistent state — restore your database'
-                        . ' backup or resolve the migration, then re-run the update.';
-                    return $res;
-                }
-            }
-
-            $res['ok']      = true;
-            $res['state']   = 'updated';
-            $res['message'] = 'Updated to v' . $res['to_version'] . '.';
-            return $res;
-        } finally {
-            flock($lock, LOCK_UN);
-            fclose($lock);
-            @unlink($this->lockFile);
-        }
+        return ['ok'=>false,'state'=>'review_required','message'=>'Prepare and approve the exact Git package through the shared update service.'];
     }
 
     // ── Internals ───────────────────────────────────────────────
@@ -344,6 +274,11 @@ final class GitUpdater
      */
     private function git(array $args, int $timeoutSec = 30): array
     {
+        if($this->deadline!==null){
+            $remaining=$this->deadline-microtime(true);
+            if($remaining<=0)return ['code'=>124,'out'=>'','err'=>'The Git preparation time budget expired.','timed_out'=>true];
+            $timeoutSec=min($timeoutSec,max(1,(int)ceil($remaining)));
+        }
         // Bound slow HTTPS transfers so a stalled remote can't pin a worker.
         $cmd = array_merge(
             [$this->gitBin(), '-C', $this->root, '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=20'],
@@ -376,11 +311,12 @@ final class GitUpdater
             $info = proc_get_status($proc);
             $out .= stream_get_contents($pipes[1]);
             $err .= stream_get_contents($pipes[2]);
+            if(strlen($out)+strlen($err)>1048576){$timedOut=true;proc_terminate($proc,9);break;}
 
             if (!$info['running']) {
                 break;
             }
-            if ((microtime(true) - $start) > $timeoutSec) {
+            if ((microtime(true) - $start) > $timeoutSec || ($this->deadline!==null&&microtime(true)>=$this->deadline)) {
                 $timedOut = true;
                 proc_terminate($proc, 9);
                 break;
@@ -397,6 +333,7 @@ final class GitUpdater
         }
 
         $code = proc_close($proc);
+        if($code===-1&&isset($info['exitcode'])&&$info['exitcode']>=0)$code=(int)$info['exitcode'];
         if ($timedOut) {
             $code = 124;
             $err  = trim($err . "\nTimed out after {$timeoutSec}s.");

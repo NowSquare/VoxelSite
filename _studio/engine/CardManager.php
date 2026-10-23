@@ -344,7 +344,7 @@ class CardManager
         $cards = $this->db->query(
             "SELECT id, position FROM cards
              WHERE column_name = ? AND archived = 0
-             ORDER BY position ASC",
+             ORDER BY position ASC, id ASC",
             [$columnName]
         );
 
@@ -382,7 +382,7 @@ class CardManager
         $cards = $this->db->query(
             "SELECT id FROM cards
              WHERE column_name = ? AND archived = 0
-             ORDER BY position ASC",
+             ORDER BY position ASC, id ASC",
             [$columnName]
         );
 

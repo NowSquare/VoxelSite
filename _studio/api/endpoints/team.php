@@ -1,273 +1,57 @@
 <?php
-
 declare(strict_types=1);
+use VoxelSite\{Auth,Database,SiteWorkspace};
+use VoxelSite\Agent\{ActorPolicy,AdminApprovalStore,AdministrationService,CanonicalJson,OperationActor,OperationException};
 
-/**
- * Team API Endpoints — Owner-only team member management.
- *
- * GET    /team           — List all team members
- * POST   /team           — Add a team member
- * PUT    /team/:id       — Update a team member
- * DELETE /team/:id       — Remove a team member
- * POST   /team/:id/password — Reset a team member's password
- *
- * All endpoints require owner role. Editors and viewers get 403.
- */
-
-use VoxelSite\Auth;
-use VoxelSite\Validator;
-use VoxelSite\Logger;
-
-$user = $_REQUEST['_user'] ?? null;
-$params = $_REQUEST['_route_params'] ?? [];
-
-// ── Owner-only guard ──
-// Team management is restricted to the owner. Editors and viewers
-// can't see or modify team members.
-if ($user['role'] !== 'owner') {
-    jsonResponse(['ok' => false, 'error' => [
-        'code'    => 'forbidden',
-        'message' => 'Team management requires owner access.',
-    ]], 403);
-    return;
-}
-
-$auth = new Auth();
-
-
-// ═══════════════════════════════════════════
-//  GET /team — List all team members
-// ═══════════════════════════════════════════
-
-if ($method === 'GET' && $path === '/team') {
-    $users = $auth->listUsers();
-
-    jsonResponse([
-        'ok'   => true,
-        'data' => ['members' => $users],
-    ]);
-    return;
-}
-
-
-// ═══════════════════════════════════════════
-//  POST /team — Add a team member
-// ═══════════════════════════════════════════
-
-if ($method === 'POST' && $path === '/team') {
-    $body = getJsonBody();
-
-    // Validate required fields
-    $name = trim($body['name'] ?? '');
-    $email = trim($body['email'] ?? '');
-    $password = $body['password'] ?? '';
-    $role = $body['role'] ?? 'editor';
-
-    if (strlen($name) < 2) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'validation',
-            'message' => 'Name must be at least 2 characters.',
-        ]], 422);
-        return;
+// The authenticated owner's explicit Studio form submission approves these
+// exact fields. External connections cannot use this session adapter.
+$path=$_REQUEST['_route_path'];$method=$_REQUEST['_route_method'];$params=$_REQUEST['_route_params']??[];
+try {
+    $db=Database::getInstance();$policy=new ActorPolicy($db);
+    $actor=new OperationActor('user',(int)($_REQUEST['_user']['id']??0),null,[],'studio_configured',null);
+    $policy->requireOwnerSession($actor);
+    $approvals=new AdminApprovalStore($db,$policy,new SiteWorkspace($db),(loadConfig()??[])['app_key']??'');
+    $service=new AdministrationService($db,$policy,$approvals);
+    if($method==='GET' && $path==='/team') {
+        $query=[];
+        foreach(['offset','limit','inventory_version'] as $field)if(isset($_GET[$field]))$query[$field]=$field==='inventory_version'?$_GET[$field]:(int)$_GET[$field];
+        jsonResponse(['ok'=>true,'data'=>$service->team($actor,(object)$query)]);return;
     }
-
-    $emailError = Validator::email($email);
-    if ($emailError !== null) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'validation',
-            'message' => $emailError,
-        ]], 422);
-        return;
+    $raw=file_get_contents('php://input',false,null,0,131073);
+    if($raw===false || strlen($raw)>131072)throw new OperationException('size_limit','This team change exceeds its review budget.');
+    $body=json_decode($raw,false,16,JSON_THROW_ON_ERROR);
+    if(!$body instanceof stdClass)throw new OperationException('invalid_schema','Send a team change object with an operation ID.');
+    $input=(array)$body;$operationId=$input['operation_id']??null;unset($input['operation_id']);
+    if($method==='POST' && $path==='/team') {
+        $intent=(object)(['type'=>'team.create']+$input+['role'=>'editor']);
+    } else {
+        $version=$input['version']??null;unset($input['version']);
+        $identity=['user_id'=>(int)($params['id']??0),'version'=>$version];
+        if($method==='PUT')$intent=(object)(['type'=>'team.update']+$identity+['fields'=>(object)$input]);
+        elseif($method==='DELETE')$intent=(object)(['type'=>'team.delete']+$identity+$input);
+        elseif($method==='POST' && str_ends_with($path,'/password'))$intent=(object)(['type'=>'team.password']+$identity+$input);
+        else throw new OperationException('invalid_schema','Unknown team action.');
     }
-
-    if (strlen($password) < 8) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'validation',
-            'message' => 'Password must be at least 8 characters.',
-        ]], 422);
-        return;
-    }
-
-    // Only allow editor or viewer roles
-    if (!in_array($role, ['editor', 'viewer'], true)) {
-        $role = 'editor';
-    }
-
-    try {
-        $newId = $auth->createUser($name, $email, $password, $role);
-        $newUser = $auth->getUser($newId);
-
-        Logger::info('api', 'Team member created', [
-            'new_user_id' => $newId,
-            'role'        => $role,
-            'created_by'  => $user['id'],
-        ]);
-
-        jsonResponse([
-            'ok'   => true,
-            'data' => ['member' => $newUser],
-        ], 201);
-    } catch (\Throwable $e) {
-        $message = 'Failed to create team member.';
-        if (str_contains($e->getMessage(), 'UNIQUE constraint failed')) {
-            $message = 'A user with this email already exists.';
+    $review=$service->prepare($actor,(object)['operation_id'=>$operationId,'intent'=>$intent]);
+    if(in_array($review['status'],['pending','approved'],true))$approvals->approve($actor,$review['plan_id'],$review['digest']);
+    $operation=$service->apply($actor,(object)['plan_id'=>$review['plan_id'],'digest'=>$review['digest']]);
+    $result=['operation_id'=>$operation['operation_id'],'operation'=>$operation];
+    if($intent->type==='team.delete')$result['deleted']=true;
+    elseif($intent->type==='team.password')$result['message']='Password has been reset.';
+    else {
+        // Legacy Studio shape is a fresh redacted read. The retained operation
+        // result above remains the authoritative mutation receipt on a replay.
+        $id=$operation['result']['entity_id'];$member=(new Auth($db))->getUser($id);
+        if($member!==null) {
+            $row=$db->queryOne('SELECT * FROM users WHERE id=?',[$id]);
+            $member['version']=CanonicalJson::digest($row);
         }
-
-        Logger::error('api', 'Team member creation failed', [
-            'exception' => $e->getMessage(),
-            'email'     => $email,
-        ]);
-
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'create_failed',
-            'message' => $message,
-        ]], 400);
+        $result['member']=$member;
     }
-    return;
-}
-
-
-// ═══════════════════════════════════════════
-//  PUT /team/:id — Update a team member
-// ═══════════════════════════════════════════
-
-if ($method === 'PUT' && isset($params['id'])) {
-    $memberId = (int) $params['id'];
-    $body = getJsonBody();
-
-    $updates = [];
-
-    if (isset($body['name'])) {
-        $name = trim($body['name']);
-        if (strlen($name) < 2) {
-            jsonResponse(['ok' => false, 'error' => [
-                'code'    => 'validation',
-                'message' => 'Name must be at least 2 characters.',
-            ]], 422);
-            return;
-        }
-        $updates['name'] = $name;
-    }
-
-    if (isset($body['email'])) {
-        $emailError = Validator::email($body['email']);
-        if ($emailError !== null) {
-            jsonResponse(['ok' => false, 'error' => [
-                'code'    => 'validation',
-                'message' => $emailError,
-            ]], 422);
-            return;
-        }
-        $updates['email'] = $body['email'];
-    }
-
-    if (isset($body['role'])) {
-        $updates['role'] = $body['role'];
-    }
-
-    $result = $auth->updateUser($memberId, $updates);
-
-    if (!$result['ok']) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'update_failed',
-            'message' => $result['error'],
-        ]], 400);
-        return;
-    }
-
-    $updatedUser = $auth->getUser($memberId);
-
-    Logger::info('api', 'Team member updated', [
-        'member_id'  => $memberId,
-        'updates'    => array_keys($updates),
-        'updated_by' => $user['id'],
-    ]);
-
-    jsonResponse([
-        'ok'   => true,
-        'data' => ['member' => $updatedUser],
-    ]);
-    return;
-}
-
-
-// ═══════════════════════════════════════════
-//  DELETE /team/:id — Remove a team member
-// ═══════════════════════════════════════════
-
-if ($method === 'DELETE' && isset($params['id'])) {
-    $memberId = (int) $params['id'];
-
-    $result = $auth->deleteUser($memberId);
-
-    if (!$result['ok']) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'delete_failed',
-            'message' => $result['error'],
-        ]], 400);
-        return;
-    }
-
-    Logger::info('api', 'Team member deleted', [
-        'member_id'  => $memberId,
-        'deleted_by' => $user['id'],
-    ]);
-
-    jsonResponse(['ok' => true, 'data' => ['deleted' => true]]);
-    return;
-}
-
-
-// ═══════════════════════════════════════════
-//  POST /team/:id/password — Reset member password
-// ═══════════════════════════════════════════
-
-if ($method === 'POST' && isset($params['id']) && str_ends_with($path, '/password')) {
-    $memberId = (int) $params['id'];
-    $body = getJsonBody();
-    $newPassword = $body['password'] ?? '';
-
-    if (strlen($newPassword) < 8) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'validation',
-            'message' => 'Password must be at least 8 characters.',
-        ]], 422);
-        return;
-    }
-
-    // Can't reset the owner's password through the team API
-    $member = $auth->getUser($memberId);
-    if ($member === null) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'not_found',
-            'message' => 'User not found.',
-        ]], 404);
-        return;
-    }
-
-    if ($member['role'] === 'owner') {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'forbidden',
-            'message' => 'Use Edit Profile to change the owner password.',
-        ]], 403);
-        return;
-    }
-
-    $success = $auth->setPassword($memberId, $newPassword);
-
-    if (!$success) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'reset_failed',
-            'message' => 'Failed to reset password.',
-        ]], 400);
-        return;
-    }
-
-    Logger::info('api', 'Team member password reset', [
-        'member_id' => $memberId,
-        'reset_by'  => $user['id'],
-    ]);
-
-    jsonResponse(['ok' => true, 'data' => ['message' => 'Password updated.']]);
-    return;
+    jsonResponse(['ok'=>true,'data'=>$result],$intent->type==='team.create'?201:200);
+}catch(OperationException $e){
+    jsonResponse(['ok'=>false,'error'=>['code'=>$e->errorCode,'message'=>$e->getMessage(),'details'=>$e->details]],
+        $e->errorCode==='permission_denied'?403:($e->errorCode==='invalid_schema'?422:409));
+}catch(JsonException|TypeError $e){
+    jsonResponse(['ok'=>false,'error'=>['code'=>'invalid_schema','message'=>'Send valid team fields, the reviewed member version and an operation ID.']],422);
 }

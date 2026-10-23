@@ -37,13 +37,15 @@ try {
     file_put_contents($root . '/preview/about.php', '<?php $page = ["title" => "About", "slug" => "about"]; /* class="bg-unused" */ include __DIR__ . "/_partials/header.php"; ?><h1 class="font-bold">About</h1></main></body></html>');
     file_put_contents($root . '/preview/services/team.php', '<?php $page = ["title" => "Team", "slug" => "services/team"]; include dirname(__DIR__) . "/_partials/header.php"; ?><h1 style="color:var(--color-legacy)">Team</h1></main></body></html>');
 
+    require_once __DIR__ . '/helpers/LegacyWorkspaceFixture.php';
+    activateLegacyTestWorkspace($db);
     $compile = $files->compileTailwind();
-    $compiledCss = file_get_contents($root . '/assets/css/tailwind.css');
+    $compiledCss = file_get_contents($root . '/preview/assets/css/tailwind.css');
     $check($compile['ok'] && str_contains($compiledCss, 'var(--color-primary)'), 'real compiler resolves text-primary and hover:bg-primary/50 to the site color token');
     $check(str_contains($compiledCss, 'var(--font-body)'), 'real compiler resolves font-body to the font token');
     $check(str_contains($compiledCss, 'var(--color-accent)'), 'real compiler resolves shared hover opacity utility');
 
-    $beforeCssHash = hash_file('sha256', $root . '/assets/css/tailwind.css');
+    $beforeCssHash = hash_file('sha256', $root . '/preview/assets/css/tailwind.css');
     $graph = (new SiteGraphIndexer($db, $files))->buildGraph();
     $check($ids($graph->getTokenConsumers('token:--color-primary')) === ['page:index.php'], 'primary token consumer includes utility-only page exactly once');
     $check(count($graph->getInEdges('token:--color-primary', 'consumes_token')) === 1, 'repeated text and hover classes create one token edge per file');
@@ -53,7 +55,7 @@ try {
     $check(count($graph->getBlastRadius('token:--color-accent')) === 3, 'token in nested shared partial reaches flat and nested pages');
     $check($ids($graph->getTokenConsumers('token:--color-legacy')) === ['page:services/team.php'], 'literal var token consumer remains indexed');
     $check(count($graph->getTokenConsumers('token:--color-unused')) === 0, 'PHP comments do not invent utility token consumers');
-    $check(hash_file('sha256', $root . '/assets/css/tailwind.css') === $beforeCssHash, 'graph indexing does not write or recompile the site bundle');
+    $check(hash_file('sha256', $root . '/preview/assets/css/tailwind.css') === $beforeCssHash, 'graph indexing does not write or recompile the site bundle');
 } finally {
     foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST) as $entry) {
         if ($entry->isDir()) rmdir($entry->getPathname()); else unlink($entry->getPathname());

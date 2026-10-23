@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 /** Isolated filesystem/endpoint regressions for the Site release contract. */
 require_once dirname(__DIR__) . '/engine/bootstrap.php';
+require_once dirname(__DIR__) . '/engine/SiteControlSnapshots.php';
+require_once __DIR__ . '/helpers/SiteControlFixture.php';
 
 use VoxelSite\Database;
 use VoxelSite\FileManager;
@@ -12,14 +14,25 @@ use VoxelSite\PageService;
 use VoxelSite\SiteGraphIndexer;
 
 $root = sys_get_temp_dir() . '/voxelsite_site_release_' . bin2hex(random_bytes(6));
-foreach (['preview/_partials', 'preview/services', 'assets/css', 'snapshots'] as $dir) mkdir($root . '/' . $dir, 0755, true);
+foreach (['preview/_partials', 'preview/services', 'preview/assets/css', 'assets/css', 'live', 'snapshots'] as $dir) mkdir($root . '/' . $dir, 0755, true);
+$root = realpath($root);
+if (!$root || !str_starts_with($root, realpath(sys_get_temp_dir()) . '/voxelsite_site_release_')
+    || (new ReflectionMethod(FileManager::class, '__construct'))->getNumberOfParameters() < 2) {
+    throw new RuntimeException('Site release fixtures require canonical temporary roots and workspace injection.');
+}
 putenv('VS_TEST_PREVIEW_DIR=' . $root . '/preview');
 putenv('VS_TEST_ASSETS_DIR=' . $root . '/assets');
+putenv('VS_TEST_DOC_ROOT=' . $root . '/live');
+putenv('VS_TEST_WORKSPACE_STATE_DIR=' . $root . '/data/workspace');
+putenv('VS_TEST_REVISIONS_DIR=' . $root . '/data/revisions');
 putenv('VS_TEST_SNAPSHOT_DIR=' . $root . '/snapshots');
 putenv('VS_TEST_MUTATION_LOCK=' . $root . '/mutation.lock');
 $db = Database::getInstance($root . '/studio.db');
-$migration = require dirname(__DIR__) . '/engine/migrations/001_initial_schema.php';
-$migration['up']($db);
+foreach (['logDir' => $root . '/snapshots', 'initialized' => true] as $key => $value) {
+    (new ReflectionProperty(\VoxelSite\Logger::class, $key))->setValue(null, $value);
+}
+(new \VoxelSite\Migrator($db, new \VoxelSite\Settings($db)))->run();
+$db->update('site_workspace_state', ['format' => 2], 'id = 1');
 $db->insert('users', ['id' => 1, 'email' => 'fixture@example.test', 'password_hash' => 'unused', 'name' => 'Fixture', 'role' => 'owner', 'created_at' => now(), 'updated_at' => now()]);
 $fm = new FileManager($db);
 $failed = 0;
@@ -37,6 +50,8 @@ function fixture(): void {
     }
     mkdir($root . '/preview/_partials', 0755, true);
     mkdir($root . '/preview/services', 0755, true);
+    mkdir($root . '/preview/assets/css', 0755, true);
+    file_put_contents($root . '/preview/.htaccess', \VoxelSite\SiteWorkspace::ACCESS_MARKER . "\nRequire all denied\nDeny from all\n");
     file_put_contents($root . '/preview/_partials/header.php', '<!DOCTYPE html><html><body><?php include __DIR__ . "/nav.php"; ?><main>');
     file_put_contents($root . '/preview/_partials/footer.php', '</main><footer>Shared footer</footer></body></html>');
     $nav = [ ['href' => '/', 'label' => 'Home', 'home' => true], ['href' => '/about', 'label' => 'About'], ['href' => '/services', 'label' => 'Services', 'children' => [['href' => '/services/team', 'label' => 'Team']]] ];
@@ -48,8 +63,8 @@ function fixture(): void {
         $source = '<?php $page = ["title" => "' . $title . '", "slug" => "' . $slug . '"]; include __DIR__ . "' . $prefix . '_partials/header.php"; ?>' . "\n" . '<section class="text-[var(--color-primary)]"><h1>Fixture</h1>' . $links . '</section><?php include __DIR__ . "' . $prefix . '_partials/footer.php"; ?>';
         file_put_contents($root . '/preview/' . $slug . '.php', $source);
     }
-    file_put_contents($root . '/assets/css/style.css', ':root { --color-primary: #336699; --color-text: #111; }');
-    file_put_contents($root . '/assets/css/tailwind.css', '/* fixture before compilation */');
+    file_put_contents($root . '/preview/assets/css/style.css', ':root { --color-primary: #336699; --color-text: #111; }');
+    file_put_contents($root . '/preview/assets/css/tailwind.css', '/* fixture before compilation */');
     $fm->syncPageRegistry();
     $db->exec('PRAGMA wal_checkpoint(TRUNCATE)');
 }
@@ -58,7 +73,7 @@ function endpoint(string $route, array $body, ?string $failure = null): array {
     $command = [PHP_BINARY, __DIR__ . '/helpers/call-nav-endpoint.php', $root . '/studio.db', $root . '/preview', $root . '/assets', 'POST', $route];
     if ($failure !== null) $command[] = $failure;
     $proc = proc_open($command, [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], $pipes);
-    fwrite($pipes[0], json_encode($body)); fclose($pipes[0]);
+    fwrite($pipes[0], json_encode(siteControlRequest($root . '/studio.db', $body))); fclose($pipes[0]);
     $stdout = stream_get_contents($pipes[1]); fclose($pipes[1]);
     $stderr = stream_get_contents($pipes[2]); fclose($pipes[2]);
     $exit = proc_close($proc);
@@ -117,12 +132,12 @@ try {
     file_put_contents($root . '/preview/about.php', '<?php include $dynamicPartial;', FILE_APPEND);
     $before = treeState();
     $r = endpoint('/site-control/structural-move', ['pageId' => 'page:about.php', 'targetParent' => 'services']);
-    check($r['httpCode'] === 422 && ($r['response']['error']['code'] ?? '') === 'unsupported_references', 'moving an unresolved include fails closed before mutation');
+    check($r['httpCode'] === 422 && ($r['response']['error']['code'] ?? '') === 'invalid_schema' && !empty($r['response']['error']['details']['warnings']), 'moving an unresolved include fails closed before mutation');
     check(treeState() === $before, 'unsupported include move restores every original byte');
     $snapCount = (int) $db->scalar('SELECT COUNT(*) FROM snapshots');
     foreach (['/site-control/url-rename' => ['routeId' => 'route:/about', 'newPath' => '/company'], '/site-control/page-delete' => ['pageId' => 'page:about.php']] as $route => $body) {
         $r = endpoint($route, $body);
-        check($r['httpCode'] === 422 && ($r['response']['error']['code'] ?? '') === 'unsupported_references' && !empty($r['response']['error']['warnings']), $route . ' refuses unresolved propagation with actionable warnings');
+        check($r['httpCode'] === 422 && ($r['response']['error']['code'] ?? '') === 'invalid_schema' && !empty($r['response']['error']['details']['warnings']) && !empty($r['response']['error']['details']['warnings']), $route . ' refuses unresolved propagation with actionable warnings');
     }
     check(treeState() === $before && (int) $db->scalar('SELECT COUNT(*) FROM snapshots') === $snapCount, 'unresolved reference rejections create no snapshots or file changes');
 
@@ -135,7 +150,7 @@ HTML;
         file_put_contents($root . $target, $markup, FILE_APPEND);
         $before = treeState(); $snapCount = (int) $db->scalar('SELECT COUNT(*) FROM snapshots');
         $r = endpoint('/site-control/url-rename', ['routeId' => 'route:/about', 'newPath' => '/company']);
-        check($r['httpCode'] === 422 && ($r['response']['error']['code'] ?? '') === 'unsupported_references', $case . ' is refused instead of silently leaving a broken URL');
+        check($r['httpCode'] === 422 && ($r['response']['error']['code'] ?? '') === 'invalid_schema' && !empty($r['response']['error']['details']['warnings']), $case . ' is refused instead of silently leaving a broken URL');
         check(treeState() === $before && (int) $db->scalar('SELECT COUNT(*) FROM snapshots') === $snapCount, $case . ' refusal creates no snapshot or file changes');
     }
     check(PageService::rewriteHrefSlug('<a href="/about" data-href="/about">A</a>', 'about', 'company') === '<a href="/company" data-href="/about">A</a>', 'rewrite changes actual href and preserves data-href');
@@ -148,14 +163,14 @@ HTML;
     fixture();
     $before = treeState(); $pagesBefore = $db->query('SELECT * FROM pages ORDER BY id');
     $r = endpoint('/site-control/structural-move', ['pageId' => 'page:about.php', 'targetParent' => 'services', 'targetIndex' => 100]);
-    check($r['httpCode'] === 500, 'unavailable sibling position reports failure');
+    check($r['httpCode'] === 422 && ($r['response']['error']['code'] ?? '') === 'invalid_schema', 'unavailable sibling position fails validation before applying');
     check(treeState() === $before && $db->query('SELECT * FROM pages ORDER BY id') === $pagesBefore, 'failed sibling placement rolls structural move and references back together');
 
     fixture();
     $before = treeState();
     $beforePages = $db->query('SELECT * FROM pages ORDER BY id');
     $r = endpoint('/site-control/structural-move', ['pageId' => 'page:about.php', 'targetParent' => 'services'], '--fail-move-nav');
-    check($r['httpCode'] === 500 && ($r['response']['ok'] ?? true) === false, 'injected failure after reference rewrites is reported');
+    check($r['httpCode'] === 409 && ($r['response']['ok'] ?? true) === false && ($r['response']['error']['details']['operation']['status'] ?? '') === 'failed_restored' && ($r['response']['error']['details']['operation']['result']['restoration']['restored'] ?? false) === true, 'injected failure after reference rewrites is reported');
     check(treeState() === $before, 'failed move restores every file byte and permission exactly');
     check($db->query('SELECT * FROM pages ORDER BY id') === $beforePages, 'failed move restores exact page projection including IDs');
 
@@ -166,7 +181,7 @@ HTML;
     check((NavLinksParser::parse(file_get_contents($root . '/preview/_partials/nav.php'))[1]['href'] ?? '') === '/company', 'URL rename rewrites canonical nav file truth');
     $g = (new SiteGraphIndexer($db, $fm))->buildGraph();
     check($g->getNode('route:/about') === null && count($g->getInEdges('route:/company', 'links_to')) === 21, 'fresh graph reflects renamed route and all rewritten references');
-    check(str_contains(file_get_contents($root . '/assets/css/tailwind.css'), '--color-primary'), 'required Tailwind compilation targets fixture output and tokens');
+    check(str_contains(file_get_contents($root . '/preview/assets/css/tailwind.css'), '--color-primary'), 'required Tailwind compilation targets fixture draft output and tokens');
     [$status, $html, $stderr] = rendered('company.php');
     check($status === 0 && $stderr === '' && !str_contains($html, 'href="/about'), 'renamed page renders without old links');
 
@@ -177,7 +192,7 @@ HTML;
     check($status === 0 && $stderr === '' && str_contains($html, '<footer>Shared footer</footer>'), 'nested renamed page renders with valid includes');
     $before = treeState();
     $r = endpoint('/site-control/url-rename', ['routeId' => 'route:/services/people', 'newPath' => '/people']);
-    check($r['httpCode'] === 422 && ($r['response']['error']['code'] ?? '') === 'parent_change' && treeState() === $before, 'Change URL refuses silent flattening; parent changes use Move');
+    check($r['httpCode'] === 422 && ($r['response']['error']['code'] ?? '') === 'invalid_schema' && str_contains($r['response']['error']['message'] ?? '', 'Use Move') && treeState() === $before, 'Change URL refuses silent flattening; parent changes use Move');
 
     fixture();
     file_put_contents($root . '/preview/services/team.php', '<a href="../about.php?x=1#cta">Delete target</a><a href="about">Different route</a>', FILE_APPEND);
@@ -193,7 +208,7 @@ HTML;
     chmod($root . '/preview/about.php', 0640);
     $before = treeState(); $pagesBefore = $db->query('SELECT * FROM pages ORDER BY id');
     $r = endpoint('/site-control/page-rename', ['pageId' => 'page:about.php', 'newTitle' => 'New title'], '--fail-rename');
-    check($r['httpCode'] === 500, 'injected title rename failure is reported');
+    check($r['httpCode'] === 409 && ($r['response']['error']['details']['operation']['status'] ?? '') === 'failed_restored' && ($r['response']['error']['details']['operation']['result']['restoration']['restored'] ?? false) === true, 'injected title rename failure is retained with verified restoration');
     check(treeState() === $before, 'failed rename restores original modes and content');
     check($db->query('SELECT * FROM pages ORDER BY id') === $pagesBefore, 'failed rename restores exact page projection');
 
@@ -214,12 +229,18 @@ HTML;
     $safety = createSiteControlSnapshot($db, 'Recovery probe', 'Failure injection');
     check($safety['ok'] === true, 'recovery probe snapshot created');
     $original = file_get_contents($root . '/preview/about.php');
-    mkdir($root . '/preview/new-empty-directory');
     file_put_contents($root . '/preview/about.php', 'changed after snapshot');
     chmod($root . '/preview/about.php', 0444);
+    // Atomic replacement is controlled by the containing directory, not the
+    // old file's write bit. Block that directory to exercise a real failure.
+    chmod($root . '/preview', 0555);
     $restored = restoreSiteControlSnapshot($db, $safety['snapshot']['id']);
-    check($restored['ok'] === false && str_contains($restored['error'] ?? '', 'write'), 'unwritable restoration target reports failure instead of false recovery success');
+    check($restored['ok'] === false && str_contains($restored['error'] ?? '', 'destination directory')
+        && file_get_contents($root . '/preview/about.php') === 'changed after snapshot',
+        'unwritable restoration parent reports failure and preserves complete existing bytes');
+    chmod($root . '/preview', 0755);
     chmod($root . '/preview/about.php', 0640);
+    mkdir($root . '/preview/new-empty-directory');
     $restored = restoreSiteControlSnapshot($db, $safety['snapshot']['id']);
     check($restored['ok'] === true && file_get_contents($root . '/preview/about.php') === $original && !is_dir($root . '/preview/new-empty-directory'), 'recovery retries restore content and remove new empty directories');
 

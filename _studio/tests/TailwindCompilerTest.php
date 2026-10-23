@@ -29,7 +29,8 @@ if (!class_exists('VoxelSite\Logger')) {
 
 use VoxelSite\TailwindCompiler;
 
-$compiler = new TailwindCompiler();
+// Unit compilation uses explicit fixture paths and never opens the installation.
+$compiler = new TailwindCompiler(__DIR__ . '/fixtures/tailwind-theme');
 $passed = 0;
 $failed = 0;
 $errors = [];
@@ -103,7 +104,6 @@ function assertUnresolvedOmits(string $label, array $expectedAbsent, TailwindCom
 function extractClasses(string $html, TailwindCompiler $compiler): array
 {
     $method = new ReflectionMethod($compiler, 'extractClassNames');
-    $method->setAccessible(true);
     $classes = [];
     $method->invokeArgs($compiler, [$html, &$classes]);
     return array_values(array_unique($classes));

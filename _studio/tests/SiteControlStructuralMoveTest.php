@@ -46,64 +46,15 @@ echo "=== Site Control Structural Move Test Suite ===\n\n";
 //  Fresh-install guard
 // ═══════════════════════════════════════════
 
-$liveDbPath = dirname(__DIR__) . '/data/studio.db';
-if (!file_exists($liveDbPath)) {
-    echo "ABORT: No database found at {$liveDbPath}.\n";
-    exit(1);
-}
+require_once __DIR__.'/helpers/SiteControlFixture.php';
+$tempDir = sys_get_temp_dir().'/vs-control-StructuralMove-'.bin2hex(random_bytes(8));
+$tempDbPath = $tempDir.'/studio.db';
+$tempPreview = $tempDir.'/preview';
+$tempAssets = $tempDir.'/published/assets';
+$tempSnaps = $tempDir.'/snapshots';
+[$db,$fileManager] = createSiteControlFixture($tempDir);
+$tempDir = realpath($tempDir);
 
-$livePreviewDir = dirname(__DIR__) . '/preview';
-if (!is_dir($livePreviewDir)) {
-    echo "ABORT: No preview directory found at {$livePreviewDir}.\n";
-    exit(1);
-}
-
-try {
-    $checkDb = new \SQLite3($liveDbPath, SQLITE3_OPEN_READONLY);
-    $pageCount = (int) $checkDb->querySingle("SELECT COUNT(*) FROM pages WHERE page_type = 'page'");
-    $checkDb->close();
-    if ($pageCount < 3) {
-        echo "ABORT: Need at least 3 pages (1 homepage + 2 movable). Found: {$pageCount}\n";
-        exit(1);
-    }
-} catch (\Throwable $e) {
-    echo "ABORT: Could not verify database: " . $e->getMessage() . "\n";
-    exit(1);
-}
-
-
-// ═══════════════════════════════════════════
-//  Fixture setup — temp copies
-// ═══════════════════════════════════════════
-
-echo "--- Setup: Creating temp fixtures ---\n";
-
-$tempDir     = sys_get_temp_dir() . '/voxelsite_smove_test_' . uniqid();
-$tempDbPath  = $tempDir . '/studio.db';
-$tempPreview = $tempDir . '/preview';
-$tempAssets  = $tempDir . '/assets';
-
-mkdir($tempDir, 0755, true);
-
-copy($liveDbPath, $tempDbPath);
-copyDirRecursive($livePreviewDir, $tempPreview);
-
-$liveAssetsDir = dirname(__DIR__, 2) . '/assets';
-if (is_dir($liveAssetsDir)) {
-    copyDirRecursive($liveAssetsDir, $tempAssets);
-} else {
-    mkdir($tempAssets . '/css', 0755, true);
-    mkdir($tempAssets . '/js', 0755, true);
-}
-
-echo "  Temp dir: {$tempDir}\n";
-
-putenv("VS_TEST_PREVIEW_DIR={$tempPreview}");
-putenv("VS_TEST_ASSETS_DIR={$tempAssets}");
-
-$db = Database::getInstance($tempDbPath);
-$fileManager = new FileManager($db);
-$fileManager->syncPageRegistry();
 $db->exec('PRAGMA wal_checkpoint(TRUNCATE)');
 
 echo "  DB initialized with " . (int) $db->queryOne("SELECT COUNT(*) as c FROM pages")['c'] . " pages\n";
@@ -183,13 +134,13 @@ echo "  Seeded cross-file reference: {$witnessFile} → /{$sourceSlug}\n";
 
 echo "\n--- 1. Validation gates ---\n";
 
-$snapshotCountBefore = getSnapshotCount($tempDbPath);
+$revisionCountBefore = getRevisionCount($tempDbPath);
 
 // Test 1: Missing pageId
 $r = callEndpoint('POST', '/site-control/structural-move', []);
-record($r['httpCode'] === 400, 'Val: missing fields → 400', $errors, $passed, $failed);
+record($r['httpCode'] === 422, 'Val: missing fields → 422', $errors, $passed, $failed);
 record(
-    ($r['response']['error']['code'] ?? '') === 'missing_field',
+    ($r['response']['error']['code'] ?? '') === 'invalid_schema',
     'Val: missing fields error code',
     $errors, $passed, $failed
 );
@@ -199,9 +150,9 @@ $r = callEndpoint('POST', '/site-control/structural-move', [
     'pageId'       => 'page:nonexistent-xyz.php',
     'targetParent' => '',
 ]);
-record($r['httpCode'] === 404, 'Val: nonexistent page → 404', $errors, $passed, $failed);
+record($r['httpCode'] === 422, 'Val: nonexistent page → 422', $errors, $passed, $failed);
 record(
-    ($r['response']['error']['code'] ?? '') === 'page_not_found',
+    ($r['response']['error']['code'] ?? '') === 'invalid_path',
     'Val: nonexistent page error code',
     $errors, $passed, $failed
 );
@@ -213,9 +164,9 @@ if ($homePage) {
         'pageId'       => $homePageId,
         'targetParent' => $targetSlug,
     ]);
-    record($r['httpCode'] === 400, 'Val: homepage → 400', $errors, $passed, $failed);
+    record($r['httpCode'] === 422, 'Val: homepage → 422', $errors, $passed, $failed);
     record(
-        ($r['response']['error']['code'] ?? '') === 'cannot_move_homepage',
+        ($r['response']['error']['code'] ?? '') === 'invalid_schema',
         'Val: homepage error code',
         $errors, $passed, $failed
     );
@@ -226,9 +177,9 @@ $r = callEndpoint('POST', '/site-control/structural-move', [
     'pageId'       => $sourcePageId,
     'targetParent' => '',
 ]);
-record($r['httpCode'] === 400, 'Val: same location → 400', $errors, $passed, $failed);
+record($r['httpCode'] === 422, 'Val: same location → 422', $errors, $passed, $failed);
 record(
-    ($r['response']['error']['code'] ?? '') === 'same_location',
+    ($r['response']['error']['code'] ?? '') === 'invalid_schema',
     'Val: same location error code',
     $errors, $passed, $failed
 );
@@ -238,9 +189,9 @@ $r = callEndpoint('POST', '/site-control/structural-move', [
     'pageId'       => $sourcePageId,
     'targetParent' => 'nonexistent-parent-xyz',
 ]);
-record($r['httpCode'] === 400, 'Val: nonexistent target → 400', $errors, $passed, $failed);
+record($r['httpCode'] === 422, 'Val: nonexistent target → 422', $errors, $passed, $failed);
 record(
-    ($r['response']['error']['code'] ?? '') === 'invalid_target',
+    ($r['response']['error']['code'] ?? '') === 'invalid_schema',
     'Val: nonexistent target error code',
     $errors, $passed, $failed
 );
@@ -250,7 +201,7 @@ $r = callEndpoint('POST', '/site-control/structural-move', [
     'pageId'       => $targetPageId,
     'targetParent' => $sourceSlug . '/subchild',
 ]);
-record($r['httpCode'] === 400, 'Val: nested target → 400', $errors, $passed, $failed);
+record($r['httpCode'] === 422, 'Val: nested target → 422', $errors, $passed, $failed);
 
 // Test 6b: Homepage as target parent
 if ($homePage) {
@@ -258,7 +209,7 @@ if ($homePage) {
         'pageId'       => $sourcePageId,
         'targetParent' => $homePage['slug'] === 'index' ? 'index' : $homePage['slug'],
     ]);
-    record($r['httpCode'] === 400, 'Val: homepage as parent → 400', $errors, $passed, $failed);
+    record($r['httpCode'] === 422, 'Val: homepage as parent → 422', $errors, $passed, $failed);
 }
 
 // Test 7: Path collision — create a file that would collide
@@ -276,7 +227,7 @@ $r = callEndpoint('POST', '/site-control/structural-move', [
 ]);
 record($r['httpCode'] === 409, 'Val: path collision → 409', $errors, $passed, $failed);
 record(
-    ($r['response']['error']['code'] ?? '') === 'path_conflict',
+    ($r['response']['error']['code'] ?? '') === 'content_conflict',
     'Val: collision error code',
     $errors, $passed, $failed
 );
@@ -294,9 +245,9 @@ if ($navIsCanonical) {
         'pageId'       => $sourcePageId,
         'targetParent' => $targetSlug,
     ]);
-    record($r['httpCode'] === 400, 'Val: legacy nav → 400', $errors, $passed, $failed);
+    record($r['httpCode'] === 422, 'Val: legacy nav → 422', $errors, $passed, $failed);
     record(
-        ($r['response']['error']['code'] ?? '') === 'nav_not_canonical',
+        ($r['response']['error']['code'] ?? '') === 'invalid_schema',
         'Val: legacy nav error code',
         $errors, $passed, $failed
     );
@@ -305,11 +256,11 @@ if ($navIsCanonical) {
     file_put_contents($navFilePath, $navContentOriginal);
 }
 
-// Test 9: No snapshots for validation rejects
-$snapshotCountAfter = getSnapshotCount($tempDbPath);
+// Test 9: No revisions for validation rejects
+$revisionCountAfter = getRevisionCount($tempDbPath);
 record(
-    $snapshotCountAfter === $snapshotCountBefore,
-    'Val: no snapshots wasted on rejects (before=' . $snapshotCountBefore . ', after=' . $snapshotCountAfter . ')',
+    $revisionCountAfter === $revisionCountBefore,
+    'Val: no revisions created on rejects (before=' . $revisionCountBefore . ', after=' . $revisionCountAfter . ')',
     $errors, $passed, $failed
 );
 
@@ -377,11 +328,11 @@ record(
     $errors, $passed, $failed
 );
 
-// Verify snapshot created
-$snapshotCountAfterMove = getSnapshotCount($tempDbPath);
+// Verify a revision was committed
+$revisionCountAfterMove = getRevisionCount($tempDbPath);
 record(
-    $snapshotCountAfterMove > $snapshotCountAfter,
-    'Happy: snapshot created (count=' . $snapshotCountAfterMove . ')',
+    $revisionCountAfterMove > $revisionCountAfter,
+    'Happy: revision created (count=' . $revisionCountAfterMove . ')',
     $errors, $passed, $failed
 );
 
@@ -725,7 +676,7 @@ $r = callEndpoint('POST', '/site-control/structural-move', [
     'pageId'       => $sourcePageId,
     'targetParent' => $targetSlug,
 ], '--fail-move-refs');
-record($r['httpCode'] === 500, 'Rollback: refs failure → 500', $errors, $passed, $failed);
+record($r['httpCode'] === 409, 'Rollback: refs failure → 409', $errors, $passed, $failed);
 record(
     file_exists($tempPreview . '/' . $sourceFilePath),
     'Rollback: refs — source file restored',
@@ -742,7 +693,7 @@ $r = callEndpoint('POST', '/site-control/structural-move', [
     'pageId'       => $sourcePageId,
     'targetParent' => $targetSlug,
 ], '--fail-move-nav');
-record($r['httpCode'] === 500, 'Rollback: nav failure → 500', $errors, $passed, $failed);
+record($r['httpCode'] === 409, 'Rollback: nav failure → 409', $errors, $passed, $failed);
 record(
     file_exists($tempPreview . '/' . $sourceFilePath),
     'Rollback: nav — source file restored',
@@ -764,7 +715,7 @@ $r = callEndpoint('POST', '/site-control/structural-move', [
     'pageId'       => $sourcePageId,
     'targetParent' => $targetSlug,
 ], '--fail-move-db');
-record($r['httpCode'] === 500, 'Rollback: DB failure → 500', $errors, $passed, $failed);
+record($r['httpCode'] === 409, 'Rollback: DB failure → 409', $errors, $passed, $failed);
 record(
     file_exists($tempPreview . '/' . $sourceFilePath),
     'Rollback: DB — source file restored',
@@ -884,7 +835,7 @@ if ($sourceInDb) {
         echo "  DEBUG nav-reorder: pageId={$newNodeId}, parentHref=/{$targetSlug}, index={$endIndex}\n";
     }
     record(
-        $r2['httpCode'] === 200 || $r2['httpCode'] === 400 || $r2['httpCode'] === 422,
+        $r2['httpCode'] === 200 || $r2['httpCode'] === 422 || $r2['httpCode'] === 422,
         'Seq: nav-reorder default position → 200/400/422 (accepted)',
         $errors, $passed, $failed
     );
@@ -917,6 +868,19 @@ if ($sourceInDb) {
     // Test 24: Parent changed, explicit non-default position (first)
     echo "  Test: parent change → explicit position 0 (first)\n";
 
+    // Give the target a distinct existing child so position zero exercises a
+    // real reorder instead of the legitimate already-first no-change response.
+    $positionChild = $targetSlug . '/position-child';
+    if (!is_dir($tempPreview . '/' . $targetSlug)) mkdir($tempPreview . '/' . $targetSlug, 0755, true);
+    file_put_contents($tempPreview . '/' . $positionChild . '.php', '<?php $page = ["title" => "Position child", "slug" => "' . $positionChild . '"]; ?><h1>Position child</h1>');
+    $positionNavSource = file_get_contents($navFilePath);
+    $positionNav = NavLinksParser::parse($positionNavSource);
+    foreach ($positionNav as &$positionEntry) if ($positionEntry['href'] === '/' . $targetSlug) {
+        $positionEntry['children'][] = ['href' => '/' . $positionChild, 'label' => 'Position child'];
+    }
+    unset($positionEntry);
+    file_put_contents($navFilePath, NavLinksParser::replaceNavBlock($positionNavSource, NavLinksParser::serialize($positionNav)));
+    $fileManager->syncPageRegistry();
     // Step 1: structural-move again
     $r = callEndpoint('POST', '/site-control/structural-move', [
         'pageId'       => $sourcePageId,
@@ -997,7 +961,10 @@ exit($failed > 0 ? 1 : 0);
 function callEndpoint(string $method, string $route, array $body, ?string $failMode = null): array
 {
     global $tempDbPath, $tempPreview, $tempAssets;
+    $stateBefore=siteControlState($tempDbPath);
+    if ($method==='POST') $body=siteControlRequest($tempDbPath,$body);
 
+    if($method==='POST'&&$route==='/site-control/structural-move')$body+=['targetIndex'=>null];
     $helper = dirname(__DIR__) . '/tests/helpers/call-nav-endpoint.php';
     $cmd = 'echo ' . escapeshellarg(json_encode($body))
         . ' | php ' . escapeshellarg($helper)
@@ -1020,6 +987,7 @@ function callEndpoint(string $method, string $route, array $body, ?string $failM
         return ['httpCode' => -1, 'response' => ['error' => ['message' => 'Parse error: ' . ($output ?? '(empty)')]]];
     }
 
+    siteControlAssertInvariant($tempDbPath,$stateBefore,$parsed,$method,$failMode);
     return $parsed;
 }
 
@@ -1028,10 +996,10 @@ function callEndpoint(string $method, string $route, array $body, ?string $failM
 //  DB / Filesystem Helpers
 // ═══════════════════════════════════════════
 
-function getSnapshotCount(string $dbPath): int
+function getRevisionCount(string $dbPath): int
 {
     $db = new \SQLite3($dbPath, SQLITE3_OPEN_READONLY);
-    $count = (int) $db->querySingle("SELECT COUNT(*) FROM snapshots");
+    $count = (int) $db->querySingle("SELECT COUNT(*) FROM revisions");
     $db->close();
     return $count;
 }

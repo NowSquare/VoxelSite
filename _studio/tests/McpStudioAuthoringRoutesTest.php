@@ -1,0 +1,61 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__ . '/helpers/StudioRuntimeFixture.php';
+
+require __DIR__.'/McpStudioAuthoringTest.php';
+require __DIR__.'/fixtures/mcp/ServiceFixture.php';
+file_put_contents($root.'/.authoring-routes','disposable');
+foreach(['index'=>'Home','about'=>'About','work'=>'Work'] as $slug=>$title) VoxelSite\Agent\WorkspaceFiles::write($root.'/draft',$slug.'.php',"<?php \$page=['title'=>'$title','slug'=>'$slug']; include __DIR__ . '/_partials/header.php'; ?>\n<h1>$title</h1><a href='/about'>About</a><?php include __DIR__ . '/_partials/footer.php'; ?>");
+unlink($root.'/draft/services/repairs.php');
+VoxelSite\Agent\WorkspaceFiles::write($root.'/draft','_partials/header.php','<!doctype html><html><body><?php include __DIR__ . "/nav.php"; ?><main>');
+VoxelSite\Agent\WorkspaceFiles::write($root.'/draft','_partials/footer.php','</main></body></html>');
+VoxelSite\Agent\WorkspaceFiles::write($root.'/draft','_partials/nav.php',"<?php\n".VoxelSite\NavLinksParser::serialize([['label'=>'Home','href'=>'/','home'=>true],['label'=>'About','href'=>'/about'],['label'=>'Work','href'=>'/work']])."\n?>\n<nav><?php foreach (\$navLinks as \$link): ?><a href=\"<?= \$link['href'] ?>\"><?= htmlspecialchars(\$link['label']) ?></a><?php endforeach; ?></nav>");
+for($i=0;$i<24;$i++) VoxelSite\Agent\WorkspaceFiles::write($root.'/draft','linked-'.$i.'.php',"<?php \$page=['title'=>'Linked $i','slug'=>'linked-$i']; include __DIR__ . '/_partials/header.php'; ?><a href='/about'>About</a><?php include __DIR__ . '/_partials/footer.php'; ?>");
+$files->syncPageRegistry(true);
+
+\VoxelSite\Tests\StudioRuntimeFixture::copy($root);
+file_put_contents($root.'/_studio/data/config.json',json_encode(['app_key'=>VoxelSite\Encryption::generateKey(),'installed_at'=>now()]));
+$db->insert('sessions',['id'=>str_repeat('a',64),'user_id'=>1,'created_at'=>now(),'expires_at'=>gmdate('c',time()+3600),'ip_address'=>'127.0.0.1','user_agent'=>'Fixture']);
+function authoringRoute(string $method,string $path,array $body=[],array $query=[]):array {
+    global $root;$process=proc_open([PHP_BINARY,__DIR__.'/helpers/call-studio-authoring.php',$root],[['pipe','r'],['pipe','w'],['pipe','w']],$pipes);
+    fwrite($pipes[0],json_encode(compact('method','path','body','query')));fclose($pipes[0]);$out=stream_get_contents($pipes[1]);$err=stream_get_contents($pipes[2]);fclose($pipes[1]);fclose($pipes[2]);$code=proc_close($process);
+    if($code!==0)throw new RuntimeException($err.$out);return json_decode($out,true,32,JSON_THROW_ON_ERROR);
+}
+$list=authoringRoute('GET','/files');if($list['status']!==200)fwrite(STDERR,json_encode($list)."\n");stageCheck($list['status']===200&&isset($list['body']['data']['draft_version']),'Copied file list carries a captured draft version');
+$read=authoringRoute('GET','/files/content',[],['path'=>'assets/data/editor-test.json']);stageCheck($read['status']===404,'Missing bounded source returns not found');
+$create=['operation_id'=>'route-create-file-001','base_draft_version'=>$list['body']['data']['draft_version'],'path'=>'assets/data/editor-test.json','expected_content_sha256'=>null];
+$result=authoringRoute('POST','/files/create',$create);stageCheck($result['status']===201&&$result['body']['data']['operation']['status']==='succeeded','Copied router creates through shared authoring');
+stageCheck(authoringRoute('POST','/files/create',$create)['body']===$result['body'],'Copied create route replays identical operation');
+$read=authoringRoute('GET','/files/content',[],['path'=>'assets/data/editor-test.json'])['body']['data'];
+$save=['operation_id'=>'route-save-file-001','base_draft_version'=>$read['draft_version'],'path'=>$read['path'],'expected_content_sha256'=>$read['content_sha256'],'content'=>'{"route":"saved"}'];
+$result=authoringRoute('PUT','/files/content',$save);stageCheck($result['status']===200&&$result['body']['data']['operation']['status']==='succeeded','Copied source route checks captured version and hash');
+stageCheck(authoringRoute('PUT','/files/content',['path'=>$read['path'],'content'=>'bad'])['status']===422,'Legacy unversioned save cannot bypass shared contract');
+$rows=$db->query('SELECT * FROM pages ORDER BY id');$graph=authoringRoute('GET','/site-graph');stageCheck($graph['status']===200&&$db->query('SELECT * FROM pages ORDER BY id')===$rows,'Graph returns a consistent version without synchronizing page records');
+$page=$db->queryOne("SELECT file_path FROM pages WHERE is_homepage=0 ORDER BY id LIMIT 1")['file_path'];
+$rename=['operation_id'=>'route-title-001','base_draft_version'=>$graph['body']['data']['draft_version'],'pageId'=>'page:'.$page,'newTitle'=>'Route title'];
+$result=authoringRoute('POST','/site-control/page-rename',$rename);stageCheck($result['status']===200&&$result['body']['data']['operation']['status']==='succeeded'&&$result['body']['data']['newTitle']==='Route title','Structural title route applies exact shared projection');
+stageCheck(authoringRoute('POST','/site-control/page-rename',$rename)['body']===$result['body'],'Structural replay keeps original title projection and identity');
+$stale=$rename;$stale['operation_id']='route-title-stale-001';$stale['newTitle']='Stale title';stageCheck(authoringRoute('POST','/site-control/page-rename',$stale)['status']===409,'Structural route rejects stale displayed graph version');
+$graph=authoringRoute('GET','/site-graph');$slug=substr($page,0,-4);
+$url=['operation_id'=>'route-url-001','base_draft_version'=>$graph['body']['data']['draft_version'],'routeId'=>'route:/'.$slug,'newPath'=>'/renamed'];
+$result=authoringRoute('POST','/site-control/url-rename',$url);
+stageCheck($result['status']===202&&$result['body']['data']['operation']['status']==='applying','Large structural changes retain a bounded continuation through real router');
+$checkpoint=$result['body']['data']['operation']['checkpoint'];
+stageCheck(authoringRoute('GET','/site-graph')['status']===409,'Graph refuses a mixed draft during shared application');
+stageCheck(authoringRoute('POST','/site-control/url-rename',$url+['checkpoint'=>$checkpoint+1])['status']===409,'Wrong continuation checkpoint cannot advance source effects');
+for($i=0;($result['body']['data']['operation']['status']??'')==='applying'&&$i<10;$i++)$result=authoringRoute('POST','/site-control/url-rename',$url+['checkpoint'=>$result['body']['data']['operation']['checkpoint']]);
+stageCheck($result['status']===200&&($result['body']['data']['newPageId']??'')==='page:renamed.php','URL route returns path reconciliation from retained projection');
+stageCheck(authoringRoute('POST','/site-control/url-rename',$url)['body']===$result['body'],'URL replay does not resolve an already moved current page');
+$graph=authoringRoute('GET','/site-graph');
+$reorder=['operation_id'=>'route-order-001','base_draft_version'=>$graph['body']['data']['draft_version'],'pageId'=>'page:renamed.php','targetParentHref'=>null,'targetIndex'=>1];
+$result=authoringRoute('POST','/site-control/nav-reorder',$reorder);stageCheck($result['status']===200&&$result['body']['data']['operation']['status']==='succeeded','Navigation reorder delegates to sealed projection');
+$graph=authoringRoute('GET','/site-graph');$move=['operation_id'=>'route-move-001','base_draft_version'=>$graph['body']['data']['draft_version'],'pageId'=>'page:renamed.php','targetParent'=>'work','targetIndex'=>0];
+$result=authoringRoute('POST','/site-control/structural-move',$move);
+for($i=0;($result['body']['data']['operation']['status']??'')==='applying'&&$i<10;$i++)$result=authoringRoute('POST','/site-control/structural-move',$move+['checkpoint'=>$result['body']['data']['operation']['checkpoint']]);
+stageCheck($result['status']===200&&($result['body']['data']['movedPages'][0]['newFilePath']??'')==='work/renamed.php','Move adapter returns retained path mapping for editor reconciliation');
+$graph=authoringRoute('GET','/site-graph');$delete=['operation_id'=>'route-delete-001','base_draft_version'=>$graph['body']['data']['draft_version'],'pageId'=>'page:work/renamed.php'];
+$result=authoringRoute('POST','/site-control/page-delete',$delete);
+for($i=0;($result['body']['data']['operation']['status']??'')==='applying'&&$i<10;$i++)$result=authoringRoute('POST','/site-control/page-delete',$delete+['checkpoint'=>$result['body']['data']['operation']['checkpoint']]);
+stageCheck($result['status']===200&&($result['body']['data']['deletedPage']['filePath']??'')==='work/renamed.php','Delete adapter returns retained removed source identity');
+stageCheck(VoxelSite\SiteWorkspace::inventory($root.'/live')===$live,'Copied router authoring leaves every live byte unchanged');
+echo "Studio authoring routes: {$checks} checks passed.\n";

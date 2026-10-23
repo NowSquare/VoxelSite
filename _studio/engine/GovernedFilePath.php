@@ -11,6 +11,14 @@ final class GovernedFilePath
 {
     public static function resolve(string $previewRoot, string $relativePath): string
     {
+        // Trusted roots are canonical at construction. Never follow a root
+        // or ancestor replaced with a symlink before this governed read.
+        for ($root = rtrim($previewRoot, '/'); $root !== '' && $root !== '.' && $root !== '/'; $root = dirname($root)) {
+            clearstatcache(true, $root);
+            if (is_link($root)) {
+                throw new RuntimeException('invalid_target');
+            }
+        }
         $base = realpath($previewRoot);
         if ($base === false || !is_dir($base) || !str_ends_with($relativePath, '.php')) {
             throw new RuntimeException('invalid_target');

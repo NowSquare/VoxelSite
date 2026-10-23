@@ -16,16 +16,24 @@ final class SiteMutationRoutePolicy
     public static function studio(string $method, string $route): array
     {
         if (!in_array($method, ['POST', 'PUT', 'DELETE'], true)) return self::NONE;
+        // Shared mutation services acquire the owning operation's lock.
+        // A generic lock here would reject its retained continuation.
+        if (($method === 'POST' && in_array($route, ['/publish', '/publish/rollback', '/publish/unpublish',
+                '/revisions/undo', '/revisions/redo', '/designs', '/designs/new', '/designs/:id/load',
+                '/assets/upload', '/assets/folder', '/snapshots/capture', '/snapshots/:id/prepare-restore',
+                '/snapshots/:id/apply-restore','/site/reset','/site/reset/prepare','/site/reset/continue','/site/reset/recover'], true))
+            || (in_array($method, ['PUT', 'DELETE'], true) && $route === '/designs/:id')
+            || ($method === 'PUT' && $route === '/assets/meta')
+            || ($method === 'DELETE' && $route === '/assets')
+            || (in_array($method, ['PUT', 'DELETE'], true) && $route === '/settings/prompts/content')) return self::NONE;
 
-        // Archive capture must see coherent files, but must also remain available
-        // to preserve a damaged website before the owner attempts recovery.
-        if (($method === 'POST' && in_array($route, ['/snapshots', '/snapshots/:id/restore', '/designs'], true))
-            || ($method === 'DELETE' && $route === '/snapshots/:id')) {
-            return self::CAPTURE;
-        }
+        // All archive aliases use retained shared operations and acquire their own lock.
+        if (($method === 'POST' && in_array($route, ['/snapshots', '/snapshots/:id/restore'], true))
+            || ($method === 'DELETE' && $route === '/snapshots/:id')) return self::NONE;
         // A confirmed factory reset removes the entire installation, including
         // recovery records. Ordinary site reset cannot yet verify every removal.
-        if ($method === 'POST' && $route === '/site/reset-install') return self::CAPTURE;
+        // Installation cleanup owns its exact inventory and independent final receipt.
+        if ($method === 'POST' && in_array($route, ['/site/reset-install', '/site/reset-install/prepare', '/site/reset-install/discard'], true)) return self::NONE;
 
         if (str_starts_with($route, '/pages') || str_starts_with($route, '/files')
             || str_starts_with($route, '/publish') || str_starts_with($route, '/revisions')) {
@@ -50,6 +58,7 @@ final class SiteMutationRoutePolicy
     public static function agent(string $method, string $route): array
     {
         if (!in_array($method, ['POST', 'PUT', 'DELETE'], true)) return self::NONE;
+        if (($method === 'POST' && $route === '/publish') || $route === '/assets') return self::NONE;
         // The detached worker acquires its own lock and rechecks recovery.
         // Keeping the enqueue request's preflight lock would race that worker.
         if ($method === 'POST' && $route === '/prompt') return self::ENQUEUE;

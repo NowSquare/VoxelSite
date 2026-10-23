@@ -1,6 +1,6 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteBase /
+    # Relative rewrites work at the document root and in a subdirectory.
 
     # ── Block sensitive root-level files and directories ──
     # These should never be web-accessible

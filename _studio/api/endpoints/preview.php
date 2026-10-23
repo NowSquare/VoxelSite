@@ -24,12 +24,58 @@ declare(strict_types=1);
 $method = $_REQUEST['_route_method'];
 $path   = $_REQUEST['_route_path'];
 
+// This authenticated route intentionally never reads submitted fields or files.
+if ($method === 'POST' && $path === '/preview/validate') {
+    header('Cache-Control: no-store, private');
+    header('Referrer-Policy: no-referrer');
+    header('X-Robots-Tag: noindex, nofollow');
+    if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > \VoxelSite\Agent\PreviewHttpController::MAX_BODY_BYTES) {
+        http_response_code(413);
+        header('Content-Type: application/json; charset=utf-8');
+        echo '{"ok":false,"error":{"code":"size_limit","message":"Preview validation accepts at most 64 KiB. Nothing was submitted."}}';
+        exit;
+    }
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!doctype html><html lang="en"><meta charset="utf-8"><title>Draft preview</title><main><h1>Nothing was submitted</h1><p>'
+        .htmlspecialchars(\VoxelSite\Agent\PreviewService::validation()['message'],ENT_QUOTES,'UTF-8')
+        .'</p><p>Use your browser’s Back button to return to the draft.</p></main></html>';
+    exit;
+}
+
 // ═══════════════════════════════════════════
 //  GET /preview — Serve a preview file
 // ═══════════════════════════════════════════
 
 if ($method === 'GET' && $path === '/preview') {
     $requestedPath = $_GET['path'] ?? 'index.php';
+    $previewRouteBase = \VoxelSite\InstallationUrl::studioPath().'/api/router.php?_path=%2Fpreview&path=';
+
+    if (!\VoxelSite\DemoMode::isActive()) {
+        try {
+            $db=\VoxelSite\Database::getInstance();
+            $service=new \VoxelSite\Agent\PreviewService($db,new \VoxelSite\Agent\ActorPolicy($db),new \VoxelSite\SiteWorkspace($db));
+            header('Cache-Control: no-store, private');
+            header('X-Content-Type-Options: nosniff');
+            header('X-Robots-Tag: noindex, nofollow');
+            header('Referrer-Policy: no-referrer');
+            if (($_GET['view'] ?? '') === 'manifest') {
+                header('Content-Type: application/json; charset=utf-8');
+                echo \VoxelSite\Agent\CanonicalJson::encode($service->publicManifest());
+            } else {
+                if (!is_string($requestedPath)) throw new \RuntimeException('Invalid preview path.');
+                $render=$service->studio($requestedPath,isset($_GET['embed']));
+                http_response_code($render['status']);
+                header('Content-Type: '.$render['mime']);
+                echo $render['content'] !== '' ? $render['content'] : '<h1>Preview unavailable</h1><p>'
+                    .htmlspecialchars($render['diagnostics'][0]['message'] ?? 'Inspect the draft PHP before previewing it.',ENT_QUOTES,'UTF-8').'</p>';
+            }
+        } catch (\Throwable) {
+            http_response_code(409);
+            header('Content-Type: application/json; charset=utf-8');
+            echo '{"ok":false,"error":{"code":"workspace_unavailable","message":"This draft could not be previewed. Inspect its files and workspace status."}}';
+        }
+        exit;
+    }
 
     // ── Sanitize: strip leading slashes, null bytes, and normalize ──
     $requestedPath = str_replace("\0", '', $requestedPath);
@@ -47,47 +93,38 @@ if ($method === 'GET' && $path === '/preview') {
         exit;
     }
 
-    // ── Resolve the absolute path ──
-    $studioDir  = dirname(__DIR__, 2);           // _studio/
-    $previewDir = $studioDir . '/preview';        // _studio/preview/
-    $assetsDir  = dirname($studioDir) . '/assets'; // /assets/
-
-    // ── Demo mode: swap to demo directories ──
-    // When .demo is active, serve from _studio/demo/preview/ and
-    // _studio/demo/assets/ (CSS, JS), falling back to the live /assets/
-    // for shared resources (images, fonts, library).
+    $studioDir = dirname(__DIR__, 2);
     $isDemoPreview = \VoxelSite\DemoMode::isActive();
-    if ($isDemoPreview) {
-        $previewDir = $studioDir . '/demo/preview';
-        $demoAssetsDir = $studioDir . '/demo/assets';
-    }
-
-    // Determine which directory to look in
-    if (str_starts_with($requestedPath, 'assets/')) {
-        // Asset files: CSS, JS, images, fonts
-        // Strip the 'assets/' prefix since the assets dir IS /assets/
-        $relativePath = substr($requestedPath, 7); // Remove 'assets/'
-
+    $workspace = null;
+    try {
         if ($isDemoPreview) {
-            // Two-tier lookup: demo assets first, then live shared assets.
-            // Demo has its own css/ and js/ copies. Shared resources
-            // (images, fonts, library) live only at the project-level /assets/.
-            $demoCandidate = $demoAssetsDir . '/' . $relativePath;
-            if (file_exists($demoCandidate)) {
-                $absolutePath = $demoCandidate;
-                $securityBase = $demoAssetsDir;
+            $previewDir = $studioDir . '/demo/preview';
+            $assetsDir = $studioDir . '/demo/assets';
+            if (str_starts_with($requestedPath, 'assets/')) {
+                $relative = substr($requestedPath, 7);
+                $absolutePath = \VoxelSite\SiteWorkspace::resolveWithin($assetsDir, $relative);
+                if (!is_file($absolutePath) && preg_match('~^(library|icons|images|fonts)/~', $relative)) {
+                    $absolutePath = \VoxelSite\SiteWorkspace::resolveWithin(dirname($studioDir) . '/assets', $relative);
+                }
             } else {
-                $absolutePath = $assetsDir . '/' . $relativePath;
-                $securityBase = $assetsDir;
+                $absolutePath = \VoxelSite\SiteWorkspace::resolveWithin($previewDir, $requestedPath);
             }
         } else {
-            $absolutePath = $assetsDir . '/' . $relativePath;
-            $securityBase = $assetsDir;
+            $workspace = new \VoxelSite\SiteWorkspace();
+            $previewDir = $workspace->draftRoot();
+            $assetsDir = $workspace->draftAssetsRoot();
+            $absolutePath = $workspace->resolveDraft($requestedPath);
+            if (str_ends_with(strtolower($requestedPath), '.php')) {
+                $preflight = $workspace->preflight();
+                if (!$preflight['ok']) throw new \RuntimeException('workspace_preflight_failed: ' . json_encode($preflight['issues']));
+            }
         }
-    } else {
-        // HTML and other preview files
-        $absolutePath = $previewDir . '/' . $requestedPath;
-        $securityBase = $previewDir;
+    } catch (\RuntimeException $error) {
+        header('Content-Type: application/json');
+        header('Cache-Control: no-store');
+        http_response_code(409);
+        echo json_encode(['ok' => false, 'error' => ['code' => 'workspace_unavailable', 'message' => $error->getMessage()]]);
+        exit;
     }
 
     // ── Security: realpath() validation ──
@@ -96,7 +133,7 @@ if ($method === 'GET' && $path === '/preview') {
         // For new sites with no preview yet, return a friendly placeholder
         if ($requestedPath === 'index.php') {
             header('Content-Type: text/html; charset=utf-8');
-            echo injectHotReload(getEmptyPreviewHtml());
+            echo \VoxelSite\PreviewRenderer::injectHotReload(\VoxelSite\PreviewRenderer::getEmptyPreviewHtml(),$previewRouteBase);
             exit;
         }
 
@@ -109,54 +146,26 @@ if ($method === 'GET' && $path === '/preview') {
         exit;
     }
 
-    $realPath = realpath($absolutePath);
-    $realBase = realpath($securityBase);
-
-    // Check containment: try logical path first (handles symlinks),
-    // then fall back to realpath-based check
-    $normAbsolute = rtrim(str_replace('//', '/', $absolutePath), '/');
-    $normBase = rtrim(str_replace('//', '/', $securityBase), '/');
-    $logicalOk = str_starts_with($normAbsolute . '/', $normBase . '/');
-    $realpathOk = ($realPath !== false && $realBase !== false && str_starts_with($realPath . '/', $realBase . '/'));
-
-    if (!$logicalOk && !$realpathOk) {
-        header('Content-Type: application/json');
-        http_response_code(403);
-        echo json_encode(['ok' => false, 'error' => [
-            'code'    => 'access_denied',
-            'message' => 'Access denied: path outside allowed directory.',
-        ]]);
-        exit;
-    }
-
-    // Use realPath if available (for opcache_invalidate, readfile, etc.)
-    if ($realPath !== false) {
-        // Keep using $realPath for file operations below
-    } else {
-        $realPath = $absolutePath;
-    }
+    $realPath = $absolutePath; // The canonical resolver already refused every symlink component.
 
     // ── Determine MIME type ──
     $extension = strtolower(pathinfo($realPath, PATHINFO_EXTENSION));
-    $mimeType = getMimeType($extension);
+    $mimeType = \VoxelSite\PreviewRenderer::getMimeType($extension);
 
     // ── Serve the file ──
     header('Content-Type: ' . $mimeType);
     header('Cache-Control: no-cache, no-store, must-revalidate'); // Preview = always fresh
     header('X-Content-Type-Options: nosniff');
+    header('X-Robots-Tag: noindex, nofollow');
+    header('Referrer-Policy: no-referrer');
 
     if ($extension === 'php') {
         // PHP files: render via ob_start/include so partials are resolved
         $originalDir = getcwd();
 
-        // Ensure an `assets/` symlink exists in the preview directory so
-        // that `__DIR__ . '/assets/data/...'` resolves correctly from page
-        // files. Without this, __DIR__ points to _studio/preview/ (or
-        // _studio/demo/preview/ in demo mode) which has no assets/ child.
-        $targetAssetsDir = $isDemoPreview
-            ? ($studioDir . '/demo/assets')  // Demo: data files in demo/assets/
-            : $assetsDir;                     // Live: project-level assets/
-        ensurePreviewAssetsLink($previewDir, $targetAssetsDir);
+        // The production draft already contains real private assets. Demo
+        // preview is a shipped sample and may retain its separate legacy link.
+        // No persistent asset link is created by a read request.
 
         // Bust opcache for this file AND all partials so undo/redo
         // changes are reflected immediately without stale bytecode.
@@ -173,7 +182,7 @@ if ($method === 'GET' && $path === '/preview') {
         // ── VE-002: Instrumented include for source provenance ──
         // Create instrumented copies in an isolated temp directory so
         // the real source files are never mutated.
-        $tempDir = createInstrumentedPreviewCopy($previewDir, $requestedPath);
+        $tempDir = \VoxelSite\PreviewRenderer::createInstrumentedPreviewCopy($previewDir, $requestedPath);
         $instrumentationAvailable = ($tempDir !== null);
 
         if ($instrumentationAvailable) {
@@ -193,49 +202,30 @@ if ($method === 'GET' && $path === '/preview') {
         } catch (\Throwable $e) {
             ob_end_clean();
             chdir($originalDir);
-            cleanupTempPreviewDir($tempDir);
+            \VoxelSite\PreviewRenderer::cleanupTempPreviewDir($tempDir);
             header('Content-Type: text/html; charset=utf-8');
             echo '<h1>Preview Error</h1><pre>' . htmlspecialchars($e->getMessage()) . '</pre>';
             exit;
         }
         $content = ob_get_clean();
         chdir($originalDir);
-        cleanupTempPreviewDir($tempDir);
+        \VoxelSite\PreviewRenderer::cleanupTempPreviewDir($tempDir);
 
         // ── VE-002: Annotate rendered HTML with source addresses ──
         // If instrumentation was available, run the full provenance pipeline.
         // If not, mark everything unsafe so the visual editor cannot mutate.
         if ($instrumentationAvailable) {
-            $content = annotateSourceAddresses($content, $requestedPath);
+            $content = \VoxelSite\PreviewRenderer::annotateSourceAddresses($content, $requestedPath);
         } else {
-            $content = annotateFailSafe($content, $requestedPath);
+            $content = \VoxelSite\PreviewRenderer::annotateFailSafe($content, $requestedPath);
         }
 
         // Bust CSS cache — the root .htaccess sets 1-year expiry for CSS.
         // Without this, the browser serves stale tailwind.css / style.css
         // after the AI regenerates them, causing an unstyled flash.
-        $content = bustAssetCache($content, $assetsDir);
+        $content = \VoxelSite\PreviewRenderer::bustAssetCache($content, $assetsDir);
 
-        // ── Demo mode: rewrite CSS/JS asset URLs to go through preview API ──
-        // Without this, <link href="/assets/css/style.css"> loads directly from
-        // the live webroot, bypassing demo asset isolation. We rewrite these to
-        // /_studio/api/router.php?_path=/preview&path=assets/css/style.css
-        // which hits the two-tier demo asset resolution in this file.
-        // This mirrors the exact approach designs.php uses for saved designs.
-        if ($isDemoPreview) {
-            $previewBase = '/_studio/api/router.php?_path=%2Fpreview&path=';
-            $content = preg_replace_callback(
-                '/(href|src)=["\']\/([^"\'?#]+\.(css|js))(?:\?[^"\']*)?["\']/',
-                function (array $m) use ($previewBase) {
-                    $path = $m[2];
-                    if (str_starts_with($path, 'assets/css/') || str_starts_with($path, 'assets/js/')) {
-                        return $m[1] . '="' . $previewBase . urlencode($path) . '"';
-                    }
-                    return $m[0]; // Leave other assets (images, fonts, CDNs) as-is
-                },
-                $content
-            ) ?? $content;
-        }
+        $content = \VoxelSite\PreviewAssetRouter::rewrite($content, $requestedPath, 'html', $previewRouteBase);
 
         // ── Prevent Flash of Unstyled Content (demo mode) ──
         // In demo mode, CSS is routed through the PHP API (slower than
@@ -254,13 +244,13 @@ if ($method === 'GET' && $path === '/preview') {
         }
 
         // Inject hot-reload into rendered HTML
-        $content = injectHotReload($content);
+        $content = \VoxelSite\PreviewRenderer::injectHotReload($content, $previewRouteBase);
 
         // Inject visual editor bridge
-        $content = injectVisualEditorBridge($content);
+        $content = \VoxelSite\PreviewRenderer::injectVisualEditorBridge($content);
 
         // Inject Actions Bar for preview (if active actions exist)
-        $content = injectActionsBar($content);
+        $content = \VoxelSite\PreviewRenderer::injectActionsBar($content);
 
         // When loaded as an embedded preview (iframe thumbnail), inject CSS
         // to disable reveal animations. The iframe sandbox blocks JS, so
@@ -278,9 +268,9 @@ if ($method === 'GET' && $path === '/preview') {
         }
 
         echo $content;
-    } elseif (isTextType($extension)) {
+    } elseif (\VoxelSite\PreviewRenderer::isTextType($extension)) {
         $content = file_get_contents($realPath);
-        echo $content;
+        echo \VoxelSite\PreviewAssetRouter::rewrite($content, $requestedPath, $extension, $previewRouteBase);
     } else {
         // Binary files: stream directly
         header('Content-Length: ' . filesize($realPath));
@@ -306,129 +296,27 @@ if ($method === 'GET' && $path === '/preview/diff') {
         return;
     }
 
-    $studioDir = dirname(__DIR__, 2);
-    $previewDir = $studioDir . '/preview';
-    $docRoot = dirname($studioDir);
-    $assetsDir = $docRoot . '/assets';
-    $manifestPath = $studioDir . '/data/published-manifest.json';
-
-    $previewFiles = collectManagedPreviewFiles($previewDir);
-    $manifest = loadJsonSafe($manifestPath, ['files' => []]);
-    $publishedFiles = is_array($manifest['files'] ?? null) ? $manifest['files'] : [];
-
-    $candidates = array_values(array_unique(array_merge($previewFiles, $publishedFiles)));
-    sort($candidates);
-
-    $changes = [];
-
-    foreach ($candidates as $relativePath) {
-        $previewPath = $previewDir . '/' . $relativePath;
-        $productionPath = $docRoot . '/' . $relativePath;
-
-        $inPreview = file_exists($previewPath);
-        $inProduction = file_exists($productionPath);
-
-        if ($inPreview && !$inProduction) {
-            $changes[] = [
-                'path' => $relativePath,
-                'type' => 'added',
-                'preview_size' => filesize($previewPath) ?: 0,
-                'production_size' => 0,
-            ];
-            continue;
+    try {
+        $db=\VoxelSite\Database::getInstance();$workspace=new \VoxelSite\SiteWorkspace($db);
+        $policy=new \VoxelSite\Agent\ActorPolicy($db);
+        $actor=\VoxelSite\Agent\BusinessStudioAdapter::actor();
+        $root=dirname($workspace->draftRoot()).'/data/agent/releases';
+        $publish=new \VoxelSite\Agent\PublishPlanService($db,$policy,$workspace,
+            new \VoxelSite\Agent\ReleaseStore($db,$policy,$root),new \VoxelSite\Agent\OperationStore($db,$policy,$workspace->mutationLockPath()));
+        $input=[];
+        foreach(['offset','limit'] as $key)if(isset($_GET[$key])){
+            if(!is_string($_GET[$key]) || !preg_match('/^(0|[1-9][0-9]{0,3})$/D',$_GET[$key]))
+                throw new \VoxelSite\Agent\OperationException('invalid_schema','Use bounded integer pagination values.');
+            $input[$key]=(int)$_GET[$key];
         }
-
-        if (!$inPreview && $inProduction) {
-            $changes[] = [
-                'path' => $relativePath,
-                'type' => 'deleted',
-                'preview_size' => 0,
-                'production_size' => filesize($productionPath) ?: 0,
-            ];
-            continue;
-        }
-
-        if ($inPreview && $inProduction) {
-            $previewHash = @hash_file('sha256', $previewPath);
-            $productionHash = @hash_file('sha256', $productionPath);
-            if ($previewHash !== $productionHash) {
-                $changes[] = [
-                    'path' => $relativePath,
-                    'type' => 'modified',
-                    'preview_size' => filesize($previewPath) ?: 0,
-                    'production_size' => filesize($productionPath) ?: 0,
-                ];
-            }
-        }
+        if(isset($_GET['version']))$input['version']=$_GET['version'];
+        $service=new \VoxelSite\Agent\PublicationDiffService($db,$policy,$workspace,$publish);
+        jsonResponse(['ok'=>true,'data'=>$service->read($actor,(object)$input)]);
+    } catch(\VoxelSite\Agent\OperationException $error) {
+        jsonResponse(['ok'=>false,'error'=>['code'=>$error->errorCode,'message'=>$error->getMessage(),'details'=>$error->details]],
+            $error->errorCode==='permission_denied'?403:($error->errorCode==='invalid_schema'?422:409));
     }
-
-    // ── Asset file diff (CSS/JS/JSON) ──
-    // Assets are shared — no preview/production separation. Compare
-    // current file hashes against hashes stored at the last publish.
-    $publishedAssetHashes = is_array($manifest['asset_hashes'] ?? null)
-        ? $manifest['asset_hashes']
-        : [];
-
-    if (!empty($publishedAssetHashes)) {
-        $currentAssetHashes = collectCurrentAssetHashes($assetsDir);
-
-        // Files modified or added since last publish
-        foreach ($currentAssetHashes as $assetPath => $currentHash) {
-            if (isset($publishedAssetHashes[$assetPath])) {
-                if ($currentHash !== $publishedAssetHashes[$assetPath]) {
-                    $fullPath = $docRoot . '/' . $assetPath;
-                    $changes[] = [
-                        'path' => $assetPath,
-                        'type' => 'modified',
-                        'preview_size' => file_exists($fullPath) ? (filesize($fullPath) ?: 0) : 0,
-                        'production_size' => file_exists($fullPath) ? (filesize($fullPath) ?: 0) : 0,
-                    ];
-                }
-            } else {
-                // New asset file not present at last publish
-                $fullPath = $docRoot . '/' . $assetPath;
-                $changes[] = [
-                    'path' => $assetPath,
-                    'type' => 'added',
-                    'preview_size' => file_exists($fullPath) ? (filesize($fullPath) ?: 0) : 0,
-                    'production_size' => 0,
-                ];
-            }
-        }
-
-        // Files that existed at publish but have been deleted
-        foreach ($publishedAssetHashes as $assetPath => $publishedHash) {
-            if (!isset($currentAssetHashes[$assetPath])) {
-                $changes[] = [
-                    'path' => $assetPath,
-                    'type' => 'deleted',
-                    'preview_size' => 0,
-                    'production_size' => 0,
-                ];
-            }
-        }
-    }
-
-    $added = count(array_filter($changes, fn($c) => $c['type'] === 'added'));
-    $modified = count(array_filter($changes, fn($c) => $c['type'] === 'modified'));
-    $deleted = count(array_filter($changes, fn($c) => $c['type'] === 'deleted'));
-
-    $message = empty($changes)
-        ? 'No pending publish changes.'
-        : "{$added} added, {$modified} modified, {$deleted} deleted.";
-
-    header('Content-Type: application/json');
-    echo json_encode(['ok' => true, 'data' => [
-        'changes' => $changes,
-        'counts' => [
-            'added' => $added,
-            'modified' => $modified,
-            'deleted' => $deleted,
-        ],
-        'has_changes' => !empty($changes),
-        'message' => $message,
-    ]]);
-    exit;
+    return;
 }
 
 // ── Fallback ──
@@ -450,975 +338,3 @@ exit;
  * Covers all file types the AI can generate or that users
  * might upload as assets.
  */
-function getMimeType(string $extension): string
-{
-    return match ($extension) {
-        // Text
-        'html', 'htm' => 'text/html; charset=utf-8',
-        'php'         => 'text/html; charset=utf-8',  // PHP renders to HTML
-        'css'         => 'text/css; charset=utf-8',
-        'js'          => 'application/javascript; charset=utf-8',
-        'json'        => 'application/json; charset=utf-8',
-        'xml'         => 'application/xml; charset=utf-8',
-        'svg'         => 'image/svg+xml',
-        'txt'         => 'text/plain; charset=utf-8',
-        'md'          => 'text/markdown; charset=utf-8',
-
-        // Images
-        'png'         => 'image/png',
-        'jpg', 'jpeg' => 'image/jpeg',
-        'gif'         => 'image/gif',
-        'webp'        => 'image/webp',
-        'avif'        => 'image/avif',
-        'ico'         => 'image/x-icon',
-
-        // Fonts
-        'woff'        => 'font/woff',
-        'woff2'       => 'font/woff2',
-        'ttf'         => 'font/ttf',
-        'otf'         => 'font/otf',
-        'eot'         => 'application/vnd.ms-fontobject',
-
-        // Documents
-        'pdf'         => 'application/pdf',
-
-        // Fallback
-        default       => 'application/octet-stream',
-    };
-}
-
-/**
- * Check if a file extension represents a text-based type.
- * Text files are read into memory; binary files are streamed.
- */
-function isTextType(string $extension): bool
-{
-    return in_array($extension, [
-        'html', 'htm', 'css', 'js', 'json', 'xml', 'svg', 'txt', 'md',
-    ], true);
-}
-
-/**
- * @return array<int, string>
- */
-function collectManagedPreviewFiles(string $previewDir): array
-{
-    if (!is_dir($previewDir)) {
-        return [];
-    }
-
-    $files = [];
-    $basePath = rtrim(str_replace('//', '/', $previewDir), '/');
-
-    $iterator = new \RecursiveIteratorIterator(
-        new \RecursiveDirectoryIterator(
-            $previewDir,
-            \RecursiveDirectoryIterator::SKIP_DOTS
-        )
-    );
-
-    foreach ($iterator as $file) {
-        if ($file->isFile()) {
-            $name = $file->getFilename();
-            // Skip dotfiles (.gitkeep, .gitignore, .DS_Store, etc.)
-            if (str_starts_with($name, '.')) {
-                continue;
-            }
-            // Use pathname (logical) instead of realPath to handle symlinks
-            $filePath = str_replace('\\', '/', $file->getPathname());
-            $normBase = $basePath . '/';
-            if (str_starts_with($filePath, $normBase)) {
-                $relativePath = substr($filePath, strlen($normBase));
-                $files[] = $relativePath;
-            }
-        }
-    }
-
-    $files = array_values(array_unique($files));
-    sort($files);
-
-    return $files;
-}
-
-/**
- * @param array<string, mixed> $fallback
- * @return array<string, mixed>
- */
-function loadJsonSafe(string $path, array $fallback): array
-{
-    if (!file_exists($path)) {
-        return $fallback;
-    }
-
-    $raw = file_get_contents($path);
-    if ($raw === false || trim($raw) === '') {
-        return $fallback;
-    }
-
-    $decoded = json_decode($raw, true);
-    return is_array($decoded) ? $decoded : $fallback;
-}
-
-/**
- * Collect SHA-256 hashes of current editable asset files (CSS, JS, JSON).
- *
- * Used by the diff endpoint to compare against hashes stored at publish time.
- *
- * @return array<string, string>  Relative path => SHA-256 hash
- */
-function collectCurrentAssetHashes(string $assetsDir): array
-{
-    $hashes = [];
-    $subdirs = ['css', 'js', 'data'];
-
-    foreach ($subdirs as $subdir) {
-        $dir = $assetsDir . '/' . $subdir;
-        if (!is_dir($dir)) {
-            continue;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::LEAVES_ONLY
-        );
-
-        foreach ($iterator as $file) {
-            if (!$file->isFile()) {
-                continue;
-            }
-
-            $name = $file->getFilename();
-            if (str_starts_with($name, '.')) {
-                continue;
-            }
-
-            $ext = strtolower($file->getExtension());
-            if (!in_array($ext, ['css', 'js', 'json'], true)) {
-                continue;
-            }
-
-            $relativePath = 'assets/' . $subdir . '/' . ltrim(
-                str_replace('\\', '/', substr($file->getPathname(), strlen($dir))),
-                '/'
-            );
-
-            $hash = @hash_file('sha256', $file->getPathname());
-            if ($hash !== false) {
-                $hashes[$relativePath] = $hash;
-            }
-        }
-    }
-
-    ksort($hashes);
-    return $hashes;
-}
-
-/**
- * Inject the hot-reload script into HTML content.
- *
- * The script listens for postMessage from the parent window (app.js).
- * When a 'voxelsite:reload' message is received, it reloads the page.
- * When 'voxelsite:reload-css' is received, it busts CSS cache without
- * a full reload for smoother design iteration.
- *
- * This is injected just before </body> to not block page rendering.
- */
-function injectHotReload(string $html): string
-{
-    $script = <<<'HOTRELOAD'
-<!-- VoxelSite Hot-Reload -->
-<script>
-(function() {
-  // Build a preview URL that works on EVERY server (Apache + Nginx).
-  // Uses the explicit router.php?_path= format — no mod_rewrite needed.
-  var PREVIEW_BASE = '/_studio/api/router.php?_path=%2Fpreview&path=';
-
-  function toPreviewUrl(rawHref) {
-    if (!rawHref) return null;
-
-    var href = rawHref.trim();
-    if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:')) {
-      return null;
-    }
-
-    var targetUrl;
-    try {
-      targetUrl = new URL(href, window.location.href);
-    } catch (_) {
-      return null;
-    }
-
-    if (targetUrl.origin !== window.location.origin) return null;
-
-    var path = targetUrl.pathname || '/';
-
-    // Already a preview URL (either rewrite or router.php format)
-    if (path.indexOf('/_studio/api/') === 0) {
-      return null; // Let it through as-is
-    }
-
-    // Keep Studio links untouched
-    if (path.startsWith('/_studio/')) {
-      return null;
-    }
-
-    var relPath = path.replace(/^\/+/, '');
-    if (!relPath) relPath = 'index.php';
-    if (relPath.endsWith('/')) relPath += 'index.php';
-    if (!/\.[a-z0-9]+$/i.test(relPath)) relPath += '.php';
-
-    return PREVIEW_BASE + encodeURIComponent(relPath) + (targetUrl.hash ? targetUrl.hash : '');
-  }
-
-  // Extract the current preview page path and notify parent
-  function notifyParentOfPath() {
-    try {
-      var params = new URLSearchParams(window.location.search);
-      var path = params.get('path') || 'index.php';
-      window.parent.postMessage('voxelsite:path:' + path, '*');
-    } catch (_) {}
-  }
-
-  // Notify parent of current path on load
-  notifyParentOfPath();
-
-  // Keep internal navigation inside preview sandbox so clicking
-  // site nav links does not jump to live root files.
-  document.addEventListener('click', function(e) {
-    var link = e.target && e.target.closest ? e.target.closest('a[href]') : null;
-    if (!link) return;
-    if (link.hasAttribute('download')) return;
-    if (link.target && link.target.toLowerCase() === '_blank') return;
-    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-
-    var previewUrl = toPreviewUrl(link.getAttribute('href'));
-    if (!previewUrl) return;
-
-    e.preventDefault();
-    window.location.href = previewUrl;
-  });
-
-  window.addEventListener('message', function(e) {
-    if (e.data === 'voxelsite:reload') {
-      window.location.reload();
-    } else if (e.data === 'voxelsite:reload-css') {
-      // Bust CSS cache without full reload — skip external links (Google Fonts, CDNs)
-      document.querySelectorAll('link[rel="stylesheet"]').forEach(function(link) {
-        var href = link.getAttribute('href');
-        if (href && href.charAt(0) !== 'h' && href.substr(0,2) !== '//') {
-          link.setAttribute('href', href.split('?')[0] + '?t=' + Date.now());
-        }
-      });
-    }
-  });
-})();
-</script>
-HOTRELOAD;
-
-    // Inject before </body> if it exists, otherwise append
-    if (stripos($html, '</body>') !== false) {
-        $html = str_ireplace('</body>', $script . "\n</body>", $html);
-    } else {
-        $html .= "\n" . $script;
-    }
-
-    return $html;
-}
-
-/**
- * Inject the visual editor bridge script into HTML content.
- *
- * The bridge handles element detection, hover highlighting, inline
- * text editing, and communicates with the parent Studio window.
- * Loads after the page's own scripts to avoid conflicts.
- */
-function injectVisualEditorBridge(string $html): string
-{
-    $bridgePath = dirname(__DIR__, 2) . '/ui/visual-editor-bridge.js';
-    if (!file_exists($bridgePath)) {
-        return $html;
-    }
-
-    $bridgeContent = file_get_contents($bridgePath);
-    if ($bridgeContent === false || trim($bridgeContent) === '') {
-        return $html;
-    }
-
-    $script = "\n<!-- VoxelSite Visual Editor Bridge -->\n<script>\n" . $bridgeContent . "\n</script>\n";
-
-    if (stripos($html, '</body>') !== false) {
-        $html = str_ireplace('</body>', $script . "</body>", $html);
-    } else {
-        $html .= $script;
-    }
-
-    return $html;
-}
-
-/**
- * Append file-modification timestamps to local CSS and JS asset hrefs.
- *
- * The root .htaccess sets `ExpiresByType text/css "access plus 1 year"`
- * (and the same for JS) for production performance, but this means the
- * browser caches assets aggressively. During preview, the Tailwind
- * compiler and AI both rewrite CSS/JS files — without cache-busting
- * the browser shows stale styles on the first load after regeneration.
- *
- * This rewrites:
- *   <link rel="stylesheet" href="/assets/css/tailwind.css">
- *   <script src="/assets/js/index.js"></script>
- * to:
- *   <link rel="stylesheet" href="/assets/css/tailwind.css?v=1708099200">
- *   <script src="/assets/js/index.js?v=1708099200"></script>
- *
- * The `v` parameter is the file's modification timestamp, so it only
- * changes when the file actually changes. External URLs (Google Fonts,
- * CDNs) are left untouched.
- */
-function bustAssetCache(string $html, string $assetsDir): string
-{
-    $docRoot = dirname($assetsDir); // one level up from /assets/
-
-    // Helper: append ?v={mtime} to a local asset path
-    $bust = function (string $href) use ($docRoot): string {
-        $filePath = $docRoot . $href;
-        if (file_exists($filePath)) {
-            return $href . '?v=' . filemtime($filePath);
-        }
-        return $href;
-    };
-
-    // Bust CSS: <link ... href="/path/to/file.css">
-    $html = preg_replace_callback(
-        '/<link\b([^>]*?)href=["\'](\/[^"\'?#]+\.css)(["\'])/',
-        function (array $m) use ($bust) {
-            return '<link ' . $m[1] . 'href=' . $m[3] . $bust($m[2]) . $m[3];
-        },
-        $html
-    ) ?? $html;
-
-    // Bust JS: <script ... src="/path/to/file.js">
-    $html = preg_replace_callback(
-        '/<script\b([^>]*?)src=["\'](\/[^"\'?#]+\.js)(["\'])/',
-        function (array $m) use ($bust) {
-            return '<script ' . $m[1] . 'src=' . $m[3] . $bust($m[2]) . $m[3];
-        },
-        $html
-    ) ?? $html;
-
-    return $html;
-}
-
-/**
- * Generate a friendly empty preview page.
- *
- * Shown when no preview files exist yet (before the first AI interaction).
- * Uses the Forge color palette so it feels native.
- */
-function getEmptyPreviewHtml(): string
-{
-    return <<<'HTML'
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Your Website</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            background: #FAFAFA;
-            color: #09090B;
-        }
-        .empty-state {
-            text-align: center;
-            padding: 2rem;
-            max-width: 400px;
-        }
-        .voxelsite-mark {
-            width: 52px;
-            height: 52px;
-            color: #EA580C;
-            margin: 0 auto 0.875rem;
-            opacity: 1;
-        }
-        .voxelsite-mark svg {
-            width: 100%;
-            height: 100%;
-            display: block;
-        }
-        h1 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-            color: #09090B;
-        }
-        p {
-            font-size: 0.875rem;
-            color: #52525B;
-            line-height: 1.5;
-        }
-
-        [data-theme="dark"] body {
-            background: #09090B;
-            color: #FAFAFA;
-        }
-        [data-theme="dark"] h1 {
-            color: #FAFAFA;
-        }
-        [data-theme="dark"] p {
-            color: #A1A1AA;
-        }
-        [data-theme="dark"] .voxelsite-mark {
-            color: #EA580C;
-        }
-    </style>
-</head>
-<body>
-    <div class="empty-state">
-        <div class="voxelsite-mark" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                <path class="voxel-top" style="opacity:1" fill="currentColor" d="M12 3L20 7.5L12 12L4 7.5Z"/>
-                <path class="voxel-left" style="opacity:0.7" fill="currentColor" d="M4 7.5L12 12L12 21L4 16.5Z"/>
-                <path class="voxel-right" style="opacity:0.4" fill="currentColor" d="M20 7.5L12 12L12 21L20 16.5Z"/>
-            </svg>
-        </div>
-        <h1>Your website will appear here</h1>
-        <p>Describe what you want to build in the chat panel, and watch your website take shape in real time.</p>
-    </div>
-    <script>
-        const syncTheme = () => {
-            try {
-                if (window.parent && window.parent.document.documentElement.getAttribute('data-theme') === 'dark') {
-                    document.documentElement.setAttribute('data-theme', 'dark');
-                } else {
-                    document.documentElement.removeAttribute('data-theme');
-                }
-            } catch(e) {}
-        };
-        syncTheme();
-        try {
-            if (window.parent) {
-                new MutationObserver(syncTheme).observe(
-                    window.parent.document.documentElement, 
-                    { attributes: true, attributeFilter: ['data-theme'] }
-                );
-            }
-        } catch(e) {}
-    </script>
-</body>
-</html>
-HTML;
-}
-
-/**
- * Inject the Actions Bar (CSS + JS) into the preview HTML.
- *
- * Only injects when active actions exist. The JS detects preview mode
- * and fetches the manifest from the Studio API instead of /actions/manifest.json.
- */
-function injectActionsBar(string $html): string
-{
-    $hasActive = false;
-
-    if (\VoxelSite\DemoMode::isActive()) {
-        // Demo mode has active actions defined in demo-handler.php
-        $hasActive = true;
-    } else {
-        // Quick check: do active actions exist?
-        $actionsDir = dirname(__DIR__, 2) . '/data/actions';
-        if (!is_dir($actionsDir)) {
-            return $html;
-        }
-
-        foreach (glob($actionsDir . '/*.json') as $file) {
-            $content = file_get_contents($file);
-            if ($content !== false) {
-                $def = json_decode($content, true);
-                if (is_array($def) && ($def['active'] ?? false)) {
-                    $hasActive = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (!$hasActive) {
-        return $html;
-    }
-
-    // Read shipped CSS and JS
-    $staticDir = dirname(__DIR__, 2) . '/static';
-    $css = @file_get_contents($staticDir . '/actions-bar.css');
-    $js = @file_get_contents($staticDir . '/actions-bar.js');
-
-    if (empty($css) || empty($js)) {
-        return $html;
-    }
-
-    $injection = "\n<!-- VoxelSite Actions Bar (Preview) -->\n"
-        . "<style>\n{$css}\n</style>\n"
-        . "<script>\n{$js}\n</script>\n";
-
-    if (stripos($html, '</body>') !== false) {
-        $html = str_ireplace('</body>', $injection . '</body>', $html);
-    } else {
-        $html .= $injection;
-    }
-
-    return $html;
-}
-
-// ═══════════════════════════════════════════
-//  VE-002: Source Address Annotation
-// ═══════════════════════════════════════════
-
-/**
- * Create an isolated temp-directory copy of the preview with
- * instrumented PHP includes. The real source files are never mutated.
- *
- * Returns the temp directory path, or null on failure.
- */
-function createInstrumentedPreviewCopy(string $previewDir, string $requestedPath): ?string
-{
-    $tempDir = sys_get_temp_dir() . '/vx-preview-' . uniqid('', true);
-    if (!@mkdir($tempDir, 0755, true)) {
-        return null;
-    }
-
-    // Instrument the main page file
-    $mainFile = $previewDir . '/' . $requestedPath;
-    if (!file_exists($mainFile)) {
-        @rmdir($tempDir);
-        return null;
-    }
-
-    // Create subdirectory for nested pages (e.g., "pages/about.php")
-    $subDir = dirname($requestedPath);
-    if ($subDir !== '.' && $subDir !== '') {
-        @mkdir($tempDir . '/' . $subDir, 0755, true);
-    }
-
-    $content = file_get_contents($mainFile);
-    file_put_contents($tempDir . '/' . $requestedPath, instrumentPhpIncludes($content, ''));
-
-    // Instrument partials
-    $partialsDir = $previewDir . '/_partials';
-    if (is_dir($partialsDir)) {
-        @mkdir($tempDir . '/_partials', 0755, true);
-        foreach (glob($partialsDir . '/*.php') as $partialFile) {
-            $content = file_get_contents($partialFile);
-            file_put_contents(
-                $tempDir . '/_partials/' . basename($partialFile),
-                instrumentPhpIncludes($content, '_partials/')
-            );
-        }
-    }
-
-    // Mirror everything else (assets, images, non-PHP dirs) so
-    // CSS/JS/images resolve correctly from the temp working directory.
-    // Prefer symlinks for speed; fall back to copy on hosts that disable them.
-    $entries = @scandir($previewDir);
-    if ($entries) {
-        foreach ($entries as $entry) {
-            if ($entry === '.' || $entry === '..') continue;
-            if ($entry === '_partials' || $entry === $requestedPath) continue;
-            $targetInTemp = $tempDir . '/' . $entry;
-            if (file_exists($targetInTemp) || is_link($targetInTemp)) continue;
-            $source = $previewDir . '/' . $entry;
-            if (!@symlink($source, $targetInTemp)) {
-                // Symlinks disabled — fall back to copy
-                if (is_dir($source)) {
-                    recursiveCopyDir($source, $targetInTemp);
-                } else {
-                    @copy($source, $targetInTemp);
-                }
-            }
-        }
-    }
-
-    // Ensure `assets/` is reachable from the temp directory.
-    // AI-generated pages use `__DIR__ . '/assets/data/...'` to read JSON
-    // files (menus, services, portfolios). On a published site __DIR__ is
-    // the docroot, so assets/ is a direct child. But in the temp dir
-    // __DIR__ points to /tmp/vx-preview-xxx/ which has no assets/ folder.
-    // Symlink it here so `__DIR__`-based paths resolve correctly.
-    //
-    // For demo mode, $previewDir = _studio/demo/preview/ so we need the
-    // demo assets (_studio/demo/assets/), not the project-level assets/.
-    // For live mode, $previewDir = _studio/preview/ and we need the
-    // project-level assets/ directory.
-    $assetsInTemp = $tempDir . '/assets';
-    if (!file_exists($assetsInTemp) && !is_link($assetsInTemp)) {
-        // Detect demo vs live by checking if $previewDir contains /demo/
-        $isDemoDir = str_contains($previewDir, '/demo/');
-        $targetAssets = $isDemoDir
-            ? dirname($previewDir) . '/assets'  // _studio/demo/assets/
-            : dirname($previewDir, 2) . '/assets'; // project-root/assets/
-        if (is_dir($targetAssets)) {
-            @symlink($targetAssets, $assetsInTemp);
-        }
-    }
-
-    return $tempDir;
-}
-
-/**
- * Ensure the preview directory has an `assets/` symlink pointing to the
- * correct assets directory for the current context.
- *
- * AI-generated pages use `__DIR__ . '/assets/data/...'` to read JSON
- * data files. This works on published sites (where pages are at the
- * docroot) but fails in preview mode where pages live in a subdirectory.
- *
- * This function creates a persistent symlink that makes __DIR__-based
- * paths resolve correctly. The symlink is created once and persists
- * across requests — the is_link() check makes subsequent calls cheap.
- *
- * For live preview: _studio/preview/assets → project-root/assets/
- * For demo preview: _studio/demo/preview/assets → _studio/demo/assets/
- */
-function ensurePreviewAssetsLink(string $previewDir, string $targetAssetsDir): void
-{
-    $link = $previewDir . '/assets';
-
-    // Already exists (symlink from a previous request, or real dir)
-    if (is_link($link) || is_dir($link)) {
-        return;
-    }
-
-    if (!is_dir($targetAssetsDir)) {
-        return;
-    }
-
-    @symlink($targetAssetsDir, $link);
-}
-
-/**
- * Recursively copy a directory tree. Used as fallback when symlinks
- * are disabled on the host.
- */
-function recursiveCopyDir(string $src, string $dst): void
-{
-    @mkdir($dst, 0755, true);
-    $entries = @scandir($src);
-    if (!$entries) return;
-    foreach ($entries as $entry) {
-        if ($entry === '.' || $entry === '..') continue;
-        $s = $src . '/' . $entry;
-        $d = $dst . '/' . $entry;
-        if (is_dir($s)) {
-            recursiveCopyDir($s, $d);
-        } else {
-            @copy($s, $d);
-        }
-    }
-}
-
-/**
- * Rewrite include/require statements in PHP source to wrap them
- * with VX provenance markers.
- */
-function instrumentPhpIncludes(string $source, string $basePath): string
-{
-    // ── Order matters: most-specific pattern first ──
-    // The conditional pattern must be processed BEFORE the unconditional
-    // ones, otherwise the unconditional `include __DIR__` pattern matches
-    // the include inside `if (...) include ...;` and rewrites it first.
-
-    // 1. if (file_exists(...)) include __DIR__ . '/something.php';
-    //    Markers go INSIDE the if block to preserve control flow exactly.
-    //    Without this, markers would be emitted even when the branch is not taken.
-    //    The condition regex handles one level of nested parens (e.g. file_exists()).
-    $source = preg_replace_callback(
-        '/(if\s*\((?:[^()]*|\([^)]*\))*\)\s*)(include|require|include_once|require_once)(\s+__DIR__\s*\.\s*[\'"]\/([a-zA-Z0-9_\-]+\.php)[\'\"]\s*);/',
-        function ($m) use ($basePath) {
-            $file = $basePath . $m[4];
-            $includeStmt = $m[2] . $m[3];
-            return "{$m[1]}{ echo '<!-- vx:partial:start:{$file} -->'; {$includeStmt}; echo '<!-- vx:partial:end:{$file} -->'; }";
-        },
-        $source
-    ) ?? $source;
-
-    // 2. include '_partials/something.php'
-    //    Skip if already instrumented by Pattern 1 (avoid double markers).
-    $source = preg_replace_callback(
-        '/\b(include|require|include_once|require_once)\s+[\'"]((_partials\/)?[a-zA-Z0-9_\-\/]+\.php)[\'"]\s*;/',
-        function ($m) use (&$source) {
-            $file = $m[2];
-            // Guard: if this include is already wrapped in markers, skip it
-            $pos = strpos($source, $m[0]);
-            if ($pos !== false && $pos > 0) {
-                $before = substr($source, max(0, $pos - 200), min($pos, 200));
-                if (str_contains($before, "vx:partial:start:{$file}")) return $m[0];
-            }
-            return "echo '<!-- vx:partial:start:{$file} -->'; {$m[0]} echo '<!-- vx:partial:end:{$file} -->';";
-        },
-        $source
-    ) ?? $source;
-
-    // 3. include __DIR__ . '/nav.php'
-    //    Skip if already instrumented by Pattern 1 (avoid double markers).
-    $source = preg_replace_callback(
-        '/\b(include|require|include_once|require_once)\s+__DIR__\s*\.\s*[\'"]\/([a-zA-Z0-9_\-]+\.php)[\'"]\s*;/',
-        function ($m) use ($basePath, &$source) {
-            $file = $basePath . $m[2];
-            // Guard: if this include is already wrapped in markers, skip it
-            $pos = strpos($source, $m[0]);
-            if ($pos !== false && $pos > 0) {
-                $before = substr($source, max(0, $pos - 200), min($pos, 200));
-                if (str_contains($before, "vx:partial:start:{$file}")) return $m[0];
-            }
-            return "echo '<!-- vx:partial:start:{$file} -->'; {$m[0]} echo '<!-- vx:partial:end:{$file} -->';";
-        },
-        $source
-    ) ?? $source;
-
-    return $source;
-}
-
-/**
- * Recursively delete a temp preview directory.
- * Safety: only deletes directories with the vx-preview- prefix.
- * Handles both symlinks and deep copied subtrees.
- */
-function cleanupTempPreviewDir(?string $tempDir): void
-{
-    if (!$tempDir) return;
-    $prefix = sys_get_temp_dir() . '/vx-preview-';
-    if (!str_starts_with($tempDir, $prefix)) return;
-    if (!is_dir($tempDir)) return;
-
-    recursiveDeleteDir($tempDir);
-}
-
-/**
- * Recursively delete a directory and all its contents.
- * Handles symlinks (unlinks without following) and real directories.
- */
-function recursiveDeleteDir(string $dir): void
-{
-    $entries = @scandir($dir);
-    if (!$entries) return;
-
-    foreach ($entries as $entry) {
-        if ($entry === '.' || $entry === '..') continue;
-        $path = $dir . '/' . $entry;
-        if (is_link($path)) {
-            @unlink($path);
-        } elseif (is_dir($path)) {
-            recursiveDeleteDir($path);
-        } else {
-            @unlink($path);
-        }
-    }
-    @rmdir($dir);
-}
-
-/**
- * Fail-safe annotation: used when instrumented preview copy could not
- * be created (e.g. temp directory unavailable). Marks every selectable
- * HTML element as unsafe/non-editable so the Visual Editor renders
- * read-only toolbars everywhere instead of silently allowing mutation
- * on un-instrumented output.
- *
- * Crucially, data-vx-source-file is left EMPTY because provenance is
- * unknown. This prevents the editor from linking to the wrong file.
- */
-function annotateFailSafe(string $html, string $pageFile): string
-{
-    $skipTags = ['html','head','body','script','style','link','meta','noscript','br','hr','wbr','col','colgroup','iframe','template','svg','path','circle','line','polyline','rect','ellipse','polygon','g','defs','use','symbol','clippath','mask'];
-    $skipSet = array_flip($skipTags);
-    $idx = 0;
-
-    return preg_replace_callback(
-        '/<([a-z][a-z0-9]*)(\s[^>]*)?(\/?)>/i',
-        function ($m) use ($skipSet, &$idx) {
-            $tag = strtolower($m[1]);
-            $attrs = $m[2] ?? '';
-            $selfClose = $m[3] ?? '';
-
-            if (isset($skipSet[$tag])) return $m[0];
-            if (str_contains($attrs, 'data-vx-source')) return $m[0];
-            if (preg_match('/(?:id|class)=["\'](?:vx-|vs-)/', $attrs)) return $m[0];
-
-            $nodeKey = 'failsafe:' . $idx++;
-            $vxAttrs = ' data-vx-source-file=""'
-                     . ' data-vx-source-kind="unsafe"'
-                     . " data-vx-node-key=\"{$nodeKey}\""
-                     . ' data-vx-editable="false"';
-
-            return "<{$tag}{$attrs}{$vxAttrs}{$selfClose}>";
-        },
-        $html,
-        -1
-    ) ?? $html;
-}
-
-/**
- * Parse provenance markers in rendered HTML and annotate content elements
- * with data-vx-* attributes for the Visual Editor bridge.
- *
- * Architecture:
- *   Step 1: Annotate ALL elements with page-level defaults (data-vx-*=page).
- *   Step 2: Re-parse provenance zones from the post-annotation HTML (offsets valid).
- *   Step 3: Override: build a per-element map (outer zones first, inner zones overwrite),
- *           then apply in a single regex pass. No substring splicing.
- *   Step 4: Strip provenance markers from final output.
- */
-function annotateSourceAddresses(string $html, string $pageFile): string
-{
-    // Step 1: Annotate ALL opening tags with page-level defaults.
-    $skipTags = ['html','head','body','script','style','link','meta','noscript','br','hr','wbr','col','colgroup','iframe','template','svg','path','circle','line','polyline','rect','ellipse','polygon','g','defs','use','symbol','clippath','mask'];
-    $skipSet = array_flip($skipTags);
-
-    $nodeCounters = [];
-    $html = preg_replace_callback(
-        '/<([a-z][a-z0-9]*)(\s[^>]*)?(\/?)?>/i',
-        function ($m) use ($skipSet, $pageFile, &$nodeCounters) {
-            $tag = strtolower($m[1]);
-            $attrs = $m[2] ?? '';
-            $selfClose = $m[3] ?? '';
-
-            if (isset($skipSet[$tag])) return $m[0];
-            if (str_contains($attrs, 'data-vx-source')) return $m[0];
-            if (preg_match('/(?:id|class)=["\'](?:vx-|vs-)/', $attrs)) return $m[0];
-
-            if (!isset($nodeCounters[$pageFile])) $nodeCounters[$pageFile] = 0;
-            $idx = $nodeCounters[$pageFile]++;
-            $nodeKey = htmlspecialchars($pageFile . ':' . $idx);
-
-            $vxAttrs = " data-vx-source-file=\"{$pageFile}\""
-                     . " data-vx-source-kind=\"page\""
-                     . " data-vx-node-key=\"{$nodeKey}\""
-                     . ' data-vx-editable="true"';
-
-            return "<{$tag}{$attrs}{$vxAttrs}{$selfClose}>";
-        },
-        $html,
-        -1,
-        $count
-    ) ?? $html;
-
-    // Step 2: Re-parse zones from the POST-ANNOTATION HTML.
-    // Step 1 changed every tag (adding data-vx-* attrs), shifting all
-    // byte offsets. The provenance markers are still intact.
-    $zones = [];
-    preg_match_all(
-        '/<!-- vx:partial:(start|end):([a-zA-Z0-9_\-\/]+\.php) -->/',
-        $html, $zoneMatches, PREG_OFFSET_CAPTURE | PREG_SET_ORDER
-    );
-
-    $openStack = [];
-    foreach ($zoneMatches as $m) {
-        $action = $m[1][0];
-        $file = $m[2][0];
-        $offset = (int) $m[0][1];
-        $markerLen = strlen($m[0][0]);
-
-        if ($action === 'start') {
-            $openStack[] = ['file' => $file, 'contentStart' => $offset + $markerLen];
-        } elseif ($action === 'end' && $openStack) {
-            $open = array_pop($openStack);
-            if ($open['file'] === $file) {
-                $zones[] = [
-                    'file' => $file,
-                    'contentStart' => $open['contentStart'],
-                    'contentEnd' => $offset,
-                ];
-            }
-        }
-    }
-
-    // Step 3: Override attributes for elements inside partial zones.
-    //
-    // Pass A: Build a per-element override map. Process outermost zones
-    // first; inner zones overwrite, giving them priority.
-    // (Zones are ordered innermost-first from the stack parser.)
-    $elementOverrides = [];
-
-    foreach (array_reverse($zones) as $zone) {
-        $file = $zone['file'];
-        $kind = str_starts_with($file, '_partials/') ? 'partial' : 'page';
-
-        $segment = substr($html, $zone['contentStart'], $zone['contentEnd'] - $zone['contentStart']);
-        preg_match_all('/data-vx-node-key="([^"]*)"/', $segment, $keyMatches);
-        if (!empty($keyMatches[1])) {
-            foreach ($keyMatches[1] as $origKey) {
-                $elementOverrides[$origKey] = [
-                    'file' => $file,
-                    'kind' => $kind,
-                    'editable' => 'true',
-                    'chain' => $file,
-                ];
-            }
-        }
-    }
-
-    // Pass B: Single regex pass to apply all overrides.
-    if (!empty($elementOverrides)) {
-        $globalNodeCounters = [];
-        $html = preg_replace_callback(
-            '/<([a-z][a-z0-9]*)(\s[^>]*?)(data-vx-node-key="([^"]*)")([^>]*?)(\/?)?>/i',
-            function ($m) use ($elementOverrides, &$globalNodeCounters) {
-                $origKey = $m[4];
-                if (!isset($elementOverrides[$origKey])) return $m[0];
-
-                $ov = $elementOverrides[$origKey];
-                $file = $ov['file'];
-
-                if (!isset($globalNodeCounters[$file])) $globalNodeCounters[$file] = 0;
-                $newKey = htmlspecialchars($file . ':' . $globalNodeCounters[$file]++);
-                $chain = htmlspecialchars($ov['chain']);
-
-                $fullAttrs = $m[2] . $m[3] . $m[5];
-                $fullAttrs = preg_replace('/data-vx-source-file="[^"]*"/', 'data-vx-source-file="' . htmlspecialchars($file) . '"', $fullAttrs);
-                $fullAttrs = preg_replace('/data-vx-source-kind="[^"]*"/', 'data-vx-source-kind="' . $ov['kind'] . '"', $fullAttrs);
-                $fullAttrs = preg_replace('/data-vx-editable="[^"]*"/', 'data-vx-editable="' . $ov['editable'] . '"', $fullAttrs);
-                $fullAttrs = preg_replace('/data-vx-node-key="[^"]*"/', 'data-vx-node-key="' . $newKey . '"', $fullAttrs);
-
-                if (!str_contains($fullAttrs, 'data-vx-include-chain')) {
-                    $fullAttrs = preg_replace(
-                        '/(data-vx-source-kind="[^"]*")/',
-                        '$1 data-vx-include-chain="' . $chain . '"',
-                        $fullAttrs
-                    );
-                } else {
-                    $fullAttrs = preg_replace('/data-vx-include-chain="[^"]*"/', 'data-vx-include-chain="' . $chain . '"', $fullAttrs);
-                }
-
-                return "<{$m[1]}{$fullAttrs}{$m[6]}>";
-            },
-            $html
-        ) ?? $html;
-    }
-
-    // Step 3.5: Re-number main-file nodeKeys sequentially.
-    //
-    // After Step 3 reassigned partial elements to per-file counters,
-    // the remaining main-file elements still carry their Step 1 indices
-    // which counted ALL rendered tags (including from includes). The JS
-    // source extractor counts tags in the SOURCE file from 0, and the
-    // source file doesn't contain the include's expanded content. So
-    // nodeKey "index.php:30" would point to the 30th rendered tag but
-    // only the 4th source tag. Re-count so indices match source position.
-    $mainFileCounter = 0;
-    $escapedPageFile = htmlspecialchars($pageFile);
-    $html = preg_replace_callback(
-        '/data-vx-node-key="' . preg_quote($escapedPageFile, '/') . ':\d+"/',
-        function ($m) use ($escapedPageFile, &$mainFileCounter) {
-            return 'data-vx-node-key="' . $escapedPageFile . ':' . $mainFileCounter++ . '"';
-        },
-        $html
-    ) ?? $html;
-
-    // Step 4: Strip provenance markers from final output.
-    $html = preg_replace('/<!-- vx:partial:(?:start|end):[a-zA-Z0-9_\-\/]+\.php -->/', '', $html) ?? $html;
-
-    return $html;
-}

@@ -49,64 +49,15 @@ echo "=== Site Control Nav Reorder Test Suite ===\n\n";
 //  Fresh-install guard
 // ═══════════════════════════════════════════
 
-$liveDbPath = dirname(__DIR__) . '/data/studio.db';
-if (!file_exists($liveDbPath)) {
-    echo "ABORT: No database found at {$liveDbPath}.\n";
-    exit(1);
-}
+require_once __DIR__.'/helpers/SiteControlFixture.php';
+$tempDir = sys_get_temp_dir().'/vs-control-NavReorder-'.bin2hex(random_bytes(8));
+$tempDbPath = $tempDir.'/studio.db';
+$tempPreview = $tempDir.'/preview';
+$tempAssets = $tempDir.'/published/assets';
+$tempSnaps = $tempDir.'/snapshots';
+[$db,$fileManager] = createSiteControlFixture($tempDir);
+$tempDir = realpath($tempDir);
 
-$livePreviewDir = dirname(__DIR__) . '/preview';
-if (!is_dir($livePreviewDir)) {
-    echo "ABORT: No preview directory found at {$livePreviewDir}.\n";
-    exit(1);
-}
-
-try {
-    $checkDb = new \SQLite3($liveDbPath, SQLITE3_OPEN_READONLY);
-    $pageCount = (int) $checkDb->querySingle("SELECT COUNT(*) FROM pages WHERE page_type = 'page'");
-    $checkDb->close();
-    if ($pageCount < 2) {
-        echo "ABORT: Need at least 2 pages. Found: {$pageCount}\n";
-        exit(1);
-    }
-} catch (\Throwable $e) {
-    echo "ABORT: Could not verify database: " . $e->getMessage() . "\n";
-    exit(1);
-}
-
-
-// ═══════════════════════════════════════════
-//  Fixture setup — temp copies
-// ═══════════════════════════════════════════
-
-echo "--- Setup: Creating temp fixtures ---\n";
-
-$tempDir     = sys_get_temp_dir() . '/voxelsite_nav_test_' . uniqid();
-$tempDbPath  = $tempDir . '/studio.db';
-$tempPreview = $tempDir . '/preview';
-$tempAssets  = $tempDir . '/assets';
-
-mkdir($tempDir, 0755, true);
-
-copy($liveDbPath, $tempDbPath);
-copyDirRecursive($livePreviewDir, $tempPreview);
-
-$liveAssetsDir = dirname(__DIR__, 2) . '/assets';
-if (is_dir($liveAssetsDir)) {
-    copyDirRecursive($liveAssetsDir, $tempAssets);
-} else {
-    mkdir($tempAssets . '/css', 0755, true);
-    mkdir($tempAssets . '/js', 0755, true);
-}
-
-echo "  Temp dir: {$tempDir}\n";
-
-putenv("VS_TEST_PREVIEW_DIR={$tempPreview}");
-putenv("VS_TEST_ASSETS_DIR={$tempAssets}");
-
-$db = Database::getInstance($tempDbPath);
-$fileManager = new FileManager($db);
-$fileManager->syncPageRegistry();
 $db->exec('PRAGMA wal_checkpoint(TRUNCATE)');
 
 echo "  DB initialized with " . (int) $db->queryOne("SELECT COUNT(*) as c FROM pages")['c'] . " pages\n";
@@ -196,25 +147,25 @@ if ($homePage) {
 
 echo "\n--- 2. Reorder endpoint: validation gates ---\n";
 
-$snapshotCountBefore = (int) $db->queryOne("SELECT COUNT(*) as c FROM snapshots")['c'];
+$revisionCountBefore = (int) $db->queryOne("SELECT COUNT(*) as c FROM revisions")['c'];
 
 // Missing field
 $reorderMissing = callNavEndpoint('POST', '/site-control/nav-reorder', [
     'pageId' => '', 'targetIndex' => 0
 ]);
-record($reorderMissing['httpCode'] === 400, 'Reorder: missing pageId → 400', $errors, $passed, $failed);
+record($reorderMissing['httpCode'] === 422, 'Reorder: missing pageId → 422', $errors, $passed, $failed);
 
 // Not found
 $reorderBogus = callNavEndpoint('POST', '/site-control/nav-reorder', [
     'pageId' => 'page:nonexistent.php', 'targetParentHref' => null, 'targetIndex' => 0
 ]);
-record($reorderBogus['httpCode'] === 404, 'Reorder: nonexistent page → 404', $errors, $passed, $failed);
+record($reorderBogus['httpCode'] === 422, 'Reorder: nonexistent page → 422', $errors, $passed, $failed);
 
 // Missing targetIndex
 $reorderNoIndex = callNavEndpoint('POST', '/site-control/nav-reorder', [
     'pageId' => $testPageId, 'targetParentHref' => null
 ]);
-record($reorderNoIndex['httpCode'] === 400, 'Reorder: missing targetIndex → 400', $errors, $passed, $failed);
+record($reorderNoIndex['httpCode'] === 422, 'Reorder: missing targetIndex → 422', $errors, $passed, $failed);
 
 // Homepage locked
 if ($homePage) {
@@ -223,7 +174,7 @@ if ($homePage) {
     ]);
     record($reorderHome['httpCode'] === 422, 'Reorder: homepage → 422', $errors, $passed, $failed);
     record(
-        ($reorderHome['response']['error']['code'] ?? '') === 'homepage_locked',
+        ($reorderHome['response']['error']['code'] ?? '') === 'invalid_schema',
         'Reorder: homepage_locked code',
         $errors, $passed, $failed
     );
@@ -235,7 +186,7 @@ $reorderHomeParent = callNavEndpoint('POST', '/site-control/nav-reorder', [
 ]);
 record($reorderHomeParent['httpCode'] === 422, 'Reorder: "/" as parent → 422', $errors, $passed, $failed);
 record(
-    ($reorderHomeParent['response']['error']['code'] ?? '') === 'homepage_parent_locked',
+    ($reorderHomeParent['response']['error']['code'] ?? '') === 'invalid_schema',
     'Reorder: homepage_parent_locked code',
     $errors, $passed, $failed
 );
@@ -246,7 +197,7 @@ $reorderOOR = callNavEndpoint('POST', '/site-control/nav-reorder', [
 ]);
 record($reorderOOR['httpCode'] === 422, 'Reorder: out-of-range → 422', $errors, $passed, $failed);
 record(
-    ($reorderOOR['response']['error']['code'] ?? '') === 'target_index_out_of_range',
+    ($reorderOOR['response']['error']['code'] ?? '') === 'invalid_schema',
     'Reorder: target_index_out_of_range code',
     $errors, $passed, $failed
 );
@@ -262,19 +213,19 @@ if (($preflightForPosition['response']['data']['currentPosition'] ?? null) !== n
     ]);
     record($reorderSame['httpCode'] === 422, 'Reorder: no-change → 422', $errors, $passed, $failed);
     record(
-        ($reorderSame['response']['error']['code'] ?? '') === 'no_change',
+        ($reorderSame['response']['error']['code'] ?? '') === 'invalid_schema',
         'Reorder: no_change code',
         $errors, $passed, $failed
     );
 }
 
-// No snapshots during validation
+// No revisions during validation
 $db2 = new \SQLite3($tempDbPath, SQLITE3_OPEN_READONLY);
-$snapshotCountAfterValidation = (int) $db2->querySingle("SELECT COUNT(*) FROM snapshots");
+$revisionCountAfterValidation = (int) $db2->querySingle("SELECT COUNT(*) FROM revisions");
 $db2->close();
 record(
-    $snapshotCountAfterValidation === $snapshotCountBefore,
-    'No snapshots created during validation gates (' . $snapshotCountAfterValidation . ' == ' . $snapshotCountBefore . ')',
+    $revisionCountAfterValidation === $revisionCountBefore,
+    'No revisions created during validation gates (' . $revisionCountAfterValidation . ' == ' . $revisionCountBefore . ')',
     $errors, $passed, $failed
 );
 
@@ -322,10 +273,10 @@ if ($origNavLinks !== null && count(NavLinksParser::getMovableTree($origNavLinks
         record(array_key_exists('normalized', $rData), 'Response: has normalized', $errors, $passed, $failed);
         record(array_key_exists('message', $rData), 'Response: has message', $errors, $passed, $failed);
 
-        // Snapshot was created
+        // Retained operation links the actual revision
         record(
-            $rData['snapshotId'] !== null,
-            'Reorder: snapshot was created (snapshotId non-null)',
+            siteControlRetainedOperation($tempDbPath,$rData),
+            'Reorder: retained operation links its revision',
             $errors, $passed, $failed
         );
 
@@ -457,8 +408,8 @@ if ($origNavLinksForRollback !== null && count(NavLinksParser::getMovableTree($o
         $errors, $passed, $failed
     );
     record(
-        ($rollbackResult['response']['error']['code'] ?? '') === 'write_failed',
-        'Rollback: error code is write_failed (got ' . ($rollbackResult['response']['error']['code'] ?? 'none') . ')',
+        ($rollbackResult['response']['error']['code'] ?? '') === 'failed_restored',
+        'Rollback: error code is failed_restored (got ' . ($rollbackResult['response']['error']['code'] ?? 'none') . ')',
         $errors, $passed, $failed
     );
 
@@ -558,7 +509,7 @@ if (file_exists($legacyNavSrcPath)) {
         $errors, $passed, $failed
     );
     record(
-        ($malformedReorder['response']['error']['code'] ?? '') === 'nav_parse_error',
+        ($malformedReorder['response']['error']['code'] ?? '') === 'invalid_schema',
         'Malformed reorder: error code is nav_parse_error (got ' . ($malformedReorder['response']['error']['code'] ?? 'none') . ')',
         $errors, $passed, $failed
     );
@@ -577,12 +528,12 @@ if (file_exists($legacyNavSrcPath)) {
         'pageId' => $testPageId, 'targetParentHref' => null, 'targetIndex' => 0
     ]);
     record(
-        $missingNavReorder['httpCode'] === 404,
+        $missingNavReorder['httpCode'] === 422,
         'Missing nav reorder: returns 404',
         $errors, $passed, $failed
     );
     record(
-        ($missingNavReorder['response']['error']['code'] ?? '') === 'nav_file_missing',
+        ($missingNavReorder['response']['error']['code'] ?? '') === 'invalid_schema',
         'Missing nav reorder: error code is nav_file_missing',
         $errors, $passed, $failed
     );
@@ -750,6 +701,8 @@ exit($failed > 0 ? 1 : 0);
 function callNavEndpoint(string $method, string $routePath, array $body, ?string $failMode = null): array
 {
     global $tempDbPath, $tempPreview, $tempAssets;
+    $stateBefore=siteControlState($tempDbPath);
+    if ($method==='POST') $body=siteControlRequest($tempDbPath,$body);
 
     $helperPath = __DIR__ . '/helpers/call-nav-endpoint.php';
     $jsonBody = json_encode($body, JSON_UNESCAPED_SLASHES);
@@ -803,6 +756,7 @@ function callNavEndpoint(string $method, string $routePath, array $body, ?string
         ]]];
     }
 
+    siteControlAssertInvariant($tempDbPath,$stateBefore,$parsed,$method,$failMode);
     return $parsed;
 }
 

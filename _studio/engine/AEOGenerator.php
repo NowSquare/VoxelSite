@@ -18,9 +18,9 @@ namespace VoxelSite;
  * - Schema.org     — _partials/schema.php for JSON-LD structured data
  * - MCP server     — mcp.php endpoint for AI agent interaction
  *
- * Called during publish to auto-generate these files at the document
- * root. The data layer is the single source of truth — this class
- * simply translates it into formats that different consumers expect.
+ * A normal draft refresh updates only the schema partial and its include.
+ * Explicit retained publish candidates materialize all discovery outputs.
+ * Public installation happens later through the reviewed publish service.
  *
  * Why auto-generate instead of asking the AI to create these?
  * - Reliability: the AI might forget or produce incorrect structured data
@@ -33,12 +33,26 @@ class AEOGenerator
     private string $assetsPath;
     private string $previewPath;
     private string $docRoot;
+    private string $actionsPath;
+    private ?Database $database;
+    private ?SiteWorkspace $workspace;
 
-    public function __construct()
+    public function __construct(?string $assetsPath = null, ?string $previewPath = null,
+        ?string $outputRoot = null, ?string $actionsPath = null, ?Database $database = null,
+        ?SiteWorkspace $workspace = null)
     {
-        $this->assetsPath = dirname(__DIR__, 2) . '/assets';
-        $this->previewPath = dirname(__DIR__) . '/preview';
-        $this->docRoot = dirname(__DIR__, 2);
+        // Explicit roots are for a retained publish candidate. Ordinary generation
+        // reads and writes only the same canonical private draft as FileManager.
+        if ($assetsPath === null || $previewPath === null || $outputRoot === null) {
+            $workspace ??= new SiteWorkspace($database);
+            $workspace->assertReady();
+        }
+        $this->workspace = $workspace;
+        $this->previewPath = $previewPath ?? $workspace->draftRoot();
+        $this->assetsPath = $assetsPath ?? $this->previewPath . '/assets';
+        $this->docRoot = $outputRoot ?? $this->previewPath;
+        $this->actionsPath = $actionsPath ?? dirname(__DIR__) . '/data/actions';
+        $this->database = $database;
     }
 
     // ═══════════════════════════════════════════
@@ -46,23 +60,29 @@ class AEOGenerator
     // ═══════════════════════════════════════════
 
     /**
-     * Generate all AEO files during publish.
-     *
-     * Called from publish.php after all preview files have been
-     * copied to production. Reads the data layer and creates
-     * machine-readable files at the document root.
+     * Refresh draft schema, or generate all AEO files in an explicit candidate.
+     * Public-only discovery outputs are never added to authorable draft files.
      *
      * @param string $baseUrl The site's public URL (e.g., "https://bakkerij.nl")
      * @return array{generated: string[], skipped?: string}
      */
     public function generateAll(string $baseUrl = ''): array
     {
+        $lock = $this->workspace === null ? null : SiteMutationLock::acquire($this->workspace->mutationLockPath(), $this->database);
+        $this->workspace?->assertReady();
         $site = $this->loadSiteData();
         if ($site === null) {
             return ['generated' => [], 'skipped' => 'No assets/data/site.json found'];
         }
 
         $generated = [];
+        $this->workspace?->invalidateDraft();
+
+        if ($this->workspace !== null) {
+            $this->writeFileAtomic($this->previewPath . '/_partials/schema.php', $this->generateSchemaPartial());
+            $this->ensureSchemaInclude();
+            return ['generated' => ['_partials/schema.php']];
+        }
 
         // 1. llms.txt — AI model discovery
         $llmsTxt = $this->generateLlmsTxt($site, $baseUrl);
@@ -78,10 +98,10 @@ class AEOGenerator
 
         // 3. _partials/schema.php — JSON-LD structured data
         $schemaPhp = $this->generateSchemaPartial();
-        $this->ensureDirectory($this->previewPath . '/_partials');
         $this->writeFileAtomic($this->previewPath . '/_partials/schema.php', $schemaPhp);
-        $this->ensureDirectory($this->docRoot . '/_partials');
-        $this->writeFileAtomic($this->docRoot . '/_partials/schema.php', $schemaPhp);
+        if ($this->docRoot !== $this->previewPath) {
+            $this->writeFileAtomic($this->docRoot . '/_partials/schema.php', $schemaPhp);
+        }
         $generated[] = '_partials/schema.php';
 
         // 4. sitemap.xml — XML sitemap for search engines
@@ -506,7 +526,7 @@ class AEOGenerator
      */
     private function generateLlmsActionsSection(): ?string
     {
-        $actionsDir = dirname(__DIR__) . '/data/actions';
+        $actionsDir = $this->actionsPath;
         if (!is_dir($actionsDir)) {
             return null;
         }
@@ -706,7 +726,7 @@ class AEOGenerator
  *   <?php if (file_exists(__DIR__ . '/schema.php')) include __DIR__ . '/schema.php'; ?>
  */
 
-$_vxSchemaPath = $_SERVER['DOCUMENT_ROOT'] . '/assets/data/site.json';
+$_vxSchemaPath = dirname(__DIR__) . '/assets/data/site.json';
 if (!file_exists($_vxSchemaPath)) return;
 
 $_vxSite = @json_decode(file_get_contents($_vxSchemaPath), true);
@@ -851,7 +871,7 @@ echo json_encode($_vxSchema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | J
 echo "\n" . '</script>' . "\n";
 
 // Additional FAQ schema if faq.json exists
-$_vxFaqPath = $_SERVER['DOCUMENT_ROOT'] . '/assets/data/faq.json';
+$_vxFaqPath = dirname(__DIR__) . '/assets/data/faq.json';
 if (file_exists($_vxFaqPath)) {
     $_vxFaq = @json_decode(file_get_contents($_vxFaqPath), true);
     $_vxFaqItems = $_vxFaq['questions'] ?? $_vxFaq['faq'] ?? $_vxFaq['items'] ?? $_vxFaq ?? [];
@@ -1483,7 +1503,8 @@ MCP_PHP;
 
         $includeSnippet = '<?php if (file_exists(__DIR__ . \'/schema.php\')) include __DIR__ . \'/schema.php\'; ?>';
 
-        foreach ($targets as $target) {
+        foreach (array_unique($targets) as $target) {
+            $target = $this->checkedPath($target);
             if (!file_exists($target)) {
                 continue;
             }
@@ -1505,7 +1526,7 @@ MCP_PHP;
                     "  {$includeSnippet}\n</head>",
                     $content
                 );
-                file_put_contents($target, $content);
+                $this->writeFileAtomic($target, $content);
             }
         }
     }
@@ -1519,7 +1540,7 @@ MCP_PHP;
      */
     private function loadSiteData(): ?array
     {
-        $path = $this->assetsPath . '/data/site.json';
+        $path = SiteWorkspace::resolveWithin($this->assetsPath, 'data/site.json');
         if (!file_exists($path)) {
             return null;
         }
@@ -1540,7 +1561,7 @@ MCP_PHP;
     {
         // Sanitize feature name
         $feature = preg_replace('/[^a-z0-9_]/', '', $feature);
-        $path = $this->assetsPath . '/data/' . $feature . '.json';
+        $path = SiteWorkspace::resolveWithin($this->assetsPath, 'data/' . $feature . '.json');
         if (!file_exists($path)) {
             return null;
         }
@@ -1646,8 +1667,8 @@ MCP_PHP;
         return array_values(array_filter($pages, function ($page) {
             $slug = $page['slug'];
             // Check both preview and production paths
-            $previewPath = $this->previewPath . '/' . $slug . '.php';
-            $prodPath = $this->docRoot . '/' . $slug . '.php';
+            $previewPath = SiteWorkspace::resolveWithin($this->previewPath, $slug . '.php');
+            $prodPath = SiteWorkspace::resolveWithin($this->docRoot, $slug . '.php');
             return file_exists($previewPath) || file_exists($prodPath);
         }));
     }
@@ -1660,7 +1681,7 @@ MCP_PHP;
     private function loadPagesList(): array
     {
         try {
-            $db = Database::getInstance();
+            $db = $this->database ?? Database::getInstance();
             return $db->query(
                 "SELECT slug, title FROM pages
                  ORDER BY nav_order IS NULL, nav_order ASC, title ASC"
@@ -1689,12 +1710,32 @@ MCP_PHP;
      */
     private function writeFileAtomic(string $path, string $content): void
     {
+        $path = $this->checkedPath($path);
         $dir = dirname($path);
         $this->ensureDirectory($dir);
 
-        $tmpPath = $path . '.tmp.' . getmypid();
-        file_put_contents($tmpPath, $content);
-        rename($tmpPath, $path);
+        if (is_link($path)) throw new \RuntimeException('AEO output cannot replace a symlink.');
+        $tmpPath = tempnam($dir, '.aeo-');
+        if ($tmpPath === false) throw new \RuntimeException('Cannot stage AEO output.');
+        try {
+            if (file_put_contents($tmpPath, $content) !== strlen($content) || !rename($tmpPath, $path)) {
+                throw new \RuntimeException('Cannot save AEO output.');
+            }
+        } finally {
+            if (is_file($tmpPath)) unlink($tmpPath);
+        }
+    }
+
+    /** Reject symlinked ancestors before both header reads and generated writes. */
+    private function checkedPath(string $path): string
+    {
+        $this->workspace?->assertReady();
+        foreach (array_unique([$this->previewPath, $this->docRoot]) as $root) {
+            if (str_starts_with($path, $root . '/')) {
+                return SiteWorkspace::resolveWithin($root, substr($path, strlen($root) + 1));
+            }
+        }
+        throw new \RuntimeException('AEO output is outside its configured workspace.');
     }
 
     /**
@@ -1703,7 +1744,7 @@ MCP_PHP;
     private function ensureDirectory(string $dir): void
     {
         if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
+            if (!mkdir($dir, 0755, true) && !is_dir($dir)) throw new \RuntimeException('Cannot create an AEO output directory.');
         }
     }
 }

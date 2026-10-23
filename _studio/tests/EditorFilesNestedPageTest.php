@@ -39,56 +39,12 @@ function record(bool $condition, string $message, array &$errors, int &$passed, 
 
 echo "=== Editor Files Nested-Page Contract Test Suite ===\n\n";
 
-// ═══════════════════════════════════════════
-//  Fresh-install guard
-// ═══════════════════════════════════════════
-
-$liveDbPath = dirname(__DIR__) . '/data/studio.db';
-if (!file_exists($liveDbPath)) {
-    echo "ABORT: No database found at {$liveDbPath}.\n";
-    exit(1);
-}
-
-$livePreviewDir = dirname(__DIR__) . '/preview';
-if (!is_dir($livePreviewDir)) {
-    echo "ABORT: No preview directory found at {$livePreviewDir}.\n";
-    exit(1);
-}
-
-// ═══════════════════════════════════════════
-//  Fixture setup — temp copies
-// ═══════════════════════════════════════════
-
-echo "--- Setup: Creating temp fixtures ---\n";
-
-$tempDir     = sys_get_temp_dir() . '/voxelsite_files_test_' . uniqid();
-$tempDbPath  = $tempDir . '/studio.db';
+require_once __DIR__ . '/helpers/SiteControlFixture.php';
+$tempDir = sys_get_temp_dir() . '/voxelsite_files_test_' . bin2hex(random_bytes(8));
+[$db, $fileManager] = createSiteControlFixture($tempDir);
+$tempDbPath = $tempDir . '/studio.db';
 $tempPreview = $tempDir . '/preview';
-$tempAssets  = $tempDir . '/assets';
-
-mkdir($tempDir, 0755, true);
-
-copy($liveDbPath, $tempDbPath);
-copyDirRecursive($livePreviewDir, $tempPreview);
-
-$liveAssetsDir = dirname(__DIR__, 2) . '/assets';
-if (is_dir($liveAssetsDir)) {
-    copyDirRecursive($liveAssetsDir, $tempAssets);
-} else {
-    mkdir($tempAssets . '/css', 0755, true);
-    mkdir($tempAssets . '/js', 0755, true);
-}
-
-echo "  Temp dir: {$tempDir}\n";
-
-putenv("VS_TEST_PREVIEW_DIR={$tempPreview}");
-putenv("VS_TEST_ASSETS_DIR={$tempAssets}");
-
-$db = Database::getInstance($tempDbPath);
-$fileManager = new FileManager($db);
-$fileManager->syncPageRegistry();
-
-echo "  DB initialized with " . (int) $db->queryOne("SELECT COUNT(*) as c FROM pages")['c'] . " pages\n";
+$tempAssets = $tempDir . '/published/assets';
 
 // Create a nested test page for the test suite
 $nestedDir = $tempPreview . '/testdir';
@@ -474,6 +430,14 @@ function callFilesEndpoint(string $method, string $routePath, array $bodyOrParam
 {
     global $tempDbPath, $tempPreview, $tempAssets;
 
+    if ($method !== 'GET') {
+        $bodyOrParams = siteControlRequest($tempDbPath, $bodyOrParams);
+        if ($method === 'POST' && $routePath === '/files/create') $bodyOrParams['expected_content_sha256'] = null;
+        if (in_array($method, ['PUT', 'DELETE'], true) && isset($bodyOrParams['path']) && !str_contains($bodyOrParams['path'], '..')) {
+            $path = $tempPreview . '/' . $bodyOrParams['path'];
+            $bodyOrParams['expected_content_sha256'] = is_file($path) ? hash_file('sha256', $path) : null;
+        }
+    }
     $helperPath = __DIR__ . '/helpers/call-files-endpoint.php';
     $jsonBody = json_encode($bodyOrParams, JSON_UNESCAPED_SLASHES);
 
@@ -484,7 +448,8 @@ function callFilesEndpoint(string $method, string $routePath, array $bodyOrParam
     ];
 
     $cmd = sprintf(
-        'php %s %s %s %s %s %s',
+        '%s %s %s %s %s %s %s',
+        escapeshellarg(PHP_BINARY),
         escapeshellarg($helperPath),
         escapeshellarg($tempDbPath),
         escapeshellarg($tempPreview),

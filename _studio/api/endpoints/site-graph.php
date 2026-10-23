@@ -8,7 +8,7 @@ declare(strict_types=1);
  * GET /site-graph              — Full graph index with summary, nodes, and edges
  * GET /site-graph/blast-radius — Blast radius for a specific node (?node=<nodeId>)
  *
- * Graph reads synchronize file-backed projections and recover interrupted Site work.
+ * Graph reads inspect existing projections. Recovery requires an explicit action.
  */
 
 use VoxelSite\Database;
@@ -32,10 +32,13 @@ if ($user['role'] === 'viewer') {
 
 if (!\VoxelSite\DemoMode::isActive()) {
     try {
-        $graphLock = \VoxelSite\SiteMutationLock::acquire();
-        $recoveryDb = Database::getInstance();
-        (new \VoxelSite\SiteMutationJournal($recoveryDb))->recoverInterrupted();
-        (new \VoxelSite\SitePlanStore($recoveryDb, new FileManager($recoveryDb)))->recoverInterrupted();
+        $workspace = new \VoxelSite\SiteWorkspace(Database::getInstance());
+        $graphReadLock = \VoxelSite\SiteMutationLock::acquire($workspace->mutationLockPath(),Database::getInstance());
+        $workspace->assertReady();
+        \VoxelSite\Agent\WorkspaceFiles::read($workspace);
+        if ($workspace->status()['reservation_operation_id'] !== null) {
+            throw new \RuntimeException('Finish or recover the current site operation before inspecting its graph.');
+        }
     } catch (\Throwable $e) {
         jsonResponse(['ok'=>false,'error'=>['code'=>'site_busy','message'=>$e->getMessage()]],409);
         return;
@@ -52,7 +55,7 @@ if ($method === 'GET' && $path === '/site-graph') {
 
         $db = Database::getInstance();
         $fileManager = new FileManager($db);
-        $indexer = new SiteGraphIndexer($db, $fileManager);
+        $indexer = new SiteGraphIndexer($db, $fileManager, false);
         $graph = $indexer->buildGraph();
 
         $buildTimeMs = round((microtime(true) - $startTime) * 1000, 1);
@@ -61,6 +64,7 @@ if ($method === 'GET' && $path === '/site-graph') {
         $summary = $graph->summary();
 
         jsonResponse(['ok' => true, 'data' => [
+            'draft_version' => 'draft:'.$workspace->status()['draft_version'],
             'summary'       => $summary,
             'nodes'         => $data['nodes'],
             'edges'         => $data['edges'],
@@ -96,7 +100,7 @@ if ($method === 'GET' && $path === '/site-graph/blast-radius') {
     try {
         $db = Database::getInstance();
         $fileManager = new FileManager($db);
-        $indexer = new SiteGraphIndexer($db, $fileManager);
+        $indexer = new SiteGraphIndexer($db, $fileManager, false);
         $graph = $indexer->buildGraph();
 
         $targetNode = $graph->getNode($nodeId);

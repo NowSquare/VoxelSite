@@ -38,16 +38,27 @@ class Database
     private function __construct(string $dbPath)
     {
         $dir = dirname($dbPath);
+        // A factory receipt outlives this database. Never recreate it while
+        // the standalone owner cleanup still holds the installation gate.
+        $factoryMarker=$dir.'/factory-resets/active.json';
+        if (file_exists($factoryMarker) || is_link($factoryMarker)) {
+            throw new RuntimeException('Installation cleanup is active. Use its retained Studio completion receipt.');
+        }
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
 
         try {
-            $this->pdo = new PDO("sqlite:{$dbPath}", null, null, [
+            $options = [
                 PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_EMULATE_PREPARES   => false,
-            ]);
+            ];
+            // PHP 8.4+ exposes supported SQLite methods on its driver class.
+            // Keep the same connection behavior on PHP 8.2/8.3 hosts.
+            $this->pdo = method_exists(PDO::class, 'connect')
+                ? PDO::connect("sqlite:{$dbPath}", null, null, $options)
+                : new PDO("sqlite:{$dbPath}", null, null, $options);
 
             // WAL mode: allows concurrent reads while writing
             $this->pdo->exec('PRAGMA journal_mode = WAL');
@@ -78,6 +89,12 @@ class Database
             self::$instance = new self($path);
         }
 
+        return self::$instance;
+    }
+
+    /** Inspect an initialized request connection without creating an installation. */
+    public static function currentInstance(): ?self
+    {
         return self::$instance;
     }
 

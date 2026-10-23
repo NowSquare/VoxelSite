@@ -147,11 +147,17 @@ final class SitePlanStore
 
     private function fingerprint(): string
     {
-        $paths = array_merge(array_column($this->files->listPreviewFilesRecursive(),'path'),
-            array_column($this->files->listPartialFiles(),'path'),['_partials/nav.php','assets/css/style.css']);
+        return self::sourceFingerprint($this->files);
+    }
+
+    /** Pure legacy identity comparison; constructing the store is unnecessary. */
+    public static function sourceFingerprint(FileManager $files): string
+    {
+        $paths = array_merge(array_column($files->listPreviewFilesRecursive(),'path'),
+            array_column($files->listPartialFiles(),'path'),['_partials/nav.php','assets/css/style.css']);
         $paths = array_values(array_unique($paths)); sort($paths);
         $hashes=[];
-        foreach ($paths as $path) { $source=$this->files->readFile($path); $hashes[$path]=$source===null?null:hash('sha256',$source); }
+        foreach ($paths as $path) { $source=$files->readFile($path); $hashes[$path]=$source===null?null:hash('sha256',$source); }
         return hash('sha256', json_encode($hashes, JSON_THROW_ON_ERROR));
     }
 }

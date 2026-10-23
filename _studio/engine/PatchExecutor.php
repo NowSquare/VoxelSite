@@ -183,6 +183,14 @@ class PatchExecutor
     /** Build all replacements from the same immutable original source. */
     private function prepareFile(string $file, string $original, array $edits): string
     {
+        $result = self::prepareSource($file, $original, $edits);
+        $this->emit('anchor', $file, 'ok', 'Source anchors are unique and do not overlap');
+        return $result;
+    }
+
+    /** Pure shared preparation; callers validate typed edits and source hashes. */
+    public static function prepareSource(string $file, string $original, array $edits): string
+    {
         $patches = [];
         foreach ($edits as $edit) {
             $before = $edit['before_snippet'];
@@ -215,7 +223,6 @@ class PatchExecutor
                 if ($overlap) throw new \RuntimeException('Overlapping edits in ' . $file . '. Build a new plan.');
             }
             $patches[] = ['start' => $start, 'length' => $length, 'replacement' => $replacement];
-            $this->emit('anchor', $file, 'ok', 'Source anchor is unique and does not overlap');
         }
         usort($patches, fn(array $a, array $b) => $b['start'] <=> $a['start']);
         foreach ($patches as $patch) {

@@ -2,6 +2,17 @@
 
 declare(strict_types=1);
 
+// VOXELSITE_UPDATE_GATE_V1: the maintenance bridge runs before any replaceable autoloader.
+// The 1.32.0 updater writes ZIP entries in order. A request may see this file
+// before the newly introduced gate; keep that interval closed without a fatal.
+if (!is_file(dirname(__DIR__).'/update-gate.php')) {
+    http_response_code(503);
+    header('Content-Type:application/json');
+    echo '{"error":"update_runtime_missing"}';
+    exit;
+}
+require_once dirname(__DIR__).'/update-gate.php';
+
 /**
  * VoxelSite Engine Bootstrap
  *

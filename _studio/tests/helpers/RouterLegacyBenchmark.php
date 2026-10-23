@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace VoxelSite\Tests;
 
 require_once __DIR__ . '/RouterHeadingFixture.php';
+require_once __DIR__ . '/StudioRuntimeFixture.php';
 
 final class RouterLegacyBenchmark
 {
@@ -12,14 +13,9 @@ final class RouterLegacyBenchmark
     // except the compiler-owned Tailwind output, which the legacy path rebuilds.
     private const DERIVED_OUTPUTS = [
         'preview/_partials/schema.php' => 'create',
-        'public/_partials/schema.php' => 'create',
-        'public/llms.txt' => 'create',
-        'public/robots.txt' => 'create',
-        'public/sitemap.xml' => 'create',
-        'public/mcp.php' => 'create',
-        'assets/js/icon-resolver.js' => 'create',
-        'assets/js/navigation.js' => 'create',
-        'assets/css/tailwind.css' => 'rebuild',
+        'preview/assets/js/icon-resolver.js' => 'create',
+        'preview/assets/js/navigation.js' => 'create',
+        'preview/assets/css/tailwind.css' => 'rebuild',
     ];
 
     public static function siteSnapshot(string $root): array
@@ -33,7 +29,7 @@ final class RouterLegacyBenchmark
         // Public output is separate from preview and shared assets. Exclude only
         // the disposable app/runtime, dependency loader, and fixture marker.
         foreach (scandir($root) as $name) {
-            if (in_array($name, ['.', '..', '_studio', 'vendor', 'assets', '.governor-fixture'], true)) { continue; }
+            if (in_array($name, ['.', '..', '_studio', 'vendor', 'assets', '.governor-fixture', 'VERSION'], true)) { continue; }
             $path = $root . '/' . $name;
             if (is_dir($path)) {
                 foreach (RouterHeadingFixture::snapshot($path) as $relative => $hash) {
@@ -78,22 +74,9 @@ final class RouterLegacyBenchmark
         mkdir($root, 0700);
         try {
             file_put_contents($root . '/.governor-fixture', 'Disposable test application');
-            RouterHeadingFixture::copyTree($repo . '/_studio/engine', $root . '/_studio/engine');
-            RouterHeadingFixture::copyTree($repo . '/_studio/prompts', $root . '/_studio/prompts');
-            RouterHeadingFixture::copyTree($repo . '/_studio/static', $root . '/_studio/static');
+            StudioRuntimeFixture::copy($root, $repo);
             RouterHeadingFixture::copyTree($repo . '/_studio/tests/fixtures/router-heading/site', $root . '/_studio/preview');
             RouterHeadingFixture::copyTree($repo . '/_studio/tests/fixtures/router-heading/site/assets', $root . '/assets');
-            mkdir($root . '/vendor');
-            $autoload = '<?php require ' . var_export($repo . '/vendor/autoload.php', true) . ';' . <<<'PHP'
-
-spl_autoload_register(function ($class) {
-    if (str_starts_with($class, 'VoxelSite\\')) {
-        $file = dirname(__DIR__) . '/_studio/engine/' . str_replace('\\', '/', substr($class, 10)) . '.php';
-        if (is_file($file)) require_once $file;
-    }
-}, true, true);
-PHP;
-            file_put_contents($root . '/vendor/autoload.php', $autoload);
             $pipes = [];
             $runner = 'run-router-legacy.php';
             $process = proc_open([PHP_BINARY, __DIR__ . '/' . $runner, $root, $action, $fault],

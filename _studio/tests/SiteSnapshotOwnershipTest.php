@@ -11,16 +11,20 @@ $worker = ($argv[1] ?? '') === '--worker';
 $root = $worker ? $argv[2] : sys_get_temp_dir() . '/vs-snapshot-ownership-' . bin2hex(random_bytes(6));
 if (!$worker) foreach (['preview/nested', 'assets/css', 'snapshots'] as $directory) mkdir($root . '/' . $directory, 0755, true);
 foreach (['PREVIEW_DIR' => 'preview', 'ASSETS_DIR' => 'assets', 'SNAPSHOT_DIR' => 'snapshots'] as $key => $directory) putenv('VS_TEST_' . $key . '=' . $root . '/' . $directory);
+putenv('VS_TEST_DOC_ROOT=' . $root); putenv('VS_TEST_MUTATION_LOCK=' . $root . '/mutation.lock');
+foreach (['logDir'=>$root.'/logs','initialized'=>true] as $key=>$value) (new ReflectionProperty(\VoxelSite\Logger::class,$key))->setValue(null,$value);
 $db = Database::getInstance($root . '/studio.db');
 (new Migrator($db))->run();
+(new \VoxelSite\WorkspaceMigration(new \VoxelSite\SiteWorkspace($db,$root.'/preview',$root),$db))->run();
 $_REQUEST = ['_route_method' => 'GET', '_route_path' => '/test'];
 function jsonResponse(mixed $data, int $status = 200): void {}
-require dirname(__DIR__) . '/api/endpoints/snapshots.php';
+require_once dirname(__DIR__) . '/engine/SnapshotCompatibility.php';
+require_once dirname(__DIR__) . '/engine/SiteControlSnapshots.php';
 if ($worker) {
     $id = (int) $argv[3];
     $row = $db->queryOne('SELECT filename FROM snapshots WHERE id = ?', [$id]);
     $result = $argv[4] === 'safety' ? restoreSiteControlSnapshot($db, $id)
-        : restoreSnapshot($root . '/snapshots/' . $row['filename'], $root . '/preview', $root . '/assets');
+        : restoreSnapshot($root . '/snapshots/' . $row['filename'], $root . '/preview', $root . '/preview/assets');
     echo json_encode($result, JSON_THROW_ON_ERROR);
     exit;
 }
@@ -49,7 +53,7 @@ function runWithoutOwnershipFunctions(int $id, string $kind): array {
 $path = $root . '/preview/nested/team.php';
 $source = '<?php $page=["title"=>"Team"]; ?><h1>Original team</h1>';
 file_put_contents($path, $source); chmod($path, 0640);
-file_put_contents($root . '/assets/css/style.css', ':root { --color-primary: #123456; }');
+file_put_contents($root . '/preview/assets/css/style.css', ':root { --color-primary: #123456; }');
 $differentGroup = null;
 foreach (function_exists('posix_getgroups') && function_exists('chgrp') ? posix_getgroups() : [] as $group) {
     if ($group !== filegroup($path) && @chgrp($path, $group)) { $differentGroup = $group; break; }
@@ -72,14 +76,14 @@ ownershipCheck($result['ok'] && file_get_contents($path) === $source && metadata
     'Rollback recreates a deleted file with its exact bytes, mode, owner and group');
 ownershipCheck(metadata($root . '/preview/nested') === $directoryMetadata, 'Rollback recreates a deleted directory with its original mode, owner and group');
 
-$public = createSnapshot($db, $root . '/snapshots', $root . '/preview', $root . '/assets', 'manual', 'Public ownership');
+$public = createSnapshot($db, $root . '/snapshots', $root . '/preview', $root . '/preview/assets', 'manual', 'Public ownership');
 $publicId = (int) $public['snapshot']['id'];
 $zip->open($root . '/snapshots/' . $public['snapshot']['filename']);
 $publicManifest = json_decode($zip->getFromName('site-control-state.json'), true, 512, JSON_THROW_ON_ERROR); $zip->close();
 ownershipCheck(($publicManifest['files']['preview/nested/team.php']['gid'] ?? null) === $fileMetadata['gid']
     && ($publicManifest['directories']['preview/nested']['gid'] ?? null) === $directoryMetadata['gid'], 'Public snapshots record the same ownership metadata');
 unlink($path); rmdir($root . '/preview/nested');
-$result = restoreSnapshot($root . '/snapshots/' . $public['snapshot']['filename'], $root . '/preview', $root . '/assets');
+$result = restoreSnapshot($root . '/snapshots/' . $public['snapshot']['filename'], $root . '/preview', $root . '/preview/assets');
 ownershipCheck($result['ok'] && file_get_contents($path) === $source && metadata($path) === $fileMetadata,
     'Public restoration recreates a deleted file with its original ownership');
 ownershipCheck(metadata($root . '/preview/nested') === $directoryMetadata, 'Public restoration recreates a directory with its original ownership');
@@ -107,9 +111,10 @@ $legacy = $manifest;
 foreach ($legacy['files'] as &$file) unset($file['uid'], $file['gid']); unset($file);
 foreach ($legacy['directories'] as &$directory) if (is_array($directory)) $directory = $directory['mode']; unset($directory);
 $zipPath = $root . '/snapshots/legacy.zip'; $legacyZip = new ZipArchive(); $legacyZip->open($zipPath, ZipArchive::CREATE);
-foreach ($legacy['files'] as $entry => $meta) $legacyZip->addFile($root . '/' . $entry, $entry);
+foreach ($legacy['files'] as $entry => $meta) $legacyZip->addFile(
+    str_starts_with($entry, 'assets/') ? $root . '/preview/' . $entry : $root . '/' . $entry, $entry);
 $legacyZip->addFromString('site-control-state.json', json_encode($legacy, JSON_THROW_ON_ERROR)); $legacyZip->close();
-$result = restoreSnapshot($zipPath, $root . '/preview', $root . '/assets');
+$result = restoreSnapshot($zipPath, $root . '/preview', $root . '/preview/assets');
 ownershipCheck($result['ok'] && metadata($path) === $fileMetadata, 'Older snapshots without owner metadata still restore without changing existing ownership');
 
 echo $checks . ' snapshot ownership checks, ' . count($failures) . ' failed. Fixture: ' . $root . "\n";

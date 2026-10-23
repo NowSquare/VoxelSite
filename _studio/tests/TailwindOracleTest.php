@@ -108,11 +108,10 @@ function runTailwindCli(array $classes, string $projectRoot): ?string
  */
 function runVoxelSiteCompiler(array $classes): string
 {
-    $compiler = new \VoxelSite\TailwindCompiler();
+    $compiler = new \VoxelSite\TailwindCompiler(sys_get_temp_dir());
 
     // Use reflection to call compileClasses directly
     $method = new ReflectionMethod($compiler, 'compileClasses');
-    $method->setAccessible(true);
     return $method->invoke($compiler, $classes);
 }
 

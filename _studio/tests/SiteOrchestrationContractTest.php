@@ -15,6 +15,8 @@ putenv('VS_TEST_PREVIEW_DIR=' . $root . '/preview');
 putenv('VS_TEST_ASSETS_DIR=' . $root . '/assets');
 $db = Database::getInstance($root . '/studio.db');
 (new Migrator($db))->run();
+require_once __DIR__ . '/helpers/LegacyWorkspaceFixture.php';
+activateLegacyTestWorkspace($db);
 $fm = new FileManager($db);
 $passed = 0;
 $failures = [];
@@ -24,7 +26,7 @@ function check(bool $condition, string $label): void {
 }
 function fixture(string $path, string $bytes): void {
     global $root;
-    $base = str_starts_with($path, 'assets/') ? $root : $root . '/preview';
+    $base = $root . '/preview';
     if (!is_dir(dirname($base . '/' . $path))) { mkdir(dirname($base . '/' . $path), 0755, true); }
     file_put_contents($base . '/' . $path, $bytes);
 }

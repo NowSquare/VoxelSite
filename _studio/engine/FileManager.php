@@ -24,17 +24,19 @@ class FileManager
     private string $promptsPath;
     private string $customPromptsPath;
     private Database $db;
+    private SiteWorkspace $workspace;
 
-    public function __construct(?Database $db = null)
+    public function __construct(?Database $db = null, ?SiteWorkspace $workspace = null)
     {
         $this->db = $db ?? Database::getInstance();
-        // Test seam: allow env var overrides for subprocess-based endpoint tests.
-        // In production these env vars are never set, so the default paths apply.
-        $this->previewPath = getenv('VS_TEST_PREVIEW_DIR') ?: dirname(__DIR__) . '/preview';
-        $this->assetsPath  = getenv('VS_TEST_ASSETS_DIR')  ?: dirname(__DIR__, 2) . '/assets';
+        $this->workspace = $workspace ?? new SiteWorkspace($this->db);
+        $this->previewPath = $this->workspace->draftRoot();
+        $this->assetsPath = $this->workspace->draftAssetsRoot();
         $this->promptsPath = dirname(__DIR__) . '/prompts';
         $this->customPromptsPath = dirname(__DIR__) . '/custom_prompts';
     }
+
+    public function workspace(): SiteWorkspace { return $this->workspace; }
 
     /**
      * Execute a list of file operations in the preview directory.
@@ -50,6 +52,7 @@ class FileManager
      */
     public function executeOperations(array $operations): array
     {
+        $lock = $this->mutationLock();
         $written = [];
         $deleted = [];
         $errors = [];
@@ -99,8 +102,11 @@ class FileManager
      */
     public function compileTailwind(): array
     {
-        $compiler = new TailwindCompiler($this->assetsPath . '/css');
-        return $compiler->compile($this->previewPath, $this->assetsPath . '/css/tailwind.css');
+        $lock = $this->mutationLock();
+        $output = $this->resolvePath('assets/css/tailwind.css', true);
+        $compiler = new TailwindCompiler(dirname($output));
+        $this->workspace->invalidateDraft();
+        return $compiler->compile($this->previewPath, $output);
     }
 
     /**
@@ -115,7 +121,8 @@ class FileManager
      */
     public function ensureStyleCssExists(): void
     {
-        $stylePath = $this->assetsPath . '/css/style.css';
+        $lock = $this->mutationLock();
+        $stylePath = $this->resolvePath('assets/css/style.css', true);
 
         // If style.css already exists and has content, don't overwrite
         if (file_exists($stylePath) && filesize($stylePath) > 50) {
@@ -129,7 +136,7 @@ class FileManager
         $fontHeading = $fontBody;
 
         // Try to detect colors from preview files (look for bg-[...], text-[...])
-        $headerPath = $this->previewPath . '/_partials/header.php';
+        $headerPath = $this->resolvePath('_partials/header.php');
         if (file_exists($headerPath)) {
             $headerContent = file_get_contents($headerPath);
             if ($headerContent !== false) {
@@ -200,15 +207,7 @@ body { font-family: var(--font-body); }
 h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading, var(--font-body)); }
 CSS;
 
-        $dir = dirname($stylePath);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-
-        // Atomic write
-        $tmpPath = $stylePath . '.tmp.' . getmypid();
-        file_put_contents($tmpPath, $css);
-        rename($tmpPath, $stylePath);
+        $this->writeResolvedFile('assets/css/style.css', $css);
 
         Logger::info('files', 'Created fallback style.css (AI did not generate one)', [
             'path' => $stylePath,
@@ -263,30 +262,14 @@ CSS;
      */
     public function writeFile(string $relativePath, string $content): ?string
     {
+        $lock = $this->mutationLock();
+        // Authorize the requested target before normalization can create derived files.
+        $this->resolvePath($relativePath, true);
         // Auto-fix common AI model mistakes before writing
         $content = $this->fixCommonModelMistakes($relativePath, $content);
 
         $absolutePath = $this->resolvePath($relativePath, true);
-        $dir = dirname($absolutePath);
-        if (!is_dir($dir)) {
-            if (!mkdir($dir, 0755, true)) {
-                throw new RuntimeException("Cannot create directory: {$dir}");
-            }
-        }
-
-        // Write atomically: write to temp, then rename
-        $tmpPath = $absolutePath . '.tmp.' . getmypid();
-        $result = file_put_contents($tmpPath, $content);
-
-        if ($result === false) {
-            @unlink($tmpPath);
-            throw new RuntimeException("Cannot write file: {$relativePath}");
-        }
-
-        if (!rename($tmpPath, $absolutePath)) {
-            @unlink($tmpPath);
-            throw new RuntimeException("Cannot finalize file: {$relativePath}");
-        }
+        $this->writeResolvedFile($relativePath, $content);
 
         // Validate PHP syntax after writing
         if (str_ends_with($relativePath, '.php')) {
@@ -302,28 +285,47 @@ CSS;
     /** Write reviewed bytes or recovery bytes without generation-time transformations. */
     public function writeExactFile(string $relativePath, string $content): void
     {
-        $path = $this->resolvePath($relativePath, true);
-        $base = str_starts_with($relativePath, 'assets/') ? $this->assetsPath : $this->previewPath;
+        $lock = $this->mutationLock();
         if (str_starts_with($relativePath, '_prompts/')) {
             throw new RuntimeException('Site edits cannot modify prompts.');
         }
+        $this->writeResolvedFile($relativePath, $content);
+    }
+
+    private function writeResolvedFile(string $relativePath, string $content): void
+    {
+        $path = $this->resolvePath($relativePath, true);
+        $base = str_starts_with($relativePath, '_prompts/') ? $this->customPromptsPath : $this->previewPath;
+        if (!is_dir(dirname($path)) && !mkdir(dirname($path), 0755, true)) {
+            throw new RuntimeException('Cannot create website directory.');
+        }
+        $this->resolvePath($relativePath, true);
         $realBase = realpath($base);
         $realParent = realpath(dirname($path));
         if ($realBase === false || $realParent === false || is_link($path)
             || ($realParent !== $realBase && !str_starts_with($realParent, $realBase . '/'))) {
             throw new RuntimeException('Exact write target is outside the website or does not exist.');
         }
+        clearstatcache(true, $realParent);
+        if (!is_writable($realParent)) {
+            throw new RuntimeException('Cannot stage website file in its destination directory.');
+        }
         $originalStat = is_file($path) ? stat($path) : null;
         $mode = $originalStat ? ($originalStat['mode'] & 0777) : 0644;
         $temporary = tempnam($realParent, '.site-');
         if ($temporary === false) { throw new RuntimeException('Cannot stage website file.'); }
         try {
+            if (realpath(dirname($temporary)) !== $realParent || is_link($temporary)) {
+                throw new RuntimeException('Website staging file must remain in its destination directory.');
+            }
             if ($originalStat && ((fileowner($temporary) !== $originalStat['uid'] && !@chown($temporary, $originalStat['uid']))
                 || (filegroup($temporary) !== $originalStat['gid'] && !@chgrp($temporary, $originalStat['gid'])))) {
                 throw new RuntimeException('Cannot preserve website file ownership: ' . $relativePath);
             }
+            if (!str_starts_with($relativePath, '_prompts/')) $this->workspace->invalidateDraft();
             if (file_put_contents($temporary, $content) !== strlen($content)
-                || !chmod($temporary, $mode) || !rename($temporary, $path)) {
+                || !chmod($temporary, $mode)
+                || $this->resolvePath($relativePath, true) !== $path || !rename($temporary, $path)) {
                 throw new RuntimeException('Cannot write website file: ' . $relativePath);
             }
         } finally {
@@ -339,7 +341,11 @@ CSS;
      */
     public function writeGovernedFile(string $relativePath, string $expectedHash, string $content, string $expectedAbsolutePath): void
     {
-        $path = GovernedFilePath::resolve($this->previewPath, $relativePath);
+        $lock = $this->mutationLock();
+        $path = $this->resolvePath($relativePath, true);
+        if (GovernedFilePath::resolve($this->previewPath, $relativePath) !== $path) {
+            throw new RuntimeException('Governed target does not match the canonical draft.');
+        }
         if ($path !== $expectedAbsolutePath) {
             throw new RuntimeException('Governed writer target does not match accepted target');
         }
@@ -365,10 +371,12 @@ CSS;
                 || !chmod($temporary, fileperms($path) & 0777)) {
                 throw new RuntimeException('Cannot stage governed write');
             }
-            if (GovernedFilePath::resolve($this->previewPath, $relativePath) !== $path
+            if ($this->resolvePath($relativePath, true) !== $path
+                || GovernedFilePath::resolve($this->previewPath, $relativePath) !== $path
                 || !hash_equals($expectedHash, hash_file('sha256', $path))) {
                 throw new RuntimeException('content_changed');
             }
+            $this->workspace->invalidateDraft();
             if (!rename($temporary, $path)) {
                 throw new RuntimeException('Cannot apply governed write');
             }
@@ -749,7 +757,7 @@ CSS;
      */
     private function ensureMobileNavCss(): void
     {
-        $stylePath = $this->assetsPath . '/css/style.css';
+        $stylePath = $this->resolvePath('assets/css/style.css', true);
         if (!file_exists($stylePath)) {
             return;
         }
@@ -815,7 +823,7 @@ SAFETY;
 
         if (!empty($inject)) {
             $css .= "\n" . implode("\n", $inject) . "\n";
-            file_put_contents($stylePath, $css);
+            $this->writeResolvedFile('assets/css/style.css', $css);
 
             Logger::info('files', 'Injected mobile nav CSS safety net', [
                 'rules_added' => count($inject),
@@ -932,7 +940,7 @@ SAFETY;
      */
     public function validateIconNames(array $writtenPaths): array
     {
-        $iconDir = $this->assetsPath . '/icons';
+        $iconDir = $this->resolvePath('assets/icons');
         $valid = 0;
         $missing = [];  // name => [file1, file2, ...]
 
@@ -1004,7 +1012,7 @@ SAFETY;
      */
     private function ensureShippedFormHandler(): void
     {
-        $dest = $this->assetsPath . '/js/form-handler.js';
+        $dest = $this->resolvePath('assets/js/form-handler.js', true);
         $source = dirname(__DIR__) . '/static/form-handler.js';
 
         if (!file_exists($source)) {
@@ -1021,7 +1029,7 @@ SAFETY;
             mkdir($dir, 0755, true);
         }
 
-        copy($source, $dest);
+        $this->writeResolvedFile('assets/js/form-handler.js', (string) file_get_contents($source));
     }
 
     /**
@@ -1043,7 +1051,8 @@ SAFETY;
      */
     public function ensureShippedNavigation(): void
     {
-        $dest = $this->assetsPath . '/js/navigation.js';
+        $lock = $this->mutationLock();
+        $dest = $this->resolvePath('assets/js/navigation.js', true);
         $source = dirname(__DIR__) . '/static/navigation.js';
 
         if (!file_exists($source)) {
@@ -1056,7 +1065,7 @@ SAFETY;
         }
 
         // Always overwrite — shipped version takes precedence
-        copy($source, $dest);
+        $this->writeResolvedFile('assets/js/navigation.js', (string) file_get_contents($source));
     }
 
     /**
@@ -1074,12 +1083,13 @@ SAFETY;
      */
     public function versionShippedScripts(): void
     {
+        $lock = $this->mutationLock();
         $shippedFiles = ['navigation.js', 'form-handler.js', 'icon-resolver.js'];
 
         // Build version map: filename => ?v=hash
         $versions = [];
         foreach ($shippedFiles as $file) {
-            $path = $this->assetsPath . '/js/' . $file;
+            $path = $this->resolvePath('assets/js/' . $file);
             if (file_exists($path)) {
                 $versions[$file] = substr(md5_file($path), 0, 8);
             }
@@ -1097,6 +1107,7 @@ SAFETY;
 
         // Also process standalone pages (those with </body> directly)
         foreach (glob($this->previewPath . '/*.php') as $pagePath) {
+            $pagePath = $this->resolvePath(basename($pagePath), true);
             $content = file_get_contents($pagePath);
             if (str_contains($content, '</body>')) {
                 $this->applyScriptVersions($pagePath, $versions);
@@ -1128,7 +1139,7 @@ SAFETY;
         }
 
         if ($changed) {
-            file_put_contents($filePath, $content);
+            $this->writeResolvedFile(substr($filePath, strlen($this->previewPath) + 1), $content);
         }
     }
 
@@ -1157,7 +1168,7 @@ SAFETY;
                 '<script src="/assets/js/form-handler.js" defer></script>' . "\n</body>",
                 $footer
             );
-            file_put_contents($footerPath, $footer);
+            $this->writeResolvedFile('_partials/footer.php', $footer);
         }
     }
 
@@ -1175,7 +1186,8 @@ SAFETY;
      */
     public function ensureShippedIconResolver(): void
     {
-        $dest = $this->assetsPath . '/js/icon-resolver.js';
+        $lock = $this->mutationLock();
+        $dest = $this->resolvePath('assets/js/icon-resolver.js', true);
         $source = dirname(__DIR__) . '/static/icon-resolver.js';
 
         if (!file_exists($source)) {
@@ -1188,7 +1200,7 @@ SAFETY;
         }
 
         // Always overwrite — shipped version takes precedence
-        copy($source, $dest);
+        $this->writeResolvedFile('assets/js/icon-resolver.js', (string) file_get_contents($source));
     }
 
     /**
@@ -1200,6 +1212,7 @@ SAFETY;
      */
     public function injectIconResolverIntoFooter(): void
     {
+        $lock = $this->mutationLock();
         // 1. Try partial-based: inject into _partials/footer.php
         $footerPath = $this->resolvePath('_partials/footer.php', true);
         if (file_exists($footerPath)) {
@@ -1210,7 +1223,7 @@ SAFETY;
                     '<script src="/assets/js/icon-resolver.js" defer></script>' . "\n</body>",
                     $footer
                 );
-                file_put_contents($footerPath, $footer);
+                $this->writeResolvedFile('_partials/footer.php', $footer);
             }
             return; // Footer partial exists — partial-based site, done.
         }
@@ -1223,6 +1236,7 @@ SAFETY;
 
         $phpFiles = glob($previewDir . '/*.php') ?: [];
         foreach ($phpFiles as $file) {
+            $file = $this->resolvePath(basename($file), true);
             if (!is_file($file)) {
                 continue;
             }
@@ -1236,7 +1250,7 @@ SAFETY;
                     '<script src="/assets/js/icon-resolver.js" defer></script>' . "\n</body>",
                     $content
                 );
-                file_put_contents($file, $content);
+                $this->writeResolvedFile(basename($file), $content);
             }
         }
     }
@@ -1273,11 +1287,12 @@ SAFETY;
      */
     public function ensureShippedActionsBar(string $docRoot): void
     {
+        $lock = $this->mutationLock();
         $staticDir = dirname(__DIR__) . '/static';
 
         foreach (['actions-bar.js', 'actions-bar.css'] as $file) {
             $source = $staticDir . '/' . $file;
-            $dest = $docRoot . '/' . $file;
+            $dest = $this->resolveDeploymentPath($docRoot, $file);
 
             if (!file_exists($source)) {
                 continue;
@@ -1303,8 +1318,9 @@ SAFETY;
      */
     public function injectActionsBarIntoFooter(?string $docRoot = null): void
     {
+        $lock = $this->mutationLock();
         if ($docRoot !== null) {
-            $footerPath = rtrim($docRoot, '/') . '/_partials/footer.php';
+            $footerPath = $this->resolveDeploymentPath($docRoot, '_partials/footer.php');
         } else {
             $footerPath = $this->resolvePath('_partials/footer.php', true);
         }
@@ -1319,8 +1335,8 @@ SAFETY;
         $jsHash = '';
         $cssHash = '';
         if ($docRoot !== null) {
-            $jsFile = rtrim($docRoot, '/') . '/actions-bar.js';
-            $cssFile = rtrim($docRoot, '/') . '/actions-bar.css';
+            $jsFile = $this->resolveDeploymentPath($docRoot, 'actions-bar.js');
+            $cssFile = $this->resolveDeploymentPath($docRoot, 'actions-bar.css');
             if (file_exists($jsFile)) $jsHash = substr(md5_file($jsFile), 0, 8);
             if (file_exists($cssFile)) $cssHash = substr(md5_file($cssFile), 0, 8);
         }
@@ -1345,6 +1361,7 @@ SAFETY;
                 if ($newFooter !== $footer) { $footer = $newFooter; $changed = true; }
             }
             if ($changed) {
+                if ($docRoot === null) $this->workspace->invalidateDraft();
                 file_put_contents($footerPath, $footer);
             }
             return;
@@ -1354,14 +1371,15 @@ SAFETY;
             $jsVersion = '';
             $cssVersion = '';
             if ($docRoot !== null) {
-                $jsFile = rtrim($docRoot, '/') . '/actions-bar.js';
-                $cssFile = rtrim($docRoot, '/') . '/actions-bar.css';
+                $jsFile = $this->resolveDeploymentPath($docRoot, 'actions-bar.js');
+                $cssFile = $this->resolveDeploymentPath($docRoot, 'actions-bar.css');
                 if (file_exists($jsFile)) $jsVersion = '?v=' . substr(md5_file($jsFile), 0, 8);
                 if (file_exists($cssFile)) $cssVersion = '?v=' . substr(md5_file($cssFile), 0, 8);
             }
             $injection = '<link rel="stylesheet" href="/actions-bar.css' . $cssVersion . '">' . "\n"
                 . '<script src="/actions-bar.js' . $jsVersion . '" defer></script>' . "\n";
             $footer = str_replace('</body>', $injection . '</body>', $footer);
+            if ($docRoot === null) $this->workspace->invalidateDraft();
             file_put_contents($footerPath, $footer);
         }
     }
@@ -1651,10 +1669,7 @@ SAFETY;
             }
         }
 
-        // Write the JS file atomically
-        $tmpPath = $jsAbsPath . '.tmp.' . getmypid();
-        file_put_contents($tmpPath, $combinedJs);
-        rename($tmpPath, $jsAbsPath);
+        $this->writeResolvedFile($jsRelPath, $combinedJs);
 
         // Replace ALL inline script blocks in the PHP content with a single
         // <script src> reference at the position of the first match
@@ -1718,10 +1733,12 @@ SAFETY;
      */
     public function deleteFile(string $relativePath): void
     {
+        $lock = $this->mutationLock();
         $absolutePath = $this->resolvePath($relativePath, true);
 
         if (file_exists($absolutePath)) {
-            unlink($absolutePath);
+            if (!str_starts_with($relativePath, '_prompts/')) $this->workspace->invalidateDraft();
+            if (!unlink($absolutePath)) throw new RuntimeException('Cannot delete website file: ' . $relativePath);
         }
     }
 
@@ -1754,11 +1771,13 @@ SAFETY;
      */
     public function listPreviewFiles(): array
     {
+        $this->workspace->assertReady();
         $filesBySlug = [];
 
         $phpMatches = glob($this->previewPath . '/*.php') ?: [];
         foreach ($phpMatches as $file) {
             $filename = basename($file);
+            $file = $this->resolvePath($filename);
             $slug = $filename === 'index.php' ? 'index' : pathinfo($filename, PATHINFO_FILENAME);
 
             $filesBySlug[$slug] = [
@@ -1773,6 +1792,7 @@ SAFETY;
         $htmlMatches = glob($this->previewPath . '/*.html') ?: [];
         foreach ($htmlMatches as $file) {
             $filename = basename($file);
+            $file = $this->resolvePath($filename);
             $slug = $filename === 'index.html' ? 'index' : pathinfo($filename, PATHINFO_FILENAME);
 
             if (isset($filesBySlug[$slug])) {
@@ -1802,7 +1822,8 @@ SAFETY;
      */
     public function listPartialFiles(): array
     {
-        $partialsDir = $this->previewPath . '/_partials';
+        $this->workspace->assertReady();
+        $partialsDir = $this->resolvePath('_partials');
         if (!is_dir($partialsDir)) {
             return [];
         }
@@ -1821,6 +1842,7 @@ SAFETY;
             $absolutePath = $item->getPathname();
             $relativeTail = substr($absolutePath, strlen($partialsDir) + 1);
             $relativePath = '_partials/' . str_replace('\\', '/', $relativeTail);
+            $this->resolvePath($relativePath);
             $files[] = [
                 'path'     => $relativePath,
                 'name'     => pathinfo($item->getFilename(), PATHINFO_FILENAME),
@@ -1844,11 +1866,12 @@ SAFETY;
      */
     public function listPreviewDirectory(string $relativeDir = ''): array
     {
+        $this->workspace->assertReady();
         $relativeDir = trim(str_replace('\\', '/', $relativeDir), '/');
 
         $targetDir = $this->previewPath;
         if ($relativeDir !== '') {
-            $targetDir .= '/' . $relativeDir;
+$targetDir = $this->resolvePath($relativeDir);
         }
 
         // Security: verify the target stays within preview/
@@ -1875,7 +1898,7 @@ SAFETY;
             if (str_starts_with($item, '_')) continue; // Skip _partials, etc.
             if (str_starts_with($item, '.')) continue; // Skip hidden files
 
-            $fullPath = $targetDir . '/' . $item;
+            $fullPath = $this->resolvePath(($relativeDir === '' ? '' : $relativeDir . '/') . $item);
 
             if (is_dir($fullPath)) {
                 // Count items inside (files + subdirs, excluding hidden/_prefixed)
@@ -1929,6 +1952,7 @@ SAFETY;
      */
     public function listPreviewFilesRecursive(): array
     {
+        $this->workspace->assertReady();
         $files = [];
         $this->scanPreviewDirRecursive($this->previewPath, '', $files);
         usort($files, function ($a, $b) {
@@ -1953,8 +1977,9 @@ SAFETY;
             if (str_starts_with($item, '.')) continue;   // hidden files
             if (str_starts_with($item, '_')) continue;    // _partials, etc.
 
-            $fullPath = $absoluteDir . '/' . $item;
+            if ($relativePrefix === '' && $item === 'assets') { continue; }
             $relativePath = $relativePrefix !== '' ? $relativePrefix . '/' . $item : $item;
+            $fullPath = $this->resolvePath($relativePath);
 
             if (is_dir($fullPath)) {
                 $this->scanPreviewDirRecursive($fullPath, $relativePath, $results);
@@ -2007,6 +2032,7 @@ SAFETY;
      */
     public function syncPageRegistry(bool $refreshTitles = false): void
     {
+        $lock = $this->mutationLock();
         $now = now();
         $files = $this->listPreviewFilesRecursive();
 
@@ -2156,6 +2182,7 @@ SAFETY;
      */
     public function syncNavOrderFromPartial(): void
     {
+        $lock = $this->mutationLock();
         $navContent = $this->readFile('_partials/nav.php');
         if ($navContent === null) {
             return;
@@ -2278,212 +2305,8 @@ SAFETY;
      */
     public function clearSite(): array
     {
-        $pagesDeleted = 0;
-        $filesDeleted = 0;
-
-        // 1. Delete all PHP page files from preview/
-        $pageFiles = glob($this->previewPath . '/*.php') ?: [];
-        foreach ($pageFiles as $file) {
-            if (is_file($file)) {
-                unlink($file);
-                $pagesDeleted++;
-                $filesDeleted++;
-            }
-        }
-
-        // 2. Delete _partials/ directory from preview
-        $partialsPath = $this->previewPath . '/_partials';
-        if (is_dir($partialsPath)) {
-            $filesDeleted += $this->removeDirectoryContents($partialsPath);
-            rmdir($partialsPath);
-        }
-
-        // 3. Delete AI-generated CSS files (style.css, tailwind.css, legacy foundation.css)
-        $cssDir = $this->assetsPath . '/css';
-        if (is_dir($cssDir)) {
-            $cssFiles = glob($cssDir . '/*.css') ?: [];
-            foreach ($cssFiles as $file) {
-                if (is_file($file)) {
-                    unlink($file);
-                    $filesDeleted++;
-                }
-            }
-        }
-
-        // 4. Delete AI-generated JS files (skip shipped handlers)
-        $jsDir = $this->assetsPath . '/js';
-        if (is_dir($jsDir)) {
-            $skipJs = ['form-handler.js', 'actions-bar.js', 'navigation.js', 'icon-resolver.js'];
-            $jsFiles = glob($jsDir . '/*.js') ?: [];
-            foreach ($jsFiles as $file) {
-                if (is_file($file) && !in_array(basename($file), $skipJs, true)) {
-                    unlink($file);
-                    $filesDeleted++;
-                }
-            }
-        }
-
-        // 4b. Delete AI-generated data layer files
-        $dataDir = $this->assetsPath . '/data';
-        if (is_dir($dataDir)) {
-            $filesDeleted += $this->removeDirectoryContents($dataDir);
-            rmdir($dataDir);
-        }
-
-        // 4c. Delete AI-generated form definitions
-        $formsDir = $this->assetsPath . '/forms';
-        if (is_dir($formsDir)) {
-            $filesDeleted += $this->removeDirectoryContents($formsDir);
-            rmdir($formsDir);
-        }
-
-        // 4c-ii. Delete form submissions database
-        $submissionsDb = dirname($this->assetsPath) . '/_data/submissions.db';
-        foreach ([$submissionsDb, $submissionsDb . '-journal', $submissionsDb . '-wal', $submissionsDb . '-shm'] as $dbFile) {
-            if (file_exists($dbFile)) {
-                @unlink($dbFile);
-                $filesDeleted++;
-            }
-        }
-
-        // ── 4d. Delete published root-level files ──
-        // When a site is published, pages and AEO files are copied to the
-        // document root. We must clean those up too, otherwise the old
-        // published site keeps showing after a reset.
-        $rootDir = dirname($this->assetsPath);  // project root
-
-        // Published PHP page files (index.php, about.php, etc.)
-        // Keep only shipped core files that are NOT AI-generated.
-        $shippedRootFiles = ['submit.php', 'LocalValetDriver.php'];
-        $rootPhpFiles = glob($rootDir . '/*.php') ?: [];
-        foreach ($rootPhpFiles as $file) {
-            $basename = basename($file);
-            if (!in_array($basename, $shippedRootFiles, true)) {
-                @unlink($file);
-                $pagesDeleted++;
-                $filesDeleted++;
-            }
-        }
-
-        // AEO-generated files
-        $aeoFiles = ['llms.txt', 'robots.txt', 'mcp.php'];
-        foreach ($aeoFiles as $aeoFile) {
-            $aeoPath = $rootDir . '/' . $aeoFile;
-            if (file_exists($aeoPath)) {
-                @unlink($aeoPath);
-                $filesDeleted++;
-            }
-        }
-
-        // ── Agentic files ──
-        // Published actions files at root
-        $actionsPublished = $rootDir . '/actions';
-        if (is_dir($actionsPublished)) {
-            $filesDeleted += $this->removeDirectoryContents($actionsPublished);
-            @rmdir($actionsPublished);
-        }
-
-        // Published actions-bar assets at root
-        foreach (['actions-bar.js', 'actions-bar.css'] as $barFile) {
-            $barPath = $rootDir . '/' . $barFile;
-            if (file_exists($barPath)) {
-                @unlink($barPath);
-                $filesDeleted++;
-            }
-        }
-
-        // Actions database
-        $actionsDb = $rootDir . '/_data/actions.db';
-        foreach ([$actionsDb, $actionsDb . '-journal', $actionsDb . '-wal', $actionsDb . '-shm'] as $dbFile) {
-            if (file_exists($dbFile)) {
-                @unlink($dbFile);
-                $filesDeleted++;
-            }
-        }
-
-        // Action definitions (user-created data in _studio/data/actions/)
-        $actionsDataDir = dirname(__DIR__) . '/data/actions';
-        if (is_dir($actionsDataDir)) {
-            $filesDeleted += $this->removeDirectoryContents($actionsDataDir);
-        }
-
-        // Published _partials/ at root
-        $rootPartials = $rootDir . '/_partials';
-        if (is_dir($rootPartials)) {
-            $filesDeleted += $this->removeDirectoryContents($rootPartials);
-        }
-
-        // 5. Clear revision snapshot files
-        $revisionsDir = dirname(__DIR__) . '/revisions';
-        if (is_dir($revisionsDir)) {
-            $this->removeDirectoryContents($revisionsDir);
-        }
-
-        // 5b. Remove publish manifest so stale file deletions don't apply to a fresh site.
-        $publishManifest = dirname(__DIR__) . '/data/published-manifest.json';
-        if (file_exists($publishManifest)) {
-            unlink($publishManifest);
-            $filesDeleted++;
-        }
-
-        // 5c. Clear snapshot zip files
-        $snapshotsDataDir = dirname(__DIR__) . '/data/snapshots';
-        if (is_dir($snapshotsDataDir)) {
-            $filesDeleted += $this->removeDirectoryContents($snapshotsDataDir);
-        }
-
-        // 5d. Clear collection data (keep _schema/ which defines the collection structure)
-        $collectionsDir = dirname(__DIR__) . '/data/collections';
-        if (is_dir($collectionsDir)) {
-            $items = new \DirectoryIterator($collectionsDir);
-            foreach ($items as $item) {
-                if ($item->isDot()) continue;
-                if ($item->getFilename() === '_schema') continue; // preserve schema definitions
-                $itemPath = $item->getPathname();
-                if ($item->isDir()) {
-                    $filesDeleted += $this->removeDirectoryContents($itemPath);
-                    @rmdir($itemPath);
-                } else {
-                    @unlink($itemPath);
-                    $filesDeleted++;
-                }
-            }
-        }
-
-        // 6. Clear database tables (preserve users, sessions, settings, prompt_log)
-        // prompt_log is usage accounting — it persists across design switches
-        // and site resets. Only "Reset installation" (which deletes the entire
-        // database file) wipes it.
-        $tablesToClear = ['pages', 'conversations', 'revisions', 'snapshots', 'collections'];
-        foreach ($tablesToClear as $table) {
-            $this->db->exec("DELETE FROM {$table}");
-        }
-
-        // Messages are in conversations via foreign key, but clear explicitly
-        // in case FK cascade isn't set up
-        try {
-            $this->db->exec("DELETE FROM messages");
-            $tablesToClear[] = 'messages';
-        } catch (\Throwable $e) {
-            // Table may not exist yet
-        }
-
-        // Reset revision pointer so UI/undo state can't point to deleted revisions.
-        $settings = new Settings($this->db);
-        $settings->set('revision_pointer', 0);
-
-        // Restore the shipped default landing page (shows site name + tagline).
-        // The AI-generated index.php overwrites this on publish; we restore it on reset.
-        $shippedDefault = dirname(__DIR__) . '/data/default-index.php';
-        if (file_exists($shippedDefault)) {
-            @copy($shippedDefault, $rootDir . '/index.php');
-        }
-
-        return [
-            'pages_deleted'  => $pagesDeleted,
-            'files_deleted'  => $filesDeleted,
-            'tables_cleared' => $tablesToClear,
-        ];
+        throw new \VoxelSite\Agent\OperationException('approval_required',
+            'Prepare an exact site reset review and approve it from the owner account in Studio.');
     }
 
     /**
@@ -2495,6 +2318,7 @@ SAFETY;
      */
     private function removeDirectoryContents(string $dir): int
     {
+        SiteWorkspace::inventory($dir);
         $count = 0;
         $items = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
@@ -2602,26 +2426,7 @@ SAFETY;
             throw new RuntimeException("Cannot encode merged JSON for: {$relativePath}");
         }
 
-        // Ensure parent directory exists
-        $dir = dirname($absolutePath);
-        if (!is_dir($dir)) {
-            if (!mkdir($dir, 0755, true)) {
-                throw new RuntimeException("Cannot create directory: {$dir}");
-            }
-        }
-
-        $tmpPath = $absolutePath . '.tmp.' . getmypid();
-        $result = file_put_contents($tmpPath, $encoded . "\n");
-
-        if ($result === false) {
-            @unlink($tmpPath);
-            throw new RuntimeException("Cannot write merged file: {$relativePath}");
-        }
-
-        if (!rename($tmpPath, $absolutePath)) {
-            @unlink($tmpPath);
-            throw new RuntimeException("Cannot finalize merged file: {$relativePath}");
-        }
+        $this->writeResolvedFile($relativePath, $encoded . "\n");
     }
 
     /**
@@ -2638,75 +2443,35 @@ SAFETY;
     {
         $normalizedPath = $this->normalizeRelativePath($relativePath);
 
-        // Keep both the raw (logical) and realpath-resolved bases.
-        // Logical paths work across symlink boundaries; resolved paths
-        // serve as a secondary safety net.
-        $previewBase  = $this->previewPath;
-        $assetsBase   = $this->assetsPath;
-        $promptsBase  = $this->promptsPath;
-        $customBase   = $this->customPromptsPath;
-
-        if (str_starts_with($normalizedPath, 'assets/')) {
-            $assetRelativePath = substr($normalizedPath, strlen('assets/'));
-            if ($assetRelativePath === '') {
-                throw new RuntimeException("Invalid file path: {$relativePath}");
-            }
-            $baseDir = $assetsBase;
-            $absolutePath = rtrim($assetsBase, '/\\') . '/' . $assetRelativePath;
-        } elseif (str_starts_with($normalizedPath, '_prompts/')) {
-            $promptRelativePath = substr($normalizedPath, strlen('_prompts/'));
-            if ($promptRelativePath === '') {
-                throw new RuntimeException("Invalid file path: {$relativePath}");
-            }
-            
-            // Core fallback logic for updater overwrite protection
-            if ($forWrite) {
-                // Always write to custom_prompts directory so updater doesn't kill modifications
-                $baseDir = $customBase;
-                $absolutePath = rtrim($customBase, '/\\') . '/' . $promptRelativePath;
-                $dir = dirname($absolutePath);
-                if (!is_dir($dir)) {
-                    mkdir($dir, 0755, true);
-                }
-            } else {
-                // Read from custom_prompts if exists, otherwise fallback to vanilla prompts
-                $customPath = rtrim($customBase, '/\\') . '/' . $promptRelativePath;
-                if (is_file($customPath)) {
-                    $baseDir = $customBase;
-                    $absolutePath = $customPath;
-                } else {
-                    $baseDir = $promptsBase;
-                    $absolutePath = rtrim($promptsBase, '/\\') . '/' . $promptRelativePath;
-                }
-            }
-        } else {
-            $baseDir = $previewBase;
-            $absolutePath = rtrim($previewBase, '/\\') . '/' . $normalizedPath;
+        if (!str_starts_with($normalizedPath, '_prompts/')) {
+            return $this->workspace->resolveDraft($normalizedPath, $forWrite);
         }
+        $prompt = substr($normalizedPath, strlen('_prompts/'));
+        $custom = SiteWorkspace::resolveWithin($this->customPromptsPath, $prompt);
+        return $forWrite || is_file($custom) ? $custom : SiteWorkspace::resolveWithin($this->promptsPath, $prompt);
+    }
 
-        $parentDir = dirname($absolutePath);
-        $existingParent = $this->findExistingParentDirectory($parentDir);
-        if ($existingParent === null) {
-            throw new RuntimeException("Cannot resolve directory for: {$relativePath}");
-        }
+    /** Explicit publish/action paths are server-owned roots, never user paths. */
+    private function resolveDeploymentPath(string $root, string $relative): string
+    {
+        $canonical = realpath($root);
+        if ($canonical === $this->workspace->draftRoot()) return $this->workspace->resolveDraft($relative, true);
+        if ($canonical === $this->workspace->publishedRoot()) return $this->workspace->resolvePublished($relative, true);
+        throw new RuntimeException('Deployment target is outside the configured workspace.');
+    }
 
-        // 1) Logical (symlink-safe) containment check — works even when
-        //    symlinks make realpath() resolve to a different mount.
-        if ($this->pathWithinBase($existingParent, $baseDir)) {
-            return $absolutePath;
-        }
+    /** Hold the same lock around a shared service's file and page projection changes. */
+    public function mutationLock(): SiteMutationLock
+    {
+        $lock = SiteMutationLock::acquire($this->workspace->mutationLockPath(), $this->db);
+        $this->workspace->assertReady();
+        return $lock;
+    }
 
-        // 2) Fallback: realpath()-based containment for non-symlink setups
-        $realParent = realpath($existingParent);
-        $realBase   = realpath($baseDir);
-        if ($realParent !== false && $realBase !== false
-            && $this->pathWithinBase($realParent, $realBase)) {
-            return $absolutePath;
-        }
-
-        throw new RuntimeException(
-            "Security: file path resolves outside allowed directories: {$relativePath}"
-        );
+    public function invalidateDraft(): void
+    {
+        $lock = $this->mutationLock();
+        $this->workspace->invalidateDraft();
     }
 
     private function normalizeRelativePath(string $relativePath): string
@@ -2776,7 +2541,7 @@ SAFETY;
      */
     private function extractTitle(string $filename): ?string
     {
-        $path = $this->previewPath . '/' . $filename;
+        $path = $this->resolvePath($filename);
         if (!file_exists($path)) {
             return null;
         }
@@ -2800,7 +2565,7 @@ SAFETY;
     /** Read only literal $page metadata; never execute PHP to populate the registry. */
     private function extractPageMetadata(string $filename): array
     {
-        $source = @file_get_contents($this->previewPath . '/' . $filename);
+        $source = @file_get_contents($this->resolvePath($filename));
         if ($source === false) { return []; }
         $tokens = array_values(array_filter(token_get_all($source), static fn($t) =>
             !is_array($t) || !in_array($t[0], [T_WHITESPACE,T_COMMENT,T_DOC_COMMENT],true)));

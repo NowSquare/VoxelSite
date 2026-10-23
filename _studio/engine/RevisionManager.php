@@ -33,12 +33,13 @@ class RevisionManager
     public function __construct(
         ?Database $db = null,
         ?Settings $settings = null,
-        ?FileManager $fileManager = null
+        ?FileManager $fileManager = null,
+        ?string $revisionsPath = null
     ) {
         $this->db = $db ?? Database::getInstance();
         $this->settings = $settings ?? new Settings($this->db);
         $this->fileManager = $fileManager ?? new FileManager($this->db);
-        $this->revisionsPath = getenv('VS_TEST_REVISIONS_DIR') ?: dirname(__DIR__) . '/revisions';
+        $this->revisionsPath = $revisionsPath ?? (getenv('VS_TEST_REVISIONS_DIR') ?: dirname(__DIR__) . '/revisions');
     }
 
     /**
@@ -114,8 +115,9 @@ class RevisionManager
      * Record an already applied Site transaction without endangering redo history.
      * The optional callback persists its terminal outcome in the same DB commit.
      */
-    public function recordAppliedRevision(array $operations, string $description, int $userId, array $before, ?callable $onRecorded = null): int
+    public function recordAppliedRevision(array $operations, string $description, int $userId, array $before, ?callable $onRecorded = null, bool $preserveHistory = false): int
     {
+        $lock = SiteMutationLock::acquire(null, $this->db);
         $stage = $this->revisionsPath . '/.pending-site-' . bin2hex(random_bytes(8));
         $committedPath = null;
         $futureIds = [];
@@ -127,7 +129,8 @@ class RevisionManager
                 $path = $operation['path'];
                 if (!array_key_exists($path, $before)) throw new RuntimeException('Missing original revision state: ' . $path);
                 $after = $this->fileManager->readFile($path);
-                if ($after === null) throw new RuntimeException('Cannot capture applied revision: ' . $path);
+                if ($after === null && $operation['action'] !== 'delete') throw new RuntimeException('Cannot capture applied revision: ' . $path);
+                if ($after !== null && $operation['action'] === 'delete') throw new RuntimeException('Deleted revision file still exists: ' . $path);
                 $metadata[] = ['path' => $path, 'action' => $operation['action'], 'had_previous' => $before[$path] !== null];
                 foreach (['before' => $before[$path], 'after' => $after] as $phase => $content) {
                     if ($content === null) continue;
@@ -138,13 +141,35 @@ class RevisionManager
                     }
                 }
             }
-            $id = $this->db->transaction(function () use ($metadata, $description, $userId, $stage, $onRecorded, &$committedPath, &$futureIds) {
+            $id = $this->db->transaction(function () use ($metadata, $description, $userId, $stage, $onRecorded, $preserveHistory, &$committedPath, &$futureIds) {
                 $pointer = $this->normalizePointer();
-                $futureIds = array_column($this->db->query('SELECT id FROM revisions WHERE id > ?', [$pointer]), 'id');
+                $futureIds = array_column($this->db->query('SELECT id FROM revisions WHERE id > ? AND ' . $this->activeRevisionPredicate(), [$pointer]), 'id');
+                if ($preserveHistory) {
+                    if (!$this->hasArchivedBranches()) throw new RuntimeException('Upgrade revision history before restoring a snapshot.');
+                    foreach ($futureIds as $futureId) {
+                        $this->db->insert('agent_archived_revisions', ['revision_id' => $futureId, 'archived_at' => time()]);
+                    }
+                    // Retain the discarded branch as audit history, but remove
+                    // it from pointer navigation and ordinary retention.
+                    $futureIds = [];
+                }
                 $id = $this->db->insert('revisions', ['prompt_log_id' => null, 'user_id' => $userId,
                     'description' => $description, 'files_changed' => json_encode($metadata, JSON_THROW_ON_ERROR), 'created_at' => now()]);
                 $committedPath = $this->revisionsPath . '/' . $id;
-                if (file_exists($committedPath) || !rename($stage, $committedPath)) {
+                // A terminated process can leave the directory renamed while
+                // SQLite rolls back its insert. The newly allocated ID then
+                // repeats. Preserve those unreferenced bytes for inspection
+                // before installing the independently verified current capture.
+                if (is_link($committedPath) || (file_exists($committedPath) && !is_dir($committedPath))) {
+                    $committedPath = null;
+                    throw new RuntimeException('Captured revision destination is unsafe.');
+                }
+                if (is_dir($committedPath) && !rename($committedPath,
+                    $this->revisionsPath . '/.orphan-site-' . $id . '-' . bin2hex(random_bytes(8)))) {
+                    $committedPath = null;
+                    throw new RuntimeException('Cannot preserve interrupted revision capture.');
+                }
+                if (!rename($stage, $committedPath)) {
                     $committedPath = null;
                     throw new RuntimeException('Cannot finalize captured revision.');
                 }
@@ -221,7 +246,7 @@ class RevisionManager
         }
 
         $revision = $this->db->queryOne(
-            'SELECT * FROM revisions WHERE id = ?',
+            'SELECT * FROM revisions WHERE id = ? AND ' . $this->activeRevisionPredicate(),
             [$pointer]
         );
 
@@ -231,7 +256,7 @@ class RevisionManager
 
         $filesRestored = $this->restoreRevisionFiles($revision, 'before', function () use ($pointer) {
             $this->db->update('revisions', ['is_undone' => 1], 'id = ?', [$pointer]);
-            $previous = $this->db->queryOne('SELECT id FROM revisions WHERE id < ? ORDER BY id DESC LIMIT 1', [$pointer]);
+            $previous = $this->db->queryOne('SELECT id FROM revisions WHERE id < ? AND ' . $this->activeRevisionPredicate() . ' ORDER BY id DESC LIMIT 1', [$pointer]);
             $this->settings->set('revision_pointer', $previous ? (int) $previous['id'] : 0);
         });
 
@@ -256,7 +281,7 @@ class RevisionManager
 
         // Find the next revision after the current pointer
         $nextRevision = $this->db->queryOne(
-            'SELECT * FROM revisions WHERE id > ? AND is_undone = 1 ORDER BY id ASC LIMIT 1',
+            'SELECT * FROM revisions WHERE id > ? AND is_undone = 1 AND ' . $this->activeRevisionPredicate() . ' ORDER BY id ASC LIMIT 1',
             [$pointer]
         );
 
@@ -280,6 +305,16 @@ class RevisionManager
     /** Restore exact history bytes; a failed compiler never advances the pointer. */
     private function restoreRevisionFiles(array $revision, string $phase, callable $finalize): array
     {
+        $capturedProjection = null;
+        if ($this->db->scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'agent_revision_projections'")) {
+            $capturedProjection = $this->db->queryOne('SELECT * FROM agent_revision_projections WHERE revision_id = ?', [$revision['id']]);
+        }
+        $designState = null;
+        if ($this->db->scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'agent_revision_design_state'")) {
+            $designState = $this->db->queryOne('SELECT * FROM agent_revision_design_state WHERE revision_id = ?', [$revision['id']]);
+        }
+        $projectionBefore = $capturedProjection === null ? null : $this->db->query('SELECT * FROM pages ORDER BY id');
+        $collectionsBefore = $capturedProjection === null ? null : $this->db->query('SELECT id, index_page_id FROM collections ORDER BY id');
         $files = json_decode($revision['files_changed'], true, 512, JSON_THROW_ON_ERROR);
         $sourceRoot = $this->revisionsPath . '/' . $revision['id'] . '/' . $phase;
         $targets = [];
@@ -311,8 +346,19 @@ class RevisionManager
                 $compiled = $this->fileManager->compileTailwind();
                 if (($compiled['ok'] ?? false) !== true) throw new RuntimeException('Tailwind compilation failed.');
             }
-            $this->db->transaction(function () use ($finalize) {
-                $this->fileManager->syncPageRegistry(true);
+            $this->db->transaction(function () use ($finalize, $capturedProjection, $phase, $designState) {
+                if ($capturedProjection !== null) {
+                    require_once __DIR__ . '/SiteControlSnapshots.php';
+                    $projection = ['pages' => json_decode($capturedProjection[$phase . '_json'], true, 64, JSON_THROW_ON_ERROR)];
+                    if (($capturedProjection[$phase . '_collections_json'] ?? null) !== null) {
+                        $projection['collection_indexes'] = json_decode($capturedProjection[$phase . '_collections_json'], true, 64, JSON_THROW_ON_ERROR);
+                    }
+                    \scRestoreProjection($this->db, $projection);
+                } else $this->fileManager->syncPageRegistry(true);
+                if ($designState !== null) {
+                    if ($designState[$phase . '_design_id'] === null) $this->settings->delete('active_design_id');
+                    else $this->settings->set('active_design_id', $designState[$phase . '_design_id']);
+                }
                 $finalize();
             });
         } catch (\Throwable $error) {
@@ -326,7 +372,12 @@ class RevisionManager
                     if ($this->fileManager->readFile($path) !== $originals[$path]) throw new RuntimeException('Unverified restore');
                 } catch (\Throwable) { $remaining[] = $path; }
             }
-            try { $this->fileManager->syncPageRegistry(true); } catch (\Throwable) { $remaining[] = 'page registry'; }
+            try {
+                if ($projectionBefore !== null) {
+                    require_once __DIR__ . '/SiteControlSnapshots.php';
+                    \scRestoreProjection($this->db, ['pages' => $projectionBefore, 'collection_indexes' => $collectionsBefore]);
+                } else $this->fileManager->syncPageRegistry(true);
+            } catch (\Throwable) { $remaining[] = 'page registry'; }
             $this->settings = new Settings($this->db);
             throw new RuntimeException($error->getMessage() . ($remaining === []
                 ? ' The previous files were restored and verified; history did not move.'
@@ -345,15 +396,15 @@ class RevisionManager
         $pointer = $this->normalizePointer();
 
         $undoRevision = $pointer > 0
-            ? $this->db->queryOne('SELECT description FROM revisions WHERE id = ?', [$pointer])
+            ? $this->db->queryOne('SELECT description FROM revisions WHERE id = ? AND ' . $this->activeRevisionPredicate(), [$pointer])
             : null;
 
         $redoRevision = $this->db->queryOne(
-            'SELECT description FROM revisions WHERE id > ? AND is_undone = 1 ORDER BY id ASC LIMIT 1',
+            'SELECT description FROM revisions WHERE id > ? AND is_undone = 1 AND ' . $this->activeRevisionPredicate() . ' ORDER BY id ASC LIMIT 1',
             [$pointer]
         );
 
-        $total = (int) $this->db->scalar('SELECT COUNT(*) FROM revisions');
+        $total = (int) $this->db->scalar('SELECT COUNT(*) FROM revisions WHERE ' . $this->activeRevisionPredicate());
 
         return [
             'can_undo'         => $undoRevision !== null,
@@ -377,7 +428,7 @@ class RevisionManager
 
         // Find revisions to delete
         $futureRevisions = $this->db->query(
-            'SELECT id FROM revisions WHERE id > ?',
+            'SELECT id FROM revisions WHERE id > ? AND ' . $this->activeRevisionPredicate(),
             [$pointer]
         );
 
@@ -386,7 +437,7 @@ class RevisionManager
             $this->removeDir($revPath);
         }
 
-        $this->db->delete('revisions', 'id > ?', [$pointer]);
+        $this->db->delete('revisions', 'id > ? AND ' . $this->activeRevisionPredicate(), [$pointer]);
     }
 
     /**
@@ -395,7 +446,7 @@ class RevisionManager
     private function pruneOldRevisions(): void
     {
         $maxRevisions = (int) $this->settings->get('max_revisions', 100);
-        $total = (int) $this->db->scalar('SELECT COUNT(*) FROM revisions');
+        $total = (int) $this->db->scalar('SELECT COUNT(*) FROM revisions WHERE ' . $this->activeRevisionPredicate());
 
         if ($total <= $maxRevisions) {
             return;
@@ -403,7 +454,7 @@ class RevisionManager
 
         $excess = $total - $maxRevisions;
         $oldRevisions = $this->db->query(
-            'SELECT id FROM revisions ORDER BY id ASC LIMIT ?',
+            'SELECT id FROM revisions WHERE ' . $this->activeRevisionPredicate() . ' ORDER BY id ASC LIMIT ?',
             [$excess]
         );
 
@@ -424,14 +475,14 @@ class RevisionManager
         $pointer = (int) $this->settings->get('revision_pointer', 0);
 
         if ($pointer > 0) {
-            $exists = $this->db->queryOne('SELECT id FROM revisions WHERE id = ?', [$pointer]);
+            $exists = $this->db->queryOne('SELECT id FROM revisions WHERE id = ? AND ' . $this->activeRevisionPredicate(), [$pointer]);
             if ($exists !== null) {
                 return $pointer;
             }
         }
 
         $fallback = $this->db->queryOne(
-            'SELECT id FROM revisions WHERE is_undone = 0 ORDER BY id DESC LIMIT 1'
+            'SELECT id FROM revisions WHERE is_undone = 0 AND ' . $this->activeRevisionPredicate() . ' ORDER BY id DESC LIMIT 1'
         );
         $normalized = $fallback ? (int) $fallback['id'] : 0;
 
@@ -440,6 +491,18 @@ class RevisionManager
         }
 
         return $normalized;
+    }
+
+    private function hasArchivedBranches(): bool
+    {
+        return (bool) $this->db->scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'agent_archived_revisions'");
+    }
+
+    private function activeRevisionPredicate(): string
+    {
+        return $this->hasArchivedBranches()
+            ? 'NOT EXISTS (SELECT 1 FROM agent_archived_revisions archived WHERE archived.revision_id = revisions.id)'
+            : '1 = 1';
     }
 
     /**

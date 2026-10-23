@@ -1,103 +1,30 @@
 <?php
-
 declare(strict_types=1);
-
-/**
- * Revisions (Undo/Redo) API Endpoints
- *
- * POST /revisions/undo  — Undo current revision
- * POST /revisions/redo  — Redo next revision
- * GET  /revisions/state — Get undo/redo state
- * GET  /revisions/list  — List recent revisions
- */
-
-use VoxelSite\RevisionManager;
-use VoxelSite\Database;
-
-$method = $_REQUEST['_route_method'];
-$path = $_REQUEST['_route_path'];
-
-$revisionManager = new RevisionManager();
-
-// ═══════════════════════════════════════════
-//  POST /revisions/undo
-// ═══════════════════════════════════════════
-
-if ($method === 'POST' && $path === '/revisions/undo') {
-    $result = $revisionManager->undo();
-
-    if ($result === null) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'nothing_to_undo',
-            'message' => 'Nothing to undo.',
-        ]], 400);
-        return;
+use VoxelSite\{Database, SiteWorkspace, WebsiteHistoryService};
+use VoxelSite\Agent\{OperationActor, OperationException};
+$method = $_REQUEST['_route_method']; $path = $_REQUEST['_route_path'];
+$db = Database::getInstance();
+$history = new WebsiteHistoryService($db, new SiteWorkspace($db));
+$actor = new OperationActor('user', (int) ($_REQUEST['_user']['id'] ?? 0), null, [], 'studio_configured', null);
+try {
+    if ($method === 'GET' && $path === '/revisions/state') {
+        jsonResponse(['ok' => true, 'data' => $history->revisions->state($actor)]); return;
     }
-
-    jsonResponse(['ok' => true, 'data' => $result]);
-    return;
-}
-
-// ═══════════════════════════════════════════
-//  POST /revisions/redo
-// ═══════════════════════════════════════════
-
-if ($method === 'POST' && $path === '/revisions/redo') {
-    $result = $revisionManager->redo();
-
-    if ($result === null) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'nothing_to_redo',
-            'message' => 'Nothing to redo.',
-        ]], 400);
-        return;
+    if ($method === 'GET' && $path === '/revisions/list') {
+        $input = ['limit' => isset($_GET['limit']) ? (int) $_GET['limit'] : 20];
+        if (isset($_GET['offset'])) $input['offset'] = (int) $_GET['offset'];
+        if (isset($_GET['head_version'])) $input['head_version'] = $_GET['head_version'];
+        jsonResponse(['ok' => true, 'data' => $history->revisions->list($actor, (object) $input)]); return;
     }
-
-    jsonResponse(['ok' => true, 'data' => $result]);
-    return;
-}
-
-// ═══════════════════════════════════════════
-//  GET /revisions/state
-// ═══════════════════════════════════════════
-
-if ($method === 'GET' && $path === '/revisions/state') {
-    $state = $revisionManager->getState();
-    jsonResponse(['ok' => true, 'data' => $state]);
-    return;
-}
-
-// ═══════════════════════════════════════════
-//  GET /revisions/list
-// ═══════════════════════════════════════════
-
-if ($method === 'GET' && $path === '/revisions/list') {
-    $db = Database::getInstance();
-    $limit = min(50, max(1, (int)($_GET['limit'] ?? 20)));
-
-    $revisions = $db->query(
-        "SELECT id, description, files_changed, is_undone, created_at
-         FROM revisions
-         ORDER BY created_at DESC
-         LIMIT ?",
-        [$limit]
-    );
-
-    // Decode files_changed JSON for the frontend
-    foreach ($revisions as &$rev) {
-        $rev['files_changed'] = json_decode($rev['files_changed'], true);
+    if ($method === 'POST' && in_array($path, ['/revisions/undo', '/revisions/redo'], true)) {
+        $result = $history->revision($actor, basename($path), getJsonBody());
+        $ok = in_array($result['status'], ['applying', 'succeeded'], true);
+        jsonResponse(['ok' => $ok, 'data' => ($result['result'] ?? []) + ['operation' => $result],
+            'error' => $ok ? null : ($result['result']['error'] ?? ['code' => $result['status'], 'message' => 'This revision operation needs attention.'])],
+            $result['status'] === 'applying' ? 202 : ($ok ? 200 : 409)); return;
     }
-
-    $state = $revisionManager->getState();
-
-    jsonResponse(['ok' => true, 'data' => [
-        'revisions' => $revisions,
-        'state'     => $state,
-    ]]);
-    return;
+    jsonResponse(['ok' => false, 'error' => ['code' => 'not_found', 'message' => 'Revisions endpoint not found.']], 404);
+} catch (OperationException $error) {
+    jsonResponse(['ok' => false, 'error' => ['code' => $error->errorCode, 'message' => $error->getMessage(), 'details' => $error->details]],
+        $error->errorCode === 'permission_denied' ? 403 : 409);
 }
-
-jsonResponse(['ok' => false, 'error' => [
-    'code'    => 'not_found',
-    'message' => 'Revisions endpoint not found.',
-]], 404);

@@ -25,8 +25,7 @@ class SiteContext
     private Database $db;
     private Settings $settings;
     private FileManager $fileManager;
-    private string $previewPath;
-    private string $assetsPath;
+    private ?array $imageLibrary = null;
 
     public function __construct(
         ?Database $db = null,
@@ -36,8 +35,6 @@ class SiteContext
         $this->db = $db ?? Database::getInstance();
         $this->settings = $settings ?? new Settings($this->db);
         $this->fileManager = $fileManager ?? new FileManager($this->db);
-        $this->previewPath = dirname(__DIR__) . '/preview';
-        $this->assetsPath = dirname(__DIR__, 2) . '/assets';
     }
 
     /**
@@ -586,19 +583,19 @@ class SiteContext
         $assets = [];
 
         // Scan image directories
-        $imageDir = $this->assetsPath . '/images';
+        $imageDir = $this->fileManager->workspace()->resolveDraft('assets/images');
         if (is_dir($imageDir)) {
             $this->scanDirectory($imageDir, '/assets/images', $assets);
         }
 
         // Scan file directories
-        $fileDir = $this->assetsPath . '/files';
+        $fileDir = $this->fileManager->workspace()->resolveDraft('assets/files');
         if (is_dir($fileDir)) {
             $this->scanDirectory($fileDir, '/assets/files', $assets);
         }
 
         // Scan font directories
-        $fontDir = $this->assetsPath . '/fonts';
+        $fontDir = $this->fileManager->workspace()->resolveDraft('assets/fonts');
         if (is_dir($fontDir)) {
             $this->scanDirectory($fontDir, '/assets/fonts', $assets);
         }
@@ -630,7 +627,7 @@ class SiteContext
      */
     private function buildIconList(): ?string
     {
-        $iconDir = $this->assetsPath . '/icons';
+        $iconDir = $this->fileManager->workspace()->resolveDraft('assets/icons');
         if (!is_dir($iconDir)) {
             return null;
         }
@@ -643,7 +640,7 @@ class SiteContext
 
         foreach ($files as $file) {
             if (!str_starts_with($file, '.') && str_ends_with($file, '.svg')) {
-                $count++;
+                if (is_file($this->fileManager->workspace()->resolveDraft('assets/icons/' . $file))) $count++;
             }
         }
 
@@ -667,7 +664,7 @@ class SiteContext
      */
     private function buildDataLayer(): ?string
     {
-        $dataDir = $this->assetsPath . '/data';
+        $dataDir = $this->fileManager->workspace()->resolveDraft('assets/data');
         if (!is_dir($dataDir)) {
             return null;
         }
@@ -691,8 +688,8 @@ class SiteContext
                 continue;
             }
 
-            $content = @file_get_contents($dataDir . '/' . $file);
-            if ($content === false) {
+            $content = $this->fileManager->readFile('assets/data/' . $file);
+            if ($content === null) {
                 continue;
             }
 
@@ -1044,7 +1041,7 @@ class SiteContext
                 continue;
             }
 
-            $fullPath = $dir . '/' . $item;
+            $fullPath = $this->fileManager->workspace()->resolveDraft(ltrim($webPrefix . '/' . $item, '/'));
 
             if (is_file($fullPath)) {
                 $size = filesize($fullPath);
@@ -1082,7 +1079,7 @@ class SiteContext
      */
     private function buildFormSchemas(): ?string
     {
-        $formsDir = dirname($this->assetsPath, 1) . '/assets/forms';
+        $formsDir = $this->fileManager->workspace()->resolveDraft('assets/forms');
         if (!is_dir($formsDir)) {
             return null;
         }
@@ -1098,8 +1095,8 @@ class SiteContext
                 continue;
             }
 
-            $content = @file_get_contents($formsDir . '/' . $file);
-            if ($content === false) {
+            $content = $this->fileManager->readFile('assets/forms/' . $file);
+            if ($content === null) {
                 continue;
             }
 
@@ -1134,8 +1131,8 @@ class SiteContext
      */
     private function buildDataDependencies(): ?string
     {
-        $formsDir = dirname($this->assetsPath, 1) . '/assets/forms';
-        $dataDir  = $this->assetsPath . '/data';
+        $formsDir = $this->fileManager->workspace()->resolveDraft('assets/forms');
+        $dataDir = $this->fileManager->workspace()->resolveDraft('assets/data');
 
         $hasForms = is_dir($formsDir) && !empty(glob($formsDir . '/*.json'));
         $hasData  = is_dir($dataDir)  && !empty(glob($dataDir . '/*.json'));
@@ -1199,7 +1196,7 @@ class SiteContext
      */
     private function scanFormDataDependencies(): array
     {
-        $formsDir = dirname($this->assetsPath, 1) . '/assets/forms';
+        $formsDir = $this->fileManager->workspace()->resolveDraft('assets/forms');
         $files = @glob($formsDir . '/*.json');
         if ($files === false || empty($files)) {
             return [];
@@ -1207,8 +1204,8 @@ class SiteContext
 
         $deps = [];
         foreach ($files as $file) {
-            $content = @file_get_contents($file);
-            if ($content === false) continue;
+            $content = $this->fileManager->readFile('assets/forms/' . basename($file));
+            if ($content === null) continue;
 
             $schema = json_decode($content, true);
             if (!is_array($schema) || empty($schema['fields'])) continue;
@@ -1242,28 +1239,34 @@ class SiteContext
      */
     private function scanPageDataDependencies(): array
     {
-        $previewDir = $this->previewPath;
-        if (!is_dir($previewDir)) {
-            return [];
-        }
-
-        $phpFiles = @glob($previewDir . '/*.php');
-        if ($phpFiles === false || empty($phpFiles)) {
-            return [];
-        }
-
-        $pattern = '/file_get_contents\s*\(\s*__DIR__\s*\.\s*[\'"]\\/?assets\/data\/([^\'\"]+)[\'"]/';
+        $phpFiles = $this->fileManager->listPreviewFilesRecursive();
+        $pattern = '~file_get_contents\s*\(\s*(__DIR__|dirname\(__DIR__(?:,\s*([1-9]))?\))\s*\.\s*([\'"])(.*?)\3~s';
 
         $deps = [];
         foreach ($phpFiles as $file) {
-            $content = @file_get_contents($file);
-            if ($content === false) continue;
+            $pageName = $file['path'];
+            $content = $this->fileManager->readFile($pageName);
+            if ($content === null) continue;
 
-            if (preg_match_all($pattern, $content, $matches)) {
-                $pageName = basename($file);
-                $deps[$pageName] = [];
-                foreach ($matches[1] as $dataFile) {
-                    $deps[$pageName][] = 'assets/data/' . $dataFile;
+            if (preg_match_all($pattern, $content, $matches, PREG_SET_ORDER)) {
+                foreach ($matches as $match) {
+                    $directories = explode('/', $pageName); array_pop($directories);
+                    if ($match[1] !== '__DIR__') {
+                        $levels = (int) ($match[2] ?: 1);
+                        if ($levels > count($directories)) continue;
+                        $directories = array_slice($directories, 0, count($directories) - $levels);
+                    }
+                    $directory = implode('/', $directories);
+                    $parts = [];
+                    foreach (explode('/', $directory . '/' . ltrim($match[4], '/')) as $part) {
+                        if ($part === '' || $part === '.') continue;
+                        if ($part === '..') { if (!$parts) continue 2; array_pop($parts); }
+                        else $parts[] = $part;
+                    }
+                    $dataFile = implode('/', $parts);
+                    if (str_starts_with($dataFile, 'assets/data/') && str_ends_with($dataFile, '.json')) {
+                        $deps[$pageName][] = $dataFile;
+                    }
                 }
             }
         }
@@ -1282,8 +1285,6 @@ class SiteContext
      */
     private function getAEODependencies(): array
     {
-        $dataDir = $this->assetsPath . '/data';
-
         // Mapping: data file → public files it feeds
         $mapping = [
             'site.json'         => 'llms.txt, schema.php, mcp.php, robots.txt',
@@ -1294,7 +1295,7 @@ class SiteContext
 
         $deps = [];
         foreach ($mapping as $file => $targets) {
-            if (file_exists($dataDir . '/' . $file)) {
+            if ($this->fileManager->readFile('assets/data/' . $file) !== null) {
                 $deps[] = [
                     'source'  => 'assets/data/' . $file,
                     'targets' => $targets,
@@ -1359,9 +1360,9 @@ class SiteContext
 
         // ── Read bar settings to provide accurate coexistence guidance ──
         $barSettings = [];
-        $siteJsonPath = dirname(__DIR__) . '/assets/data/site.json';
-        if (file_exists($siteJsonPath)) {
-            $siteData = json_decode((string) @file_get_contents($siteJsonPath), true);
+        $siteJson = $this->fileManager->readFile('assets/data/site.json');
+        if ($siteJson !== null) {
+            $siteData = json_decode($siteJson, true);
             $barSettings = $siteData['actions_bar'] ?? [];
         }
         // Mirror the runtime order: theme || position || 'bottom-bar' (actions-bar.js:225)
@@ -1417,13 +1418,8 @@ class SiteContext
      */
     private function buildSiteMemory(): ?string
     {
-        $memoryPath = $this->assetsPath . '/data/memory.json';
-        if (!is_file($memoryPath)) {
-            return null;
-        }
-
-        $content = @file_get_contents($memoryPath);
-        if ($content === false || trim($content) === '' || trim($content) === '{}') {
+        $content = $this->fileManager->readFile('assets/data/memory.json');
+        if ($content === null || trim($content) === '' || trim($content) === '{}') {
             return null;
         }
 
@@ -1443,13 +1439,8 @@ class SiteContext
      */
     private function buildDesignIntelligence(): ?string
     {
-        $diPath = $this->assetsPath . '/data/design-intelligence.json';
-        if (!is_file($diPath)) {
-            return null;
-        }
-
-        $content = @file_get_contents($diPath);
-        if ($content === false || trim($content) === '' || trim($content) === '{}') {
+        $content = $this->fileManager->readFile('assets/data/design-intelligence.json');
+        if ($content === null || trim($content) === '' || trim($content) === '{}') {
             return null;
         }
 
@@ -1488,6 +1479,7 @@ class SiteContext
 
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
             if (!in_array($ext, $allowedExtensions, true)) continue;
+            if (!is_file(SiteWorkspace::resolveWithin($dir, $file))) continue;
 
             $basename = pathinfo($file, PATHINFO_FILENAME);
             $segments = explode('_', $basename);
@@ -1530,11 +1522,11 @@ class SiteContext
      */
     private function getImageLibrary(): array
     {
-        static $library = null;
+        $library = &$this->imageLibrary;
 
         if ($library === null) {
-            $bgDir  = $this->assetsPath . '/library/backgrounds';
-            $galDir = $this->assetsPath . '/library/gallery';
+            $bgDir  = $this->fileManager->workspace()->resolveDraft('assets/library/backgrounds');
+            $galDir = $this->fileManager->workspace()->resolveDraft('assets/library/gallery');
 
             // 1. Scan local filesystem (existing behavior — tenant additions)
             $localBackgrounds = $this->scanImageDirectory($bgDir, 'vs-bg');
@@ -1543,11 +1535,10 @@ class SiteContext
             // 2. Check for library.json (VoxelSwarm remote library)
             $remoteBackgrounds = [];
             $remoteGallery     = [];
-            $jsonPath = $this->assetsPath . '/library.json';
+            $raw = $this->fileManager->readFile('assets/library.json');
 
-            if (file_exists($jsonPath)) {
-                $raw = @file_get_contents($jsonPath);
-                $manifest = $raw !== false ? json_decode($raw, true) : null;
+            if ($raw !== null) {
+                $manifest = json_decode($raw, true);
 
                 if ($manifest && !empty($manifest['images'])) {
                     $baseUrl = rtrim($manifest['base_url'] ?? '', '/');

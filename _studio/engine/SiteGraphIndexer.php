@@ -28,7 +28,7 @@ class SiteGraphIndexer
     /** @var array<int, string> DB page id → page node ID */
     private array $dbIdToNodeId = [];
 
-    public function __construct(?Database $db = null, ?FileManager $fileManager = null)
+    public function __construct(?Database $db = null, ?FileManager $fileManager = null, private bool $syncRegistry = true)
     {
         $this->db = $db ?? Database::getInstance();
         $this->fileManager = $fileManager ?? new FileManager($this->db);
@@ -71,7 +71,7 @@ class SiteGraphIndexer
     private function indexPagesAndRoutes(SiteGraph $graph): void
     {
         // Ensure page registry is in sync with actual preview files
-        $this->fileManager->syncPageRegistry();
+        if ($this->syncRegistry) $this->fileManager->syncPageRegistry();
 
         $pages = $this->db->query(
             'SELECT id, slug, title, file_path, page_type, nav_order, nav_label, is_homepage, nav_parent_id
@@ -641,7 +641,7 @@ class SiteGraphIndexer
         // Resolve utility consumers through the same compiler that produces
         // the site's CSS. This keeps token aliases, variants and opacity
         // modifiers in one mapping instead of reimplementing Tailwind here.
-        $themePath = (getenv('VS_TEST_ASSETS_DIR') ?: dirname(__DIR__, 2) . '/assets') . '/css';
+        $themePath = $this->fileManager->workspace()->resolveDraft('assets/css');
         $compiler = new TailwindCompiler($themePath);
 
         // Scan literal var() references and compiled utility declarations.

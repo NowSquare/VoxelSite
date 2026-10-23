@@ -7,13 +7,6 @@ $root = sys_get_temp_dir() . '/vs-site-route-policy-' . bin2hex(random_bytes(6))
 $checks = 0;
 $failures = [];
 
-function copyFixtureTree(string $from, string $to): void {
-    if (!is_dir($to)) mkdir($to, 0755, true);
-    foreach (scandir($from) as $name) {
-        if ($name === '.' || $name === '..' || is_link($from . '/' . $name)) continue;
-        is_dir($from . '/' . $name) ? copyFixtureTree($from . '/' . $name, $to . '/' . $name) : copy($from . '/' . $name, $to . '/' . $name);
-    }
-}
 function fixturePort(): int {
     $socket = stream_socket_server('tcp://127.0.0.1:0', $number, $message);
     if (!$socket) throw new RuntimeException($message);
@@ -50,15 +43,17 @@ function routeRequest(string $method, string $path, ?array $body = null, bool $a
     if ($body !== null) curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($body));
     $raw = curl_exec($curl);
     if ($raw === false) throw new RuntimeException(curl_error($curl));
-    $status = curl_getinfo($curl, CURLINFO_HTTP_CODE); curl_close($curl);
-    file_put_contents($root . '/http-transcript.jsonl', json_encode(compact('method', 'path', 'body', 'agent', 'status', 'raw')) . "\n", FILE_APPEND);
+    $status = curl_getinfo($curl, CURLINFO_HTTP_CODE); unset($curl);
+    file_put_contents($root . '/http-transcript.jsonl', json_encode(compact('method', 'path', 'body', 'agent', 'status', 'raw'), JSON_INVALID_UTF8_SUBSTITUTE) . "\n", FILE_APPEND);
     return ['status' => $status, 'raw' => $raw, 'json' => json_decode($raw, true)];
 }
 
-foreach (['_studio/engine', '_studio/api', '_studio/worker', '_studio/prompts', '_studio/static', 'vendor'] as $path) {
-    copyFixtureTree($source . '/' . $path, $root . '/' . $path);
+require_once __DIR__ . '/helpers/StudioRuntimeFixture.php';
+mkdir($root, 0700, true);
+\VoxelSite\Tests\StudioRuntimeFixture::copy($root, $source);
+foreach (['_studio/preview/_partials', '_studio/preview/services', 'assets/css', 'assets/js', 'assets/data', '_studio/data'] as $path) {
+    if (!is_dir($root . '/' . $path)) mkdir($root . '/' . $path, 0700, true);
 }
-foreach (['_studio/preview/_partials', '_studio/preview/services', 'assets/css', 'assets/js', 'assets/data', '_studio/data'] as $path) mkdir($root . '/' . $path, 0755, true);
 $providerPort = fixturePort(); $httpPort = fixturePort(); $url = 'http://127.0.0.1:' . $httpPort;
 copy(__DIR__ . '/helpers/site-release-provider.php', $root . '/provider.php');
 $providerSource = file_get_contents($root . '/provider.php');
@@ -108,9 +103,25 @@ $pdo->prepare('INSERT INTO api_keys (key_hash,key_prefix,label,role,scopes,rate_
     hash('sha256', $agentKey), substr($agentKey, 0, 12), 'Route policy fixture', 'owner',
     json_encode(['pages:read', 'pages:write', 'settings:read', 'settings:write', 'tools:invoke', 'compile:trigger', 'prompt:execute']), 1000, gmdate('c')]);
 $pdo->prepare('INSERT OR REPLACE INTO settings (key,value,updated_at) VALUES (?,?,?)')->execute(['agent_api_enabled', 'true', gmdate('c')]);
+$apiId = (int) $pdo->query('SELECT MAX(id) FROM api_keys')->fetchColumn();
+$pdo->prepare('INSERT INTO agent_rest_owners (key_id,user_id,bound_by,bound_at) VALUES (?,?,?,?)')->execute([$apiId, 1, 1, time()]);
 
 try {
     for ($i = 0; $i < 50; $i++) { $socket = @fsockopen('127.0.0.1', $httpPort, $number, $message, .1); if ($socket) { fclose($socket); break; } usleep(20000); }
+    // A real managed published source lets exports prove read availability,
+    // rather than merely reaching an invalid-request branch.
+    $pdo->exec('UPDATE pages SET is_published = 0');
+    $pdo->prepare('INSERT OR REPLACE INTO settings (key,value,updated_at) VALUES (?,?,?)')->execute(['last_published_at', json_encode(gmdate('c')), gmdate('c')]);
+    file_put_contents($root . '/assets/data/site.json', json_encode(['name' => 'Published business during generation']));
+    file_put_contents($root . '/_studio/data/published-manifest.json', json_encode(['files' => ['index.php'],
+        'asset_hashes' => ['assets/css/style.css' => hash_file('sha256', $root . '/assets/css/style.css'),
+            'assets/data/site.json' => hash_file('sha256', $root . '/assets/data/site.json')]]));
+    $exportVersion = routeRequest('GET', '/export')['json']['data']['version'];
+    $draftVersion = routeRequest('GET', '/site/reset')['json']['data']['draft_version'];
+    $resetReview = routeRequest('POST', '/site/reset/prepare', ['operation_id' => 'route-reset-busy', 'base_draft_version' => $draftVersion])['json']['data'];
+    $resetBody = ['plan_id' => $resetReview['plan_id'], 'digest' => $resetReview['digest'], 'confirm' => 'RESET'];
+    $configuration = routeRequest('GET', '/settings')['json']['data'];
+    $settingVersions = ['identity' => $configuration['versions']['identity']];
     $fileBefore = file_get_contents($root . '/_studio/preview/about.php');
     $conversationId = 'route-policy-stale-conversation';
     $oldTime = gmdate('Y-m-d\TH:i:s\Z', time() - 600);
@@ -120,81 +131,97 @@ try {
         $conversationId, 1, 'free_prompt', 'Interrupted Chat fixture', 'openai_compatible', 'fixture-model', 'streaming', $oldTime, $oldTime]);
     $staleJobId = (int) $pdo->lastInsertId();
     $compiledMarker = '/* Existing compiled CSS must not be replaced during another writer. */';
-    file_put_contents($root . '/assets/css/tailwind.css', $compiledMarker);
+    file_put_contents($root . '/_studio/preview/assets/css/tailwind.css', $compiledMarker);
     $lock = fopen($root . '/_studio/data/site-mutation.lock', 'c');
     if (!flock($lock, LOCK_EX | LOCK_NB)) throw new RuntimeException('Cannot establish fixture writer.');
     foreach ([
-        ['POST', '/notes', ['title' => 'While generation runs', 'body' => 'Keep writing notes.'], 201],
-        ['POST', '/cards', ['title' => 'While generation runs'], 201],
+        ['POST', '/notes', ['request_id' => 'route-lock-note-001', 'title' => 'While generation runs', 'body' => 'Keep writing notes.'], 201],
+        ['POST', '/cards', ['request_id' => 'route-lock-card-001', 'title' => 'While generation runs'], 201],
         ['PUT', '/auth/profile', ['name' => 'Fixture owner', 'email' => 'owner@example.test'], 200],
-        ['PUT', '/settings', ['site_tagline' => 'Available during generation'], 200],
+        ['PUT', '/settings', ['operation_id' => 'route-settings-busy', 'versions' => $settingVersions, 'values' => ['site_tagline' => 'Available during generation']], 409],
         ['POST', '/settings/test-api', ['provider' => 'openai', 'api_key' => 'invalid'], 422],
-        ['POST', '/export', ['format' => 'php'], 422],
-        ['POST', '/update/apply-local', ['filename' => ''], 422],
+        ['POST', '/export', ['operation_id' => 'route-export-busy', 'version' => $exportVersion, 'format' => 'php'], 409],
+        ['GET', '/update/inspect', null, 200],
         ['POST', '/ai/cancel-generation', [], 422],
     ] as [$method, $path, $body, $expected]) {
         $response = routeRequest($method, $path, $body);
-        checkRoute($response['status'] === $expected, $method . ' ' . $path . ' remains available while a website writer holds the lock (' . $response['status'] . ')');
+        checkRoute($response['status'] === $expected, $method . ' ' . $path . ' follows its lock policy while a website writer is active (' . $response['status'] . ')');
     }
-    checkRoute(routeRequest('PUT', '/settings', ['site_tagline' => 'Agent available'], true)['status'] === 200, 'Agent settings remain available during a website change');
-    checkRoute(routeRequest('POST', '/tools/invoke', ['name' => 'get_business_info', 'arguments' => []], true)['status'] === 200, 'Agent read-only tool invocation remains available during a website change');
-    foreach ([['PUT', '/files/content', ['path' => 'about.php', 'content' => 'must not write']],
-        ['POST', '/site-control/page-rename', ['pageId' => 'page:about.php', 'newTitle' => 'Must not rename']],
-        ['POST', '/publish', []], ['POST', '/revisions/undo', []], ['POST', '/snapshots', ['label' => 'Must wait']],
-        ['POST', '/site/reset', ['confirm' => 'RESET']], ['POST', '/site/reset-install', ['confirm' => 'RESET INSTALLATION']]] as [$method, $path, $body]) {
+    checkRoute(routeRequest('PUT', '/settings', ['operation_id' => 'route-rest-settings-busy', 'versions' => $settingVersions, 'values' => ['site_tagline' => 'Agent available']], true)['status'] === 409, 'Retained REST configuration is serialized by the common lock');
+    $business = routeRequest('POST', '/tools/invoke', ['name' => 'get_business_info', 'arguments' => (object) []], true);
+    checkRoute($business['status'] === 200 && ($business['json']['data']['name'] ?? null) === 'Published business during generation',
+        'Agent read-only tool invocation returns published information during a website change');
+    $draftVersion = routeRequest('GET', '/site/reset')['json']['data']['draft_version'];
+    foreach ([['PUT', '/files/content', ['operation_id' => 'route-file-blocked', 'base_draft_version' => $draftVersion, 'expected_content_sha256' => hash('sha256', $fileBefore), 'path' => 'about.php', 'content' => 'must not write']],
+        ['POST', '/site-control/page-rename', ['operation_id' => 'route-rename-blocked', 'base_draft_version' => $draftVersion, 'pageId' => 'page:about.php', 'newTitle' => 'Must not rename']],
+        ['POST', '/publish', ['operation_id' => 'route-publish-blocked']], ['POST', '/revisions/undo', ['operation_id' => 'route-undo-blocked']], ['POST', '/snapshots', ['operation_id' => 'route-snapshot-busy', 'domain' => 'draft', 'label' => 'Must wait']],
+        ['POST', '/site/reset', $resetBody], ['POST', '/site/reset-install/prepare', ['operation_id' => 'route-factory-busy', 'base_draft_version' => $draftVersion]]] as [$method, $path, $body]) {
         checkRoute(routeRequest($method, $path, $body)['status'] === 409, $method . ' ' . $path . ' remains serialized against the active website writer');
     }
-    checkRoute(routeRequest('POST', '/compile', [], true)['status'] === 409, 'Agent Tailwind writes remain serialized');
+    checkRoute(routeRequest('POST', '/compile', ['operation_id' => 'route-compile-blocked', 'base_draft_version' => $draftVersion], true)['status'] === 409, 'Agent Tailwind writes remain serialized');
     $approval = routeRequest('POST', '/governor/pending/fixture/approve', ['reason' => 'Reviewed fixture heading']);
     checkRoute(($approval['json']['error']['code'] ?? '') === 'site_busy', 'Owner heading approval shares the website lock before candidate lookup');
     $history = routeRequest('GET', '/ai/conversations/' . $conversationId);
-    checkRoute($history['status'] === 200 && file_get_contents($root . '/assets/css/tailwind.css') === $compiledMarker,
+    checkRoute($history['status'] === 200 && file_get_contents($root . '/_studio/preview/assets/css/tailwind.css') === $compiledMarker,
         'Reading interrupted Chat history stays available without compiling over an active website writer');
     checkRoute(file_get_contents($root . '/_studio/preview/about.php') === $fileBefore, 'Blocked website writes preserve the actual page bytes');
     checkRoute(routeRequest('POST', '/notes', [], false, 3)['status'] === 403, 'Narrower lock policy preserves viewer authorization');
     checkRoute(routeRequest('POST', '/notes', [], false, 1, false)['status'] === 403, 'Narrower lock policy preserves CSRF protection');
     checkRoute(routeRequest('POST', '/site/reset-install', ['confirm' => 'RESET INSTALLATION'], false, 2)['status'] === 403,
-        'Only the owner can use the factory reset recovery escape');
+        'Only the owner can activate a reviewed installation cleanup');
     file_put_contents($root . '/.demo', 'true');
     checkRoute(routeRequest('POST', '/notes', [])['status'] === 403, 'Narrower lock policy preserves the backend demo write restriction');
     unlink($root . '/.demo');
     flock($lock, LOCK_UN); fclose($lock); $lock = null;
     $history = routeRequest('GET', '/ai/conversations/' . $conversationId);
-    checkRoute($history['status'] === 200 && file_get_contents($root . '/assets/css/tailwind.css') !== $compiledMarker,
-        'Deferred interrupted Chat styles compile when no website writer owns the lock');
+    checkRoute($history['status'] === 200 && file_get_contents($root . '/_studio/preview/assets/css/tailwind.css') === $compiledMarker,
+        'Interrupted Chat reads remain observational after the website lock is released');
+    $prompt = $history['json']['data']['conversation']['prompts'][0];
+    $repair = routeRequest('POST', '/ai/repair-generation', ['operation_id' => 'route-explicit-style-repair',
+        'prompt_id' => $staleJobId, 'version' => $prompt['version'], 'draft_version' => $history['json']['data']['conversation']['draft_version']]);
+    checkRoute($repair['status'] === 200 && file_get_contents($root . '/_studio/preview/assets/css/tailwind.css') !== $compiledMarker,
+        'Explicit retained repair compiles interrupted styles under the shared lock');
+    $repairedCss = file_get_contents($root . '/_studio/preview/assets/css/tailwind.css');
 
     $failedId = str_repeat('b', 32);
     $failure = ['ok' => false, 'error' => ['restored' => false, 'message' => 'Controlled incomplete recovery']];
     $pdo->prepare('INSERT INTO site_control_mutations (id,user_id,route_path,request_hash,status,response_json,http_code,created_at) VALUES (?,?,?,?,?,?,?,?)')->execute([
         $failedId, 1, '/site-control/page-rename', 'fixture', 'failed', json_encode($failure), 500, time()]);
     $pdo->prepare('UPDATE prompt_log SET status = ? WHERE id = ?')->execute(['streaming', $staleJobId]);
-    file_put_contents($root . '/assets/css/tailwind.css', $compiledMarker);
+    file_put_contents($root . '/_studio/preview/assets/css/tailwind.css', $compiledMarker);
     $history = routeRequest('GET', '/ai/conversations/' . $conversationId);
-    checkRoute($history['status'] === 200 && file_get_contents($root . '/assets/css/tailwind.css') === $compiledMarker,
+    checkRoute($history['status'] === 200 && file_get_contents($root . '/_studio/preview/assets/css/tailwind.css') === $compiledMarker,
         'Reading interrupted Chat history cannot bypass incomplete recovery to change shared CSS');
-    foreach ([['POST', '/notes', ['title' => 'Recovery note'], 201],
-        ['POST', '/cards', ['title' => 'Recovery task'], 201],
+    foreach ([['POST', '/notes', ['request_id' => 'route-recovery-note-001', 'title' => 'Recovery note'], 201],
+        ['POST', '/cards', ['request_id' => 'route-recovery-card-001', 'title' => 'Recovery task'], 201],
         ['PUT', '/auth/password', ['current_password' => 'wrong', 'new_password' => 'fixture-password'], 400],
-        ['PUT', '/settings', ['site_tagline' => 'Available during recovery'], 200],
-        ['POST', '/team', ['name' => 'Recovery helper', 'email' => 'helper@example.test', 'password' => 'fixture-password'], 201],
-        ['POST', '/update/apply-local', ['filename' => ''], 422],
-        ['POST', '/export', ['format' => 'php'], 422]] as [$method, $path, $body, $expected]) {
+        ['PUT', '/settings', ['operation_id' => 'route-settings-recovery', 'versions' => $settingVersions, 'values' => ['site_tagline' => 'Available during recovery']], 200],
+        ['POST', '/team', ['operation_id' => 'route-recovery-team-001', 'name' => 'Recovery helper', 'email' => 'helper@example.test', 'password' => 'fixture-password'], 201],
+        ['GET', '/update/inspect', null, 200],
+        ['POST', '/export', ['operation_id' => 'route-export-recovery', 'version' => $exportVersion, 'format' => 'php'], 200]] as [$method, $path, $body, $expected]) {
         $response = routeRequest($method, $path, $body);
         checkRoute($response['status'] === $expected, $method . ' ' . $path . ' stays available during incomplete recovery (' . $response['status'] . ')');
     }
-    $snapshot = routeRequest('POST', '/snapshots', ['label' => 'Damaged state before recovery']);
+    $snapshot = routeRequest('POST', '/snapshots', ['operation_id' => 'route-snapshot-recovery', 'domain' => 'draft', 'label' => 'Damaged state before recovery']);
     checkRoute($snapshot['status'] === 200 && ($snapshot['json']['ok'] ?? false), 'Manual snapshot can preserve the damaged state during incomplete recovery');
-    checkRoute(routeRequest('PUT', '/settings', ['site_tagline' => 'Agent recovery helper'], true)['status'] === 200, 'Agent settings stay available during incomplete recovery');
-    foreach ([['PUT', '/files/content', ['path' => 'about.php', 'content' => 'must not write']],
-        ['POST', '/site-control/page-rename', ['pageId' => 'page:about.php', 'newTitle' => 'Must not rename']],
-        ['POST', '/publish', []], ['POST', '/revisions/undo', []], ['POST', '/site/reset', ['confirm' => 'RESET']]] as [$method, $path, $body]) {
+    // Keep the undo candidate valid after proving that the observational read
+    // and damaged-state capture preserve the deliberately changed CSS above.
+    file_put_contents($root . '/_studio/preview/assets/css/tailwind.css', $repairedCss);
+    $draftVersion = routeRequest('GET', '/site/reset')['json']['data']['draft_version'];
+    $resetReview = routeRequest('POST', '/site/reset/prepare', ['operation_id' => 'route-reset-recovery', 'base_draft_version' => $draftVersion])['json']['data'];
+    $resetBody = ['plan_id' => $resetReview['plan_id'], 'digest' => $resetReview['digest'], 'confirm' => 'RESET'];
+    checkRoute(routeRequest('PUT', '/settings', ['operation_id' => 'route-rest-settings-recovery', 'versions' => ['identity' => routeRequest('GET', '/settings', null, true)['json']['data']['versions']['identity']], 'values' => ['site_tagline' => 'Agent recovery helper']], true)['status'] === 200, 'Agent settings stay available during incomplete recovery');
+    $draftVersion = routeRequest('GET', '/site/reset')['json']['data']['draft_version'];
+    foreach ([['PUT', '/files/content', ['operation_id' => 'route-file-blocked', 'base_draft_version' => $draftVersion, 'expected_content_sha256' => hash('sha256', $fileBefore), 'path' => 'about.php', 'content' => 'must not write']],
+        ['POST', '/site-control/page-rename', ['operation_id' => 'route-rename-blocked', 'base_draft_version' => $draftVersion, 'pageId' => 'page:about.php', 'newTitle' => 'Must not rename']],
+        ['POST', '/publish', ['operation_id' => 'route-publish-blocked']], ['POST', '/revisions/undo', ['operation_id' => 'route-undo-blocked']], ['POST', '/site/reset', $resetBody]] as [$method, $path, $body]) {
         checkRoute(routeRequest($method, $path, $body)['status'] === 409, $method . ' ' . $path . ' remains blocked by incomplete recovery');
     }
-    checkRoute(routeRequest('POST', '/compile', [], true)['status'] === 409, 'Agent website writes remain blocked by incomplete recovery');
+    checkRoute(routeRequest('POST', '/compile', ['operation_id' => 'route-compile-blocked', 'base_draft_version' => $draftVersion], true)['status'] === 409, 'Agent website writes remain blocked by incomplete recovery');
     $approval = routeRequest('POST', '/governor/pending/fixture/approve', ['reason' => 'Reviewed fixture heading']);
     checkRoute(($approval['json']['error']['code'] ?? '') === 'site_busy', 'Owner heading approval cannot bypass incomplete website recovery');
     checkRoute(routeRequest('POST', '/site/reset-install', ['confirm' => 'wrong'])['status'] === 422,
-        'Owner can reach the explicit factory reset confirmation during incomplete recovery');
+        'A confirmation string alone cannot bypass the reviewed factory workflow');
     $pdo->exec("DELETE FROM site_control_mutations WHERE id = '" . $failedId . "'");
 
     $queued = routeRequest('POST', '/prompt', ['prompt' => 'Answer without modifying files.', 'action_type' => 'inline_edit'], true);

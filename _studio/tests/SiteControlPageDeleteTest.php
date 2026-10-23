@@ -18,7 +18,7 @@ declare(strict_types=1);
  *   7. Rollback on forced nav failure (--fail-delete-nav)
  *   8. Rollback on forced DB failure (--fail-delete-db)
  *   9. Broken references reported in response
- *  10. No snapshots wasted on validation rejections
+ *  10. No revisions created on validation rejections
  *
  * Uses temp directory with copied fixtures. Never touches live site.
  */
@@ -49,64 +49,15 @@ echo "=== Site Control Page Delete Test Suite ===\n\n";
 //  Fresh-install guard
 // ═══════════════════════════════════════════
 
-$liveDbPath = dirname(__DIR__) . '/data/studio.db';
-if (!file_exists($liveDbPath)) {
-    echo "ABORT: No database found at {$liveDbPath}.\n";
-    exit(1);
-}
+require_once __DIR__.'/helpers/SiteControlFixture.php';
+$tempDir = sys_get_temp_dir().'/vs-control-PageDelete-'.bin2hex(random_bytes(8));
+$tempDbPath = $tempDir.'/studio.db';
+$tempPreview = $tempDir.'/preview';
+$tempAssets = $tempDir.'/published/assets';
+$tempSnaps = $tempDir.'/snapshots';
+[$db,$fileManager] = createSiteControlFixture($tempDir);
+$tempDir = realpath($tempDir);
 
-$livePreviewDir = dirname(__DIR__) . '/preview';
-if (!is_dir($livePreviewDir)) {
-    echo "ABORT: No preview directory found at {$livePreviewDir}.\n";
-    exit(1);
-}
-
-try {
-    $checkDb = new \SQLite3($liveDbPath, SQLITE3_OPEN_READONLY);
-    $pageCount = (int) $checkDb->querySingle("SELECT COUNT(*) FROM pages WHERE page_type = 'page'");
-    $checkDb->close();
-    if ($pageCount < 3) {
-        echo "ABORT: Need at least 3 pages (1 homepage + 2 deletable). Found: {$pageCount}\n";
-        exit(1);
-    }
-} catch (\Throwable $e) {
-    echo "ABORT: Could not verify database: " . $e->getMessage() . "\n";
-    exit(1);
-}
-
-
-// ═══════════════════════════════════════════
-//  Fixture setup — temp copies
-// ═══════════════════════════════════════════
-
-echo "--- Setup: Creating temp fixtures ---\n";
-
-$tempDir     = sys_get_temp_dir() . '/voxelsite_delete_test_' . uniqid();
-$tempDbPath  = $tempDir . '/studio.db';
-$tempPreview = $tempDir . '/preview';
-$tempAssets  = $tempDir . '/assets';
-
-mkdir($tempDir, 0755, true);
-
-copy($liveDbPath, $tempDbPath);
-copyDirRecursive($livePreviewDir, $tempPreview);
-
-$liveAssetsDir = dirname(__DIR__, 2) . '/assets';
-if (is_dir($liveAssetsDir)) {
-    copyDirRecursive($liveAssetsDir, $tempAssets);
-} else {
-    mkdir($tempAssets . '/css', 0755, true);
-    mkdir($tempAssets . '/js', 0755, true);
-}
-
-echo "  Temp dir: {$tempDir}\n";
-
-putenv("VS_TEST_PREVIEW_DIR={$tempPreview}");
-putenv("VS_TEST_ASSETS_DIR={$tempAssets}");
-
-$db = Database::getInstance($tempDbPath);
-$fileManager = new FileManager($db);
-$fileManager->syncPageRegistry();
 $db->exec('PRAGMA wal_checkpoint(TRUNCATE)');
 
 echo "  DB initialized with " . (int) $db->queryOne("SELECT COUNT(*) as c FROM pages")['c'] . " pages\n";
@@ -158,26 +109,26 @@ echo "  Nav status: " . ($navIsCanonical ? 'canonical' : 'non-canonical') . "\n"
 
 echo "\n--- 1. Validation gates ---\n";
 
-$snapshotCountBefore = getSnapshotCount($tempDbPath);
+$revisionCountBefore = getRevisionCount($tempDbPath);
 
 // Missing pageId
 $r = callEndpoint('POST', '/site-control/page-delete', []);
-record($r['httpCode'] === 400, 'Validation: missing pageId → 400', $errors, $passed, $failed);
+record($r['httpCode'] === 422, 'Validation: missing pageId → 422', $errors, $passed, $failed);
 record(
-    ($r['response']['error']['code'] ?? '') === 'missing_field',
+    ($r['response']['error']['code'] ?? '') === 'invalid_schema',
     'Validation: missing pageId error code',
     $errors, $passed, $failed
 );
 
 // Empty pageId
 $r = callEndpoint('POST', '/site-control/page-delete', ['pageId' => '']);
-record($r['httpCode'] === 400, 'Validation: empty pageId → 400', $errors, $passed, $failed);
+record($r['httpCode'] === 422, 'Validation: empty pageId → 422', $errors, $passed, $failed);
 
 // Nonexistent page
 $r = callEndpoint('POST', '/site-control/page-delete', ['pageId' => 'page:nonexistent-xyz.php']);
-record($r['httpCode'] === 404, 'Validation: nonexistent page → 404', $errors, $passed, $failed);
+record($r['httpCode'] === 422, 'Validation: nonexistent page → 422', $errors, $passed, $failed);
 record(
-    ($r['response']['error']['code'] ?? '') === 'page_not_found',
+    ($r['response']['error']['code'] ?? '') === 'invalid_path',
     'Validation: nonexistent page error code',
     $errors, $passed, $failed
 );
@@ -186,19 +137,19 @@ record(
 if ($homePage) {
     $homePageId = 'page:' . $homePage['file_path'];
     $r = callEndpoint('POST', '/site-control/page-delete', ['pageId' => $homePageId]);
-    record($r['httpCode'] === 400, 'Validation: homepage → 400', $errors, $passed, $failed);
+    record($r['httpCode'] === 422, 'Validation: homepage → 422', $errors, $passed, $failed);
     record(
-        ($r['response']['error']['code'] ?? '') === 'cannot_delete_homepage',
+        ($r['response']['error']['code'] ?? '') === 'invalid_schema',
         'Validation: homepage error code',
         $errors, $passed, $failed
     );
 }
 
-// No snapshots wasted on validation errors
-$snapshotCountAfter = getSnapshotCount($tempDbPath);
+// No revisions created on validation errors
+$revisionCountAfter = getRevisionCount($tempDbPath);
 record(
-    $snapshotCountAfter === $snapshotCountBefore,
-    'Validation: no snapshots created for rejected requests',
+    $revisionCountAfter === $revisionCountBefore,
+    'Validation: no revisions created for rejected requests',
     $errors, $passed, $failed
 );
 
@@ -244,8 +195,8 @@ if (($r['response']['ok'] ?? false) === true) {
         $errors, $passed, $failed
     );
     record(
-        isset($data['snapshotId']),
-        'Happy path: snapshotId present',
+        siteControlRetainedOperation($tempDbPath,$data),
+        'Happy path: retained operation and revision present',
         $errors, $passed, $failed
     );
     record(
@@ -394,9 +345,9 @@ file_put_contents($navFilePath, $legacyNavContent);
 
 $r = callEndpoint('POST', '/site-control/page-delete', ['pageId' => $legacyTestPageId]);
 
-record($r['httpCode'] === 400, 'Legacy nav: delete blocked → 400', $errors, $passed, $failed);
+record($r['httpCode'] === 422, 'Legacy nav: delete blocked → 422', $errors, $passed, $failed);
 record(
-    ($r['response']['error']['code'] ?? '') === 'nav_not_canonical',
+    ($r['response']['error']['code'] ?? '') === 'invalid_schema',
     'Legacy nav: error code = nav_not_canonical',
     $errors, $passed, $failed
 );
@@ -481,36 +432,23 @@ $now6 = date('Y-m-d H:i:s');
 $tempDb6->exec("INSERT INTO pages (slug, title, file_path, page_type, is_homepage, created_at, updated_at) VALUES ('{$noNavTestSlug}', 'No Nav Test', '{$noNavTestFile}', 'page', 0, '{$now6}', '{$now6}')");
 $tempDb6->close();
 
+// The missing-nav case has no remaining include dependency on that file.
+$headerPath = $tempPreview . '/_partials/header.php';
+$headerBackup = file_get_contents($headerPath);
+file_put_contents($headerPath, '<!DOCTYPE html><html><body><main>');
 // Remove nav.php
 $navBackup = file_get_contents($navFilePath);
 unlink($navFilePath);
 
 $r = callEndpoint('POST', '/site-control/page-delete', ['pageId' => $noNavTestPageId]);
 
-record($r['httpCode'] === 200, 'Missing nav: → 200', $errors, $passed, $failed);
-record(
-    ($r['response']['ok'] ?? false) === true,
-    'Missing nav: response.ok = true',
-    $errors, $passed, $failed
-);
+record($r['httpCode']===422 && ($r['response']['error']['code']??null)==='invalid_schema','Missing nav: deletion rejects atomically', $errors,$passed,$failed);
+record(file_exists($tempPreview.'/'.$noNavTestFile),'Missing nav: exact page remains', $errors,$passed,$failed);
+record((int)dbQueryOne($tempDbPath,"SELECT COUNT(*) AS c FROM pages WHERE slug='{$noNavTestSlug}'")['c']===1,'Missing nav: page metadata remains', $errors,$passed,$failed);
 
-if (($r['response']['ok'] ?? false) === true) {
-    $data = $r['response']['data'] ?? [];
-    record(
-        ($data['navEntryRemoved'] ?? true) === false,
-        'Missing nav: navEntryRemoved = false',
-        $errors, $passed, $failed
-    );
-}
-
-record(
-    !file_exists($noNavTestPath),
-    'Missing nav: page file deleted',
-    $errors, $passed, $failed
-);
-
-// Restore nav.php
+// Restore nav.php and its consumer.
 file_put_contents($navFilePath, $navBackup);
+file_put_contents($headerPath, $headerBackup);
 
 
 // ═══════════════════════════════════════════
@@ -537,7 +475,7 @@ $preRollbackContent = file_get_contents($rbPath1);
 
 $r = callEndpoint('POST', '/site-control/page-delete', ['pageId' => 'page:' . $rbFile1], '--fail-delete-nav');
 
-record($r['httpCode'] === 500, 'Rollback nav: forced failure → 500', $errors, $passed, $failed);
+record($r['httpCode'] === 409, 'Rollback nav: forced failure → 409', $errors, $passed, $failed);
 record(
     ($r['response']['ok'] ?? false) === false,
     'Rollback nav: response.ok = false',
@@ -585,7 +523,7 @@ $navBeforeDbFail = file_get_contents($navFilePath);
 
 $r = callEndpoint('POST', '/site-control/page-delete', ['pageId' => 'page:' . $rbFile1], '--fail-delete-db');
 
-record($r['httpCode'] === 500, 'Rollback DB: forced failure → 500', $errors, $passed, $failed);
+record($r['httpCode'] === 409, 'Rollback DB: forced failure → 409', $errors, $passed, $failed);
 record(
     ($r['response']['ok'] ?? false) === false,
     'Rollback DB: response.ok = false',
@@ -823,10 +761,14 @@ $tempDb9c2 = new \SQLite3($tempDbPath);
 $tempDb9c2->exec("INSERT INTO pages (slug, title, file_path, page_type, is_homepage, created_at, updated_at) VALUES ('{$customSourceSlug}', 'Custom Source', '{$customSourceFile}', 'page', 0, '{$now9c}', '{$now9c}')");
 $tempDb9c2->close();
 
+// Unknown replacements reject before touching the target or any inbound links.
+$unknownReplacement=callEndpoint('POST','/site-control/page-delete',['pageId'=>'page:'.$customRefFile,'replacementHref'=>'/does-not-exist']);
+record($unknownReplacement['httpCode']===422&&($unknownReplacement['response']['error']['code']??'')==='invalid_schema','Unknown replacement: must identify a surviving page',$errors,$passed,$failed);
+
 // Delete the target with custom replacementHref
 $del9c = callEndpoint('POST', '/site-control/page-delete', [
     'pageId' => 'page:' . $customRefFile,
-    'replacementHref' => '/404',
+    'replacementHref' => '/work',
 ]);
 
 record($del9c['httpCode'] === 200, 'Custom replacementHref: → 200', $errors, $passed, $failed);
@@ -836,16 +778,16 @@ if (($del9c['response']['ok'] ?? false) === true) {
 
     // Response should echo back the replacementHref
     record(
-        ($data9c['replacementHref'] ?? '') === '/404',
-        'Custom replacementHref: response echoes /404',
+        ($data9c['replacementHref'] ?? '') === '/work',
+        'Custom replacementHref: response echoes /work',
         $errors, $passed, $failed
     );
 
-    // Source page should now have href="/404" instead of the old slug
+    // Source page should now have href="/work" instead of the old slug
     $customSourceAfter = file_get_contents($customSourcePath);
     record(
-        str_contains($customSourceAfter, 'href="/404"'),
-        'Custom replacementHref: link neutralized to /404',
+        str_contains($customSourceAfter, 'href="/work"'),
+        'Custom replacementHref: link neutralized to /work',
         $errors, $passed, $failed
     );
     record(
@@ -884,11 +826,11 @@ $dangerousValues = [
 
 foreach ($dangerousValues as $dangerous => $label) {
     $r9d = callEndpoint('POST', '/site-control/page-delete', [
-        'pageId' => 'page:about.php',
+        'pageId' => 'page:services.php',
         'replacementHref' => $dangerous,
     ]);
     record(
-        $r9d['httpCode'] === 400 && ($r9d['response']['error']['code'] ?? '') === 'invalid_replacement_href',
+        $r9d['httpCode'] === 422 && ($r9d['response']['error']['code'] ?? '') === 'invalid_schema',
         "Href validation: {$label}",
         $errors, $passed, $failed
     );
@@ -899,17 +841,15 @@ foreach ($dangerousValues as $dangerous => $label) {
 //  10. NO SNAPSHOTS ON VALIDATION REJECTIONS
 // ═══════════════════════════════════════════
 
-echo "\n--- 10. Snapshot discipline ---\n";
+echo "\n--- 10. Revision discipline ---\n";
 
-$snapshotCountFinal = getSnapshotCount($tempDbPath);
+$revisionCountFinal = getRevisionCount($tempDbPath);
 
-// We expect snapshots only for actual mutation attempts (tests 2, 3, 5, 6, 7, 8, 9)
-// not for validation rejections (tests 1, 4)
-// This is verified implicitly by test 1 above, but we double-check:
-// The snapshot count should have increased by the number of mutation attempts, not validation rejects
+// Only committed operations add revisions; rejection and verified restoration
+// are guarded against source, projection, revision and version changes.
 record(
-    $snapshotCountFinal > $snapshotCountBefore,
-    'Snapshot discipline: snapshots created for mutation attempts',
+    $revisionCountFinal > $revisionCountBefore,
+    'Revision discipline: revisions created for committed mutations',
     $errors, $passed, $failed
 );
 
@@ -946,6 +886,8 @@ exit($failed > 0 ? 1 : 0);
 function callEndpoint(string $method, string $routePath, array $body, ?string $failMode = null): array
 {
     global $tempDbPath, $tempPreview, $tempAssets;
+    $stateBefore=siteControlState($tempDbPath);
+    if ($method==='POST') $body=siteControlRequest($tempDbPath,$body);
 
     $helperPath = __DIR__ . '/helpers/call-nav-endpoint.php';
     $jsonBody = json_encode($body, JSON_UNESCAPED_SLASHES);
@@ -999,6 +941,7 @@ function callEndpoint(string $method, string $routePath, array $body, ?string $f
         ]]];
     }
 
+    siteControlAssertInvariant($tempDbPath,$stateBefore,$parsed,$method,$failMode);
     return $parsed;
 }
 
@@ -1007,10 +950,10 @@ function callEndpoint(string $method, string $routePath, array $body, ?string $f
 //  DB / Filesystem Helpers
 // ═══════════════════════════════════════════
 
-function getSnapshotCount(string $dbPath): int
+function getRevisionCount(string $dbPath): int
 {
     $db = new \SQLite3($dbPath, SQLITE3_OPEN_READONLY);
-    $count = (int) $db->querySingle("SELECT COUNT(*) FROM snapshots");
+    $count = (int) $db->querySingle("SELECT COUNT(*) FROM revisions");
     $db->close();
     return $count;
 }

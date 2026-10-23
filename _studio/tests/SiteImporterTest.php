@@ -46,7 +46,6 @@ echo "--- URL Validation ---\n";
 
 $importer = new \VoxelSite\SiteImporter();
 $validateUrl = new ReflectionMethod($importer, 'validateUrl');
-$validateUrl->setAccessible(true);
 
 // Valid URLs
 foreach ([
@@ -111,7 +110,6 @@ foreach ($ssrfUrls as $url) {
 
 // Direct isPrivateOrReservedIp() tests
 $isPrivate = new ReflectionMethod($importer, 'isPrivateOrReservedIp');
-$isPrivate->setAccessible(true);
 
 // IPv6 private/reserved
 foreach (['::1', 'fe80::1', 'fc00::1', 'fd12:3456::1'] as $ip) {
@@ -135,7 +133,6 @@ foreach (['8.8.8.8', '93.184.216.34', '2607:f8b0:4004:800::200e'] as $ip) {
 echo "--- DNS Resolution ---\n";
 
 $resolveAllIps = new ReflectionMethod($importer, 'resolveAllIps');
-$resolveAllIps->setAccessible(true);
 
 // Literal IPs should return empty (Phase 1 handles them, no DNS needed)
 foreach (['10.0.0.5', '192.168.1.1', '8.8.8.8', '::1', '2607:f8b0:4004:800::200e'] as $literalIp) {
@@ -167,7 +164,6 @@ record(
 echo "--- robots.txt Parsing ---\n";
 
 $isPathAllowed = new ReflectionMethod($importer, 'isPathAllowed');
-$isPathAllowed->setAccessible(true);
 
 // Simple Disallow
 $robots1 = "User-agent: *\nDisallow: /admin\nDisallow: /private/\n";
@@ -234,7 +230,6 @@ record(
 echo "--- HTML Cleaning ---\n";
 
 $cleanHtml = new ReflectionMethod($importer, 'cleanHtml');
-$cleanHtml->setAccessible(true);
 
 // Script removal
 $html1 = '<div>Hello</div><script>alert("evil")</script><p>World</p>';
@@ -354,7 +349,6 @@ record(
 echo "--- Link Extraction ---\n";
 
 $extractLinks = new ReflectionMethod($importer, 'extractInternalLinks');
-$extractLinks->setAccessible(true);
 
 $html10 = '
 <a href="/about">About</a>
@@ -436,7 +430,6 @@ record(
 echo "--- Title Extraction ---\n";
 
 $extractTitle = new ReflectionMethod($importer, 'extractTitle');
-$extractTitle->setAccessible(true);
 
 record(
     $extractTitle->invoke($importer, '<html><head><title>My Site</title></head></html>') === 'My Site',
@@ -463,7 +456,6 @@ record(
 echo "--- Blocked Page Detection ---\n";
 
 $detectBlocked = new ReflectionMethod($importer, 'detectBlockedPage');
-$detectBlocked->setAccessible(true);
 
 // Should throw for blocked title patterns
 $blockedTitles = [

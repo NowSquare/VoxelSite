@@ -1,9 +1,13 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/helpers/StudioRuntimeFixture.php';
+
 // An actual disposable installation, routers, provider HTTP calls and streamed responses.
 // No local installation, API keys, current website content or npm is needed to run this test.
 $source=dirname(__DIR__,2);
 $root=sys_get_temp_dir().'/vs-site-http-'.bin2hex(random_bytes(6));
+mkdir($root,0700); $root=realpath($root);
+if (!$root || !str_starts_with($root, realpath(sys_get_temp_dir()).'/')) throw new RuntimeException('Canonical disposable root required.');
 function copyTree(string $from,string $to): void {
     if (!is_dir($to)) mkdir($to,0755,true);
     foreach (scandir($from) as $name) {
@@ -28,20 +32,34 @@ function check(bool $ok,string $label): void {
 }
 function request(string $method,string $path,?array $body=null,?int $role=1,bool $csrf=true): array {
     global $url,$root;
+    if ($body !== null && isset($body['operation_id']) && str_starts_with($path, '/site-control/') && !isset($body['base_draft_version'])) {
+        $db = new PDO('sqlite:'.$root.'/_studio/data/studio.db');
+        $body['base_draft_version'] = 'draft:'.$db->query('SELECT draft_version FROM site_workspace_state WHERE id=1')->fetchColumn();
+    }
+    if ($method === 'PUT' && $path === '/files/content' && !isset($body['operation_id'])) {
+        $db = new PDO('sqlite:'.$root.'/_studio/data/studio.db');
+        $body += ['operation_id'=>'editor_'.bin2hex(random_bytes(16)), 'base_draft_version'=>'draft:'.$db->query('SELECT draft_version FROM site_workspace_state WHERE id=1')->fetchColumn(),
+            'expected_content_sha256'=>hash_file('sha256',$root.'/_studio/preview/'.$body['path'])];
+    }
     $curl=curl_init($url.'/_studio/api/router.php?_path='.urlencode($path));
     $headers=['Accept: application/json'];
     if($role!==null) { $headers[]='Cookie: vs_session='.str_repeat((string)$role,64); if($csrf)$headers[]='X-VS-Token: '.str_repeat((string)$role,64); }
     if($body!==null)$headers[]='Content-Type: application/json';
     curl_setopt_array($curl,[CURLOPT_CUSTOMREQUEST=>$method,CURLOPT_HTTPHEADER=>$headers,CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>20]);
     if($body!==null)curl_setopt($curl,CURLOPT_POSTFIELDS,json_encode($body));
-    $raw=curl_exec($curl); $status=curl_getinfo($curl,CURLINFO_HTTP_CODE); $error=curl_error($curl); curl_close($curl);
+    $raw=curl_exec($curl); $status=curl_getinfo($curl,CURLINFO_HTTP_CODE); $error=curl_error($curl); unset($curl);
     if($raw===false)throw new RuntimeException($error);
     file_put_contents($root.'/http-transcript.jsonl',json_encode(compact('method','path','body','role','status','raw'))."\n",FILE_APPEND);
     $events=[]; foreach(explode("\n",$raw) as $line) { if(str_starts_with($line,'data: '))$events[]=json_decode(substr($line,6),true); }
+    if ($status === 202 && isset($body['operation_id']) && ($json = json_decode($raw,true)['data']['operation'] ?? null)) {
+        $body['checkpoint'] = $json['checkpoint'];
+        return request($method, $path, $body, $role, $csrf);
+    }
     return ['status'=>$status,'raw'=>$raw,'json'=>json_decode($raw,true),'events'=>$events,'terminal'=>$events?end($events):null];
 }
-foreach(['_studio/engine','_studio/api','_studio/ui','_studio/static','_studio/prompts','vendor'] as $path)copyTree($source.'/'.$path,$root.'/'.$path);
-foreach(['_studio/preview/_partials','_studio/preview/services','assets/css','assets/js','assets/data','_studio/data'] as $path)mkdir($root.'/'.$path,0755,true);
+\VoxelSite\Tests\StudioRuntimeFixture::copy($root,$source);
+copyTree($source.'/_studio/ui',$root.'/_studio/ui');
+foreach(['_studio/preview/_partials','_studio/preview/services','assets/css','assets/js','assets/data'] as $path)mkdir($root.'/'.$path,0755,true);
 copy($source.'/_studio/index.php',$root.'/_studio/index.php');
 copy(__DIR__.'/helpers/site-release-provider.php',$root.'/provider.php');
 $providerPort=port(); $httpPort=port(); $url='http://127.0.0.1:'.$httpPort;
@@ -75,10 +93,10 @@ try {
     check(request('GET','/site-control/plans/'.$planId)['json']['data']['status']==='applied','Reconnect can read durable terminal result');
     $curl=curl_init($url.'/_studio/api/router.php?_path=%2Fpreview&path=services%2Fteam.php');
     curl_setopt_array($curl,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_HTTPHEADER=>['Cookie: vs_session='.str_repeat('1',64)]]);
-    $html=curl_exec($curl);curl_close($curl);
+    $html=curl_exec($curl);unset($curl);
     check(str_contains($html,'Reviewed shared footer') && str_contains($html,'<!DOCTYPE html>'),'Authenticated nested preview renders the reviewed shared partial');
     check(str_contains(file_get_contents($root.'/index.php'),'Published original'),'Site PHP writes leave published pages unchanged');
-    check(str_contains(file_get_contents($root.'/assets/css/tailwind.css'),'.p-7'),'Required PHP Tailwind output exists in shared assets');
+    check(str_contains(file_get_contents($root.'/_studio/preview/assets/css/tailwind.css'),'.p-7'),'Required PHP Tailwind output exists in private draft assets');
     $files=request('GET','/files'); check($files['status']===200 && str_contains($files['raw'],'services/team.php'),'Editor lists nested files after apply');
     file_put_contents($root.'/_studio/preview/_partials/footer.php','</main><footer>Original shared footer</footer></body></html>');
     $fresh=request('POST','/site-control/orchestrate',['prompt'=>'Update the shared footer copy.']); $freshId=$fresh['terminal']['plan']['plan_id'];
@@ -94,7 +112,7 @@ try {
     check((int)$pdo->query('SELECT COUNT(*) FROM snapshots')->fetchColumn()===1,'Recovery snapshot is retained in existing Snapshots');
 
     $beforeCrash=file_get_contents($root.'/_studio/preview/_partials/footer.php');
-    $cssBeforeCrash=file_get_contents($root.'/assets/css/tailwind.css');
+    $cssBeforeCrash=file_get_contents($root.'/_studio/preview/assets/css/tailwind.css');
     $worker=proc_open([PHP_BINARY,__DIR__.'/helpers/site-release-worker.php',$root],
         [['pipe','r'],['pipe','w'],['file',$root.'/crash-worker.log','a']],$crashPipes);fclose($crashPipes[0]);
     stream_set_timeout($crashPipes[1],10);
@@ -114,12 +132,12 @@ try {
     check($recovery['status']==='failed' && $recovery['result']['rollback_clean']===true,
         'After process kill the backend confirms verified restoration');
     check(file_get_contents($root.'/_studio/preview/_partials/footer.php')===$beforeCrash
-        && file_get_contents($root.'/assets/css/tailwind.css')===$cssBeforeCrash,'Killed apply restores exact source and compiled CSS');
+        && file_get_contents($root.'/_studio/preview/assets/css/tailwind.css')===$cssBeforeCrash,'Killed apply restores exact source and compiled CSS');
     check(request('POST','/site-control/apply',['plan_id'=>$crashId])['terminal']['type']==='error',
         'Retry after interrupted restoration returns the same failed result without writes');
 
     $mutationId=bin2hex(random_bytes(16));
-    $renameBody=['mutation_id'=>$mutationId,'pageId'=>'page:about.php','newTitle'=>'Our story'];
+    $renameBody=['operation_id'=>$mutationId,'base_draft_version'=>'draft:'.$pdo->query('SELECT draft_version FROM site_workspace_state WHERE id=1')->fetchColumn(),'pageId'=>'page:about.php','newTitle'=>'Our story'];
     $rename=request('POST','/site-control/page-rename',$renameBody);
     check($rename['status']===200 && $rename['json']['ok']===true,'Real router records deterministic page rename');
     $snapshotCount=(int)$pdo->query('SELECT COUNT(*) FROM snapshots')->fetchColumn();
@@ -128,17 +146,18 @@ try {
         'Deterministic retry replays its response without another snapshot or mutation');
     check(request('POST','/site-control/page-rename',array_replace($renameBody,['newTitle'=>'Different']))['status']===409,
         'Mutation identity cannot authorize a different request');
-    check(request('GET','/site-control/mutations/'.$mutationId)['json']['data']['status']==='applied',
+    check(json_decode(command([PHP_BINARY,__DIR__.'/helpers/read-site-operation.php',$root,$mutationId,'1']),true)['state']==='succeeded',
         'Disconnected deterministic requests have retained outcomes');
-    check(request('GET','/site-control/mutations/'.$mutationId,null,2)['status']===404,'Deterministic result is bound to its user');
-    $urlChange=request('POST','/site-control/url-rename',['mutation_id'=>bin2hex(random_bytes(16)),
+    check(request('POST','/site-control/page-rename',$renameBody,2)['status']===409, 'Another user cannot reconnect to the reviewed deterministic request over HTTP');
+    check(json_decode(command([PHP_BINARY,__DIR__.'/helpers/read-site-operation.php',$root,$mutationId,'2']),true)['error']==='permission_denied','Retained deterministic result is bound to its user');
+    $urlChange=request('POST','/site-control/url-rename',['operation_id'=>bin2hex(random_bytes(16)),
         'routeId'=>'route:/services/team','newPath'=>'/services/people']);
     check($urlChange['status']===200 && is_file($root.'/_studio/preview/services/people.php')
         && !is_file($root.'/_studio/preview/services/team.php'),'Real router applies a nested URL change without changing its parent');
-    $move=request('POST','/site-control/structural-move',['mutation_id'=>bin2hex(random_bytes(16)),
+    $move=request('POST','/site-control/structural-move',['operation_id'=>bin2hex(random_bytes(16)),
         'pageId'=>'page:about.php','targetParent'=>'services','targetIndex'=>0]);
     check($move['status']===200 && is_file($root.'/_studio/preview/services/about.php'),'Real router moves an existing page and navigation together');
-    $delete=request('POST','/site-control/page-delete',['mutation_id'=>bin2hex(random_bytes(16)),
+    $delete=request('POST','/site-control/page-delete',['operation_id'=>bin2hex(random_bytes(16)),
         'pageId'=>'page:services/people.php']);
     check($delete['status']===200 && !is_file($root.'/_studio/preview/services/people.php'),'Real router deletes the selected nested page');
     check(!str_contains(file_get_contents($root.'/_studio/preview/_partials/nav.php'),'/services/people'),
@@ -149,7 +168,7 @@ try {
     check($missing['status']==='failed' && $missing['response']['error']['code']==='mutation_not_started',
         'Offline-before-acceptance recovery safely closes the missing request');
     $beforeLate=file_get_contents($root.'/_studio/preview/services/about.php');
-    check(request('POST','/site-control/page-rename',['mutation_id'=>$missingId,'pageId'=>'page:services/about.php','newTitle'=>'Late request'])['status']===409
+    check(request('POST','/site-control/page-rename',['mutation_id'=>$missingId,'pageId'=>'page:services/about.php','newTitle'=>'Late request'])['status']===422
         && file_get_contents($root.'/_studio/preview/services/about.php')===$beforeLate,
         'A delayed original request cannot execute after missing-request recovery');
 
@@ -157,13 +176,17 @@ try {
     $failedRecord=$pdo->query("SELECT result_json FROM site_control_plans WHERE id = '".$crashId."'")->fetchColumn();
     $failedResult=json_decode($failedRecord,true);$failedResult['rollback_clean']=false;
     $update=$pdo->prepare('UPDATE site_control_plans SET result_json = ? WHERE id = ?');$update->execute([json_encode($failedResult),$crashId]);
-    check(request('POST','/site-control/page-rename',['mutation_id'=>bin2hex(random_bytes(16)),
+    check(request('POST','/site-control/page-rename',['operation_id'=>bin2hex(random_bytes(16)),
         'pageId'=>'page:services/about.php','newTitle'=>'Unsafe follow-up'])['status']===409
         && file_get_contents($root.'/_studio/preview/services/about.php')===$beforeLate,
         'The real router blocks further writes while earlier recovery is incomplete');
-    $restore=request('POST','/snapshots/'.$failedResult['recovery_snapshot_id'].'/restore',[]);
+    $restorePath='/snapshots/'.$failedResult['recovery_snapshot_id'];
+    $review=request('POST',$restorePath.'/prepare-restore',['request_id'=>'restore_'.bin2hex(random_bytes(16)),'domain'=>'draft']);
+    check($review['status']===200,'Explicit draft restoration is reviewed through the recovery block');
+    $restore=request('POST',$restorePath.'/restore',['operation_id'=>'restore_'.bin2hex(random_bytes(16)),
+        'plan_id'=>$review['json']['data']['plan_id'],'digest'=>$review['json']['data']['digest']]);
     check($restore['status']===200 && $restore['json']['ok']===true,'Explicit verified Snapshot restore remains available through the recovery block');
-    check(request('POST','/site-control/page-rename',['mutation_id'=>bin2hex(random_bytes(16)),
+    check(request('POST','/site-control/page-rename',['operation_id'=>bin2hex(random_bytes(16)),
         'pageId'=>'page:about.php','newTitle'=>'After recovery'])['status']===200,
         'Verified explicit recovery permits later website edits');
     echo "$checks HTTP checks passed. Fixture: $root\nURL: $url/_studio/#/site-map\n";

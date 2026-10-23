@@ -31,7 +31,7 @@ final class SiteRecovery
             throw new \RuntimeException('The restored recovery snapshot is not available.');
         }
         $note = 'Recovery completed by restoring snapshot #' . $snapshotId . '. The original website change was not retried.';
-        $db->transaction(static function () use ($db, $snapshotId, $note, $recordRestoredOutcome): void {
+        $resolve=static function () use ($db, $snapshotId, $note, $recordRestoredOutcome): void {
             foreach (self::failedRows($db, 'site_control_plans') as $row) {
                 $result = json_decode($row['result_json'] ?? 'null', true, 512, JSON_THROW_ON_ERROR);
                 if (!self::needsRecovery($result, $row['recovery_snapshot_id'] ?? null, $result['rollback_clean'] ?? null)) continue;
@@ -51,7 +51,9 @@ final class SiteRecovery
             }
             // A completed restore and the released recovery gate must commit together.
             if ($recordRestoredOutcome !== null) $recordRestoredOutcome();
-        });
+        };
+        if ($db->getPdo()->inTransaction()) $resolve();
+        else $db->transaction($resolve);
     }
 
     private static function failedRows(Database $db, string $table): array
@@ -69,6 +71,7 @@ final class SiteRecovery
     private static function block(mixed $snapshotId): never
     {
         $snapshot = $snapshotId === null ? '' : ' Recovery snapshot: #' . (int) $snapshotId . '.';
-        throw new \RuntimeException('A previous website change has incomplete recovery. Restore a snapshot in Designs → History before another website change.' . $snapshot);
+        throw new \VoxelSite\Agent\OperationException('recovery_required',
+            'A previous website change has incomplete recovery. Restore a snapshot in Designs → History before another website change.' . $snapshot);
     }
 }

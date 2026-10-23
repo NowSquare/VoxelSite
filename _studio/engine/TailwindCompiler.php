@@ -64,7 +64,12 @@ CSS;
 
     public function __construct(?string $themePath = null)
     {
-        $this->themePath = $themePath ?? dirname(__DIR__, 2) . '/assets/css';
+        if ($themePath === null) {
+            $workspace = new SiteWorkspace(Database::currentInstance());
+            $workspace->assertReady();
+            $themePath = $workspace->resolveDraft('assets/css');
+        }
+        $this->themePath = $themePath;
         $this->spacingScale      = TailwindConfig::spacingScale();
         $this->fractionScale     = TailwindConfig::fractionScale();
         $this->opacityScale      = TailwindConfig::opacityScale();
@@ -100,12 +105,16 @@ CSS;
     private function registerThemeColors(): void
     {
         $basePath = rtrim($this->themePath, '/') . '/';
-        // Resolve symlinks (Forge/Envoyer shared directories)
+        if (is_link(rtrim($basePath,'/'))) throw new \RuntimeException('Tailwind theme directories cannot be symlinks.');
+        // Canonicalize the trusted root; children must remain ordinary files.
         $resolvedBase = realpath($basePath);
         if ($resolvedBase !== false) {
             $basePath = rtrim($resolvedBase, '/') . '/';
         }
         $css = '';
+        foreach (['style.css','foundation.css'] as $source) {
+            if (is_link($basePath . $source)) throw new \RuntimeException('Tailwind theme sources cannot be symlinks.');
+        }
 
         // Primary source: style.css (new architecture)
         if (file_exists($basePath . 'style.css')) {
@@ -138,11 +147,17 @@ CSS;
      *
      * @return array{ok: bool, class_count: int} Compilation result
      */
-    public function compile(?string $scanDir = null, ?string $outputPath = null): array
+    public function compile(?string $scanDir = null, ?string $outputPath = null, ?int $maxOutputBytes = null): array
     {
+        if ($maxOutputBytes !== null && $maxOutputBytes < 0) throw new \InvalidArgumentException('The compiled CSS byte limit cannot be negative.');
         $explicitOutput = $outputPath !== null;
-        $scanDir    = $scanDir ?? dirname(__DIR__) . '/preview';
-        $outputPath = $outputPath ?? dirname(__DIR__, 2) . '/assets/css/tailwind.css';
+        if ($scanDir === null || $outputPath === null) {
+            $workspace = new SiteWorkspace(Database::currentInstance());
+            $workspace->assertReady();
+            $scanDir ??= $workspace->draftRoot();
+            $outputPath ??= $workspace->resolveDraft('assets/css/tailwind.css',true);
+        }
+        if (is_link($scanDir) || is_link($outputPath)) throw new \RuntimeException('Tailwind scan and output paths cannot be symlinks.');
 
         // Resolve symlinks so Forge/Envoyer shared directories work
         $resolvedScan = realpath($scanDir);
@@ -173,9 +188,11 @@ CSS;
         // Log what files exist in the scan directory
         $fileList = [];
         $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($scanDir, \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS)
+            new \RecursiveDirectoryIterator($scanDir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
         );
         foreach ($iterator as $file) {
+            if ($file->isLink()) throw new \RuntimeException('Tailwind scans cannot follow symlink files or directories.');
             if ($file->isFile()) {
                 $fileList[] = str_replace($scanDir . '/', '', $file->getPathname()) . ' (' . $file->getSize() . 'b)';
             }
@@ -195,12 +212,18 @@ CSS;
 
         if (empty($classes)) {
             // Write resets even with no utility classes
+            if ($maxOutputBytes !== null && strlen(self::PREFLIGHT_RESETS) > $maxOutputBytes) {
+                return ['ok'=>false,'class_count'=>0,'css_size'=>strlen(self::PREFLIGHT_RESETS),'error'=>'size_limit'];
+            }
             $written = $this->writeOutput($outputPath, self::PREFLIGHT_RESETS);
             return ['ok' => $written, 'class_count' => 0, 'css_size' => strlen(self::PREFLIGHT_RESETS)];
         }
 
         $css = $this->compileClasses($classes);
         $fullCss = self::PREFLIGHT_RESETS . "\n" . $css;
+        if ($maxOutputBytes !== null && strlen($fullCss) > $maxOutputBytes) {
+            return ['ok'=>false,'class_count'=>count($classes),'css_size'=>strlen($fullCss),'error'=>'size_limit'];
+        }
         $written = $this->writeOutput($outputPath, $fullCss);
 
         Logger::debug('tailwind', 'Compile output', [
@@ -277,9 +300,11 @@ CSS;
     {
         $classes = [];
         $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS)
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
         );
         foreach ($iterator as $file) {
+            if ($file->isLink()) throw new \RuntimeException('Tailwind scans cannot follow symlink files or directories.');
             if (!$file->isFile()) continue;
             $ext = strtolower($file->getExtension());
             if (!in_array($ext, ['php', 'html', 'blade', 'htm'], true)) continue;

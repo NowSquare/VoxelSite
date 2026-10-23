@@ -46,64 +46,15 @@ echo "=== Site Control Page Rename Test Suite ===\n\n";
 //  Fresh-install guard
 // ═══════════════════════════════════════════
 
-$liveDbPath = dirname(__DIR__) . '/data/studio.db';
-if (!file_exists($liveDbPath)) {
-    echo "ABORT: No database found at {$liveDbPath}.\n";
-    exit(1);
-}
+require_once __DIR__.'/helpers/SiteControlFixture.php';
+$tempDir = sys_get_temp_dir().'/vs-control-PageRename-'.bin2hex(random_bytes(8));
+$tempDbPath = $tempDir.'/studio.db';
+$tempPreview = $tempDir.'/preview';
+$tempAssets = $tempDir.'/published/assets';
+$tempSnaps = $tempDir.'/snapshots';
+[$db,$fileManager] = createSiteControlFixture($tempDir);
+$tempDir = realpath($tempDir);
 
-$livePreviewDir = dirname(__DIR__) . '/preview';
-if (!is_dir($livePreviewDir)) {
-    echo "ABORT: No preview directory found at {$livePreviewDir}.\n";
-    exit(1);
-}
-
-try {
-    $checkDb = new \SQLite3($liveDbPath, SQLITE3_OPEN_READONLY);
-    $pageCount = (int) $checkDb->querySingle("SELECT COUNT(*) FROM pages WHERE page_type = 'page'");
-    $checkDb->close();
-    if ($pageCount < 2) {
-        echo "ABORT: Need at least 2 pages. Found: {$pageCount}\n";
-        exit(1);
-    }
-} catch (\Throwable $e) {
-    echo "ABORT: Could not verify database: " . $e->getMessage() . "\n";
-    exit(1);
-}
-
-
-// ═══════════════════════════════════════════
-//  Fixture setup — temp copies
-// ═══════════════════════════════════════════
-
-echo "--- Setup: Creating temp fixtures ---\n";
-
-$tempDir     = sys_get_temp_dir() . '/voxelsite_rename_test_' . uniqid();
-$tempDbPath  = $tempDir . '/studio.db';
-$tempPreview = $tempDir . '/preview';
-$tempAssets  = $tempDir . '/assets';
-
-mkdir($tempDir, 0755, true);
-
-copy($liveDbPath, $tempDbPath);
-copyDirRecursive($livePreviewDir, $tempPreview);
-
-$liveAssetsDir = dirname(__DIR__, 2) . '/assets';
-if (is_dir($liveAssetsDir)) {
-    copyDirRecursive($liveAssetsDir, $tempAssets);
-} else {
-    mkdir($tempAssets . '/css', 0755, true);
-    mkdir($tempAssets . '/js', 0755, true);
-}
-
-echo "  Temp dir: {$tempDir}\n";
-
-putenv("VS_TEST_PREVIEW_DIR={$tempPreview}");
-putenv("VS_TEST_ASSETS_DIR={$tempAssets}");
-
-$db = Database::getInstance($tempDbPath);
-$fileManager = new FileManager($db);
-$fileManager->syncPageRegistry();
 $db->exec('PRAGMA wal_checkpoint(TRUNCATE)');
 
 echo "  DB initialized with " . (int) $db->queryOne("SELECT COUNT(*) as c FROM pages")['c'] . " pages\n";
@@ -137,13 +88,13 @@ if ($homePage) {
 
 echo "\n--- 1. Validation gates ---\n";
 
-$snapshotCountBefore = (int) $db->queryOne("SELECT COUNT(*) as c FROM snapshots")['c'];
+$revisionCountBefore = (int) $db->queryOne("SELECT COUNT(*) as c FROM revisions")['c'];
 
 // Missing pageId
 $r = callEndpoint('POST', '/site-control/page-rename', ['newTitle' => 'Foo']);
-record($r['httpCode'] === 400, 'Validation: missing pageId → 400', $errors, $passed, $failed);
+record($r['httpCode'] === 422, 'Validation: missing pageId → 422', $errors, $passed, $failed);
 record(
-    ($r['response']['error']['code'] ?? '') === 'missing_field',
+    ($r['response']['error']['code'] ?? '') === 'invalid_schema',
     'Validation: missing pageId error code',
     $errors, $passed, $failed
 );
@@ -152,7 +103,7 @@ record(
 $r = callEndpoint('POST', '/site-control/page-rename', ['pageId' => $testPageId, 'newTitle' => '']);
 record($r['httpCode'] === 422, 'Validation: empty title → 422', $errors, $passed, $failed);
 record(
-    ($r['response']['error']['code'] ?? '') === 'empty_title',
+    ($r['response']['error']['code'] ?? '') === 'invalid_schema',
     'Validation: empty title error code',
     $errors, $passed, $failed
 );
@@ -163,9 +114,9 @@ record($r['httpCode'] === 422, 'Validation: whitespace title → 422', $errors, 
 
 // Nonexistent page
 $r = callEndpoint('POST', '/site-control/page-rename', ['pageId' => 'page:nonexistent-xyz.php', 'newTitle' => 'Foo']);
-record($r['httpCode'] === 404, 'Validation: nonexistent page → 404', $errors, $passed, $failed);
+record($r['httpCode'] === 422, 'Validation: nonexistent page → 422', $errors, $passed, $failed);
 record(
-    ($r['response']['error']['code'] ?? '') === 'page_not_found',
+    ($r['response']['error']['code'] ?? '') === 'invalid_path',
     'Validation: nonexistent page error code',
     $errors, $passed, $failed
 );
@@ -174,19 +125,19 @@ record(
 $r = callEndpoint('POST', '/site-control/page-rename', ['pageId' => $testPageId, 'newTitle' => $testTitle]);
 record($r['httpCode'] === 422, 'Validation: same title → 422', $errors, $passed, $failed);
 record(
-    ($r['response']['error']['code'] ?? '') === 'no_change',
+    ($r['response']['error']['code'] ?? '') === 'invalid_schema',
     'Validation: same title error code',
     $errors, $passed, $failed
 );
 
-// No snapshots wasted on validation errors
+// No revisions created on validation errors
 // Re-read from temp DB since validation calls run in subprocesses
 $tempDbCheck = new \SQLite3($tempDbPath, SQLITE3_OPEN_READONLY);
-$snapshotCountAfter = (int) $tempDbCheck->querySingle("SELECT COUNT(*) FROM snapshots");
+$revisionCountAfter = (int) $tempDbCheck->querySingle("SELECT COUNT(*) FROM revisions");
 $tempDbCheck->close();
 record(
-    $snapshotCountAfter === $snapshotCountBefore,
-    'Validation: no snapshots created for rejected requests',
+    $revisionCountAfter === $revisionCountBefore,
+    'Validation: no revisions created for rejected requests',
     $errors, $passed, $failed
 );
 
@@ -229,7 +180,7 @@ if (($r['response']['ok'] ?? false) === true) {
     record($data['oldTitle'] === $testTitle, 'Happy path: oldTitle correct', $errors, $passed, $failed);
     record($data['newTitle'] === $uniqueTitle, 'Happy path: newTitle correct', $errors, $passed, $failed);
     record($data['pageSlug'] === $testSlug, 'Happy path: pageSlug unchanged', $errors, $passed, $failed);
-    record(isset($data['snapshotId']), 'Happy path: snapshotId present', $errors, $passed, $failed);
+    record(siteControlRetainedOperation($tempDbPath,$data), 'Happy path: retained operation and revision present', $errors, $passed, $failed);
     record(isset($data['navStatus']), 'Happy path: navStatus present', $errors, $passed, $failed);
     record(array_key_exists('navLabelUpdated', $data), 'Happy path: navLabelUpdated present', $errors, $passed, $failed);
 
@@ -416,7 +367,7 @@ $r = callEndpoint('POST', '/site-control/page-rename', [
     'newTitle' => $rollbackTitle,
 ], '--fail-rename');
 
-record($r['httpCode'] === 500, 'Rollback: forced failure → 500', $errors, $passed, $failed);
+record($r['httpCode'] === 409, 'Rollback: forced failure → 409', $errors, $passed, $failed);
 record(
     ($r['response']['ok'] ?? false) === false,
     'Rollback: response.ok = false',
@@ -443,22 +394,64 @@ $navBackup = file_get_contents($navFilePath);
 unlink($navFilePath);
 
 $missingNavTitle = 'Missing Nav ' . time();
-$r = callEndpoint('POST', '/site-control/page-rename', [
+$missingNavBefore = $db->queryOne('SELECT id,slug,title,file_path,is_homepage,nav_label FROM pages WHERE file_path=?',[$testFilePath]);
+$missingNavExpected = $missingNavBefore;
+$missingNavExpected['title'] = $missingNavTitle;
+$missingNavSource = str_replace($preRollbackTitle,$missingNavTitle,$preRollbackContent,$titleOccurrences);
+record($titleOccurrences===1,'Missing nav: fixture has one exact title metadata target',$errors,$passed,$failed);
+$missingNavState = siteControlState($tempDbPath);
+$missingNavRequest = siteControlRequest($tempDbPath,[
     'pageId'   => $testPageId,
     'newTitle' => $missingNavTitle,
 ]);
+$r = callEndpoint('POST', '/site-control/page-rename', $missingNavRequest);
 
-record($r['httpCode'] === 200, 'Missing nav: rename → 200', $errors, $passed, $failed);
+record($r['httpCode']===200&&($r['response']['ok']??false)===true,'Missing nav: title-only rename succeeds',$errors,$passed,$failed);
+record(file_get_contents($tempPreview.'/'.$testFilePath)===$missingNavSource,'Missing nav: only exact title metadata changes in page source',$errors,$passed,$failed);
+record($db->queryOne('SELECT id,slug,title,file_path,is_homepage,nav_label FROM pages WHERE file_path=?',[$testFilePath])===$missingNavExpected,'Missing nav: page projection changes only the title',$errors,$passed,$failed);
+record(!file_exists($navFilePath),'Missing nav: rename does not recreate navigation',$errors,$passed,$failed);
 
 if (($r['response']['ok'] ?? false) === true) {
     $data = $r['response']['data'] ?? [];
     record($data['navStatus'] === 'missing', 'Missing nav: navStatus = missing', $errors, $passed, $failed);
     record($data['navLabelUpdated'] === false, 'Missing nav: navLabelUpdated = false', $errors, $passed, $failed);
+    record(($data['oldTitle']??null)===$preRollbackTitle&&($data['newTitle']??null)===$missingNavTitle&&($data['pageSlug']??null)===$testSlug,'Missing nav: response retains exact old/new titles and unchanged slug',$errors,$passed,$failed);
+    record(siteControlRetainedOperation($tempDbPath,$data),'Missing nav: success has a sealed retained operation and attributed revision',$errors,$passed,$failed);
+    $reviewRow=$db->queryOne('SELECT manifest_json,payload_json FROM agent_change_sets WHERE id=?',[$data['operation']['result']['change_set_id']]);
+    $manifest=json_decode($reviewRow['manifest_json'],true,64,JSON_THROW_ON_ERROR);
+    record(($manifest['before'][$testFilePath]??null)===hash('sha256',$preRollbackContent)&&($manifest['after'][$testFilePath]??null)===hash('sha256',$missingNavSource)&&!array_key_exists('_partials/nav.php',$manifest['before'])&&!array_key_exists('_partials/nav.php',$manifest['after']),'Missing nav: retained manifest binds exact title bytes and absent navigation',$errors,$passed,$failed);
+    $reviewPayload=json_decode($reviewRow['payload_json'],true,64,JSON_THROW_ON_ERROR);
+    $warnings=array_filter($reviewPayload['validation']['warnings']??[],fn($warning)=>($warning['code']??null)==='pre_existing_dependency'&&($warning['path']??null)==='_partials/nav.php');
+    record(count($warnings)>0,'Missing nav: retained review reports the pre-existing missing partial warning',$errors,$passed,$failed);
+    $missingNavAfter=siteControlState($tempDbPath);
+    record(count($missingNavAfter['revisions'])===count($missingNavState['revisions'])+1&&$missingNavAfter['site_workspace_state'][0]['draft_version']===$missingNavState['site_workspace_state'][0]['draft_version']+1,'Missing nav: success advances revision and draft version exactly once',$errors,$passed,$failed);
+    $missingNavReplay=callEndpoint('POST','/site-control/page-rename',$missingNavRequest);
+    record($missingNavReplay===$r&&siteControlState($tempDbPath)===$missingNavAfter,'Missing nav: identical retry retains its result without another mutation',$errors,$passed,$failed);
+    record(!file_exists($navFilePath),'Missing nav: replay also preserves the absent navigation file',$errors,$passed,$failed);
 }
 
 // Restore nav.php
 file_put_contents($navFilePath, $navBackup);
 
+
+// A custom source label wins even if the registry still carries the old title.
+$customNav=NavLinksParser::parse(file_get_contents($navFilePath));
+foreach($customNav as &$entry)if($entry['href']==='/'.$testSlug)$entry['label']='Meet the crew';unset($entry);
+file_put_contents($navFilePath,NavLinksParser::replaceNavBlock(file_get_contents($navFilePath),NavLinksParser::serialize($customNav)));
+$db->update('pages',['nav_label'=>$preRollbackTitle],'file_path=?',[$testFilePath]);
+$customRequest=siteControlRequest($tempDbPath,['pageId'=>$testPageId,'newTitle'=>'Preserve custom navigation']);
+$customRename=callEndpoint('POST','/site-control/page-rename',$customRequest);
+record($customRename['httpCode']===200,'Custom label: rename succeeds',$errors,$passed,$failed);
+$customAfter=NavLinksParser::parse(file_get_contents($navFilePath));
+$customEntry=array_values(array_filter($customAfter,fn($entry)=>$entry['href']==='/'.$testSlug))[0];
+record($customEntry['label']==='Meet the crew','Custom label: canonical source label preserved despite stale registry',$errors,$passed,$failed);
+$versionAfter=$db->queryOne('SELECT draft_version FROM site_workspace_state WHERE id=1')['draft_version'];
+$replay=callEndpoint('POST','/site-control/page-rename',$customRequest);
+record($replay===$customRename&&$versionAfter===$db->queryOne('SELECT draft_version FROM site_workspace_state WHERE id=1')['draft_version'],'Replay: identical request retains exact result without another revision',$errors,$passed,$failed);
+$conflict=callEndpoint('POST','/site-control/page-rename',array_replace($customRequest,['newTitle'=>'Different intent']));
+record($conflict['httpCode']===409&&($conflict['response']['error']['code']??'')==='idempotency_conflict','Replay: changed intent cannot reuse identity',$errors,$passed,$failed);
+$stale=callEndpoint('POST','/site-control/page-rename',array_replace($customRequest,['operation_id'=>'stale_'.bin2hex(random_bytes(12)),'newTitle'=>'Stale input']));
+record($stale['httpCode']===409&&($stale['response']['error']['code']??'')==='content_conflict','Version: old displayed draft rejects a new request',$errors,$passed,$failed);
 
 // ═══════════════════════════════════════════
 //  Summary
@@ -490,6 +483,8 @@ exit($failed > 0 ? 1 : 0);
 function callEndpoint(string $method, string $routePath, array $body, ?string $failMode = null): array
 {
     global $tempDbPath, $tempPreview, $tempAssets;
+    $stateBefore=siteControlState($tempDbPath);
+    if ($method==='POST') $body=siteControlRequest($tempDbPath,$body);
 
     $helperPath = __DIR__ . '/helpers/call-nav-endpoint.php';
     $jsonBody = json_encode($body, JSON_UNESCAPED_SLASHES);
@@ -501,7 +496,8 @@ function callEndpoint(string $method, string $routePath, array $body, ?string $f
     ];
 
     $cmd = sprintf(
-        'php %s %s %s %s %s %s%s',
+        '%s %s %s %s %s %s %s%s',
+        escapeshellarg(PHP_BINARY),
         escapeshellarg($helperPath),
         escapeshellarg($tempDbPath),
         escapeshellarg($tempPreview),
@@ -543,6 +539,7 @@ function callEndpoint(string $method, string $routePath, array $body, ?string $f
         ]]];
     }
 
+    siteControlAssertInvariant($tempDbPath,$stateBefore,$parsed,$method,$failMode);
     return $parsed;
 }
 

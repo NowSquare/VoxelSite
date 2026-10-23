@@ -345,8 +345,12 @@ record($h10->getNode('page:parent.php')['meta']['childCount'] === 3, 'child coun
 
 echo "\n--- Indexer: Build graph from real site ---\n";
 
-$db = Database::getInstance();
-$fileManager = new FileManager($db);
+require_once __DIR__ . '/helpers/SiteControlFixture.php';
+$fixtureRoot = sys_get_temp_dir() . '/voxelsite_site_graph_' . bin2hex(random_bytes(8));
+[$db, $fileManager] = createSiteControlFixture($fixtureRoot);
+// Deterministic reproductions of the repeated-link and token-consumer regressions.
+file_put_contents($fixtureRoot . '/preview/_partials/nav.php', '<nav><a href="/">Home</a><a href="/contact">Contact</a><a href="/contact">Contact again</a><a class="nav-cta" href="/contact">Book</a></nav>');
+file_put_contents($fixtureRoot . '/preview/assets/css/style.css', ':root { --color-primary: #123456; } body { color: var(--color-primary); }');
 $indexer = new SiteGraphIndexer($db, $fileManager);
 $graph = $indexer->buildGraph();
 $realSummary = $graph->summary();

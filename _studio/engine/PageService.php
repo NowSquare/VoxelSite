@@ -97,6 +97,7 @@ class PageService
      */
     public function createPage(string $slug, string $title, string $content = '', string $source = 'studio'): array
     {
+        $lock = $this->fileManager->mutationLock();
         $slug = self::normalizeSlug($slug);
         if ($slug === '') {
             throw new \RuntimeException('Page slug is invalid.');
@@ -165,6 +166,7 @@ class PageService
      */
     public function updatePage(string $slug, array $updates, string $source = 'studio'): array
     {
+        $lock = $this->fileManager->mutationLock();
         $page = $this->db->queryOne('SELECT * FROM pages WHERE slug = ?', [$slug]);
         if (!$page) {
             throw new \RuntimeException("Page '{$slug}' not found.", 404);
@@ -259,6 +261,7 @@ class PageService
         }
 
         // Apply DB updates
+        $this->fileManager->invalidateDraft();
         $this->db->update('pages', $dbUpdates, 'id = ?', [(int) $page['id']]);
         $this->fileManager->syncPageRegistry();
 
@@ -299,6 +302,7 @@ class PageService
      */
     public function deletePage(string $slug): array
     {
+        $lock = $this->fileManager->mutationLock();
         $page = $this->db->queryOne(
             'SELECT id, title, file_path, is_homepage FROM pages WHERE slug = ?',
             [$slug]
@@ -321,6 +325,7 @@ class PageService
             // File may already be deleted; continue with DB cleanup
         }
 
+        $this->fileManager->invalidateDraft();
         $this->db->delete('pages', 'slug = ?', [$slug]);
 
         // Cross-file reference cleanup (matching Studio pages.php behavior)
@@ -409,17 +414,7 @@ class PageService
             }
 
             $original = $content;
-            $isPartial = str_starts_with($path, '_partials/');
-
-            if ($isPartial) {
-                $content = self::removeListItemsForSlug($content, $hrefPattern);
-                $content = self::removeStandaloneLinksForSlug($content, $hrefPattern);
-            } else {
-                $content = self::rewriteHrefSlug($content, $deletedSlug, $replacementHref, $path, false);
-            }
-
-            $content = self::removeSlugConditionals($content, $deletedSlug);
-            $content = self::cleanupEmptyContainers($content);
+            $content = self::removeReferencesFromSource($content, $path, $deletedSlug, $replacementHref);
 
             if ($content !== $original) {
                 $this->fileManager->writeFile($path, $content);
@@ -428,6 +423,19 @@ class PageService
         }
 
         return ['updated_files' => $updatedFiles];
+    }
+
+    /** Same deletion cleanup for Studio and privately prepared structural reviews. */
+    public static function removeReferencesFromSource(string $content, string $path, string $deletedSlug, string $replacementHref = '#'): string
+    {
+        $hrefPattern = self::buildSlugHrefPattern($deletedSlug) . '(?:[?#][^\"\']*)?';
+        if (str_starts_with($path, '_partials/')) {
+            $content = self::removeListItemsForSlug($content, $hrefPattern);
+            $content = self::removeStandaloneLinksForSlug($content, $hrefPattern);
+        } else {
+            $content = self::rewriteHrefSlug($content, $deletedSlug, $replacementHref, $path, false);
+        }
+        return self::cleanupEmptyContainers(self::removeSlugConditionals($content, $deletedSlug));
     }
 
     // ═══════════════════════════════════════════

@@ -28,11 +28,12 @@ $path   = $_REQUEST['_route_path'];
 $db       = Database::getInstance();
 $settings = new Settings($db);
 
-$previewDir  = dirname(__DIR__, 2) . '/preview';
-$docRoot     = dirname(__DIR__, 3);          // The actual document root
-$snapshotDir = dirname(__DIR__, 2) . '/data/snapshots';
-$manifestPath = dirname(__DIR__, 2) . '/data/published-manifest.json';
-$assetsDir   = $docRoot . '/assets';
+$workspace = new \VoxelSite\SiteWorkspace($db);
+$previewDir = $workspace->draftRoot();
+$docRoot = $workspace->publishedRoot();
+$snapshotDir = getenv('VS_TEST_SNAPSHOT_DIR') ?: dirname($previewDir) . '/data/snapshots';
+$manifestPath = dirname($previewDir) . '/data/published-manifest.json';
+$assetsDir = $workspace->publishedAssetsRoot();
 
 // Ensure snapshots directory exists
 if (!is_dir($snapshotDir)) {
@@ -44,269 +45,22 @@ if (!is_dir($snapshotDir)) {
 // ═══════════════════════════════════════════
 
 if ($method === 'POST' && $path === '/publish') {
-    // Verify there are files to publish
-    $previewFiles = collectPreviewPublishFiles($previewDir);
-    if (empty($previewFiles)) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'nothing_to_publish',
-            'message' => 'No pages to publish. Create a website first.',
-        ]], 422);
-        return;
-    }
-
-    // ── Step 1: Create pre-publish snapshot (optional) ──
-    $body = getJsonBody();
-    $createSnapshot = ($body['create_snapshot'] ?? true) !== false;
-    $snapshot = ['ok' => true, 'id' => null];
-
-    if ($createSnapshot) {
-        $snapshot = createPrePublishSnapshot($db, $snapshotDir, $previewDir, $assetsDir, $docRoot);
-        if (!($snapshot['ok'] ?? false)) {
-            Logger::error('system', 'Pre-publish snapshot failed', [
-                'error' => $snapshot['error'] ?? 'Unknown',
-            ]);
-            jsonResponse(['ok' => false, 'error' => [
-                'code'    => 'snapshot_failed',
-                'message' => 'Publish aborted: could not create pre-publish snapshot. '
-                    . ($snapshot['error'] ?? 'Unknown snapshot error.'),
-            ]], 500);
-            return;
-        }
-    }
-
-    // ── Step 2: Copy preview files to document root ──
-    $published = [];
-    $removed = [];
-    $errors    = [];
-
-    foreach ($previewFiles as $relativePath) {
-        $sourcePath = $previewDir . '/' . $relativePath;
-        $targetPath = $docRoot . '/' . $relativePath;
-
-        if (!copyFileAtomic($sourcePath, $targetPath)) {
-            $errors[] = "Could not publish: {$relativePath}";
-            continue;
-        }
-
-        // Bust OPcache so PHP-FPM serves the new file immediately.
-        // Without this, the old bytecode stays cached and the site
-        // appears unchanged until the cache expires.
-        if (function_exists('opcache_invalidate')) {
-            opcache_invalidate($targetPath, true);
-        }
-
-        $published[] = $relativePath;
-    }
-
-    // ── Step 2b: Copy .htaccess from preview when provided ──
-    $htaccessPreview = $previewDir . '/.htaccess';
-    if (file_exists($htaccessPreview)) {
-        $htaccessTarget = $docRoot . '/.htaccess';
-        if (copyFileAtomic($htaccessPreview, $htaccessTarget)) {
-            $published[] = '.htaccess';
-        } else {
-            $errors[] = 'Could not publish: .htaccess';
-        }
-    }
-
-    // ── Step 2c: Remove files that were previously published but no longer in preview ──
-    $previousManifest = loadJsonFile($manifestPath, ['files' => []]);
-    $previousFiles = is_array($previousManifest['files'] ?? null) ? $previousManifest['files'] : [];
-
-    $toRemove = array_values(array_diff($previousFiles, $previewFiles));
-    foreach ($toRemove as $relativePath) {
-        $targetPath = $docRoot . '/' . $relativePath;
-        if (!file_exists($targetPath)) {
-            continue;
-        }
-        if (is_file($targetPath) && @unlink($targetPath)) {
-            $removed[] = $relativePath;
-        } else {
-            $errors[] = "Could not remove stale file: {$relativePath}";
-        }
-    }
-
-    if (is_dir($docRoot . '/_partials')) {
-        $remainingPartials = glob($docRoot . '/_partials/*.php') ?: [];
-        if (empty($remainingPartials)) {
-            @rmdir($docRoot . '/_partials');
-        }
-    }
-
-    // Snapshot current asset file hashes so the diff endpoint can detect
-    // unpublished CSS/JS/JSON changes (assets are shared, not staged).
-    $assetHashes = collectAssetHashes($assetsDir);
-
-    // Persist manifest of files under publish management.
-    saveJsonFile($manifestPath, [
-        'files'        => $previewFiles,
-        'asset_hashes' => $assetHashes,
-        'updated_at'   => now(),
-    ]);
-
-    if (empty($published) && empty($removed)) {
-        Logger::error('system', 'Publish failed — no files published', [
-            'errors'        => $errors,
-            'preview_files' => $previewFiles,
-        ]);
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'publish_failed',
-            'message' => 'No files were published. ' . implode(' ', $errors),
-        ]], 500);
-        return;
-    }
-
-    // ── Step 3: Record publish event ──
-    $settings->set('last_published_at', now());
-    $settings->set('publish_count', (string) ((int) $settings->get('publish_count', '0') + 1));
-
-    // ── Step 3b: Recompile Tailwind + ensure assets reach docroot ──
-    // On Forge atomic deployments, the compiler may write to a shared/symlinked
-    // assets directory while the web server reads from the release's own assets/.
-    // We compile to BOTH the default path and the explicit docroot path.
-    $docRootAssets = $docRoot . '/assets';
     try {
-        $fileManager = new \VoxelSite\FileManager($db);
-        $compileResult = $fileManager->compileTailwind();
-
-        // Also compile directly to the docroot assets path (may be different due to symlinks)
-        $compiler = new \VoxelSite\TailwindCompiler();
-        $docRootTw = $docRootAssets . '/css/tailwind.css';
-        $compileResult2 = $compiler->compile(null, $docRootTw);
-
-        Logger::info('system', 'Publish: Tailwind compiled', [
-            'default_ok'    => $compileResult['ok'] ?? false,
-            'default_size'  => $compileResult['css_size'] ?? 0,
-            'docroot_ok'    => $compileResult2['ok'] ?? false,
-            'docroot_size'  => $compileResult2['css_size'] ?? 0,
-            'docroot_path'  => $docRootTw,
-            'class_count'   => $compileResult2['class_count'] ?? 0,
-        ]);
-    } catch (\Throwable $e) {
-        $errors[] = 'Tailwind compile: ' . $e->getMessage();
+        $body = getJsonBody();
+        $userId = (int) ($_REQUEST['_user']['id'] ?? 0);
+        if ($userId < 1) throw new \VoxelSite\Agent\OperationException('permission_denied', 'A current Studio account is required.');
+        $actor = new \VoxelSite\Agent\OperationActor('user', $userId, null, [], 'studio_configured', null);
+        $result = (new \VoxelSite\PublishService($db, $settings))->publish(
+            ($body['create_snapshot'] ?? true) !== false, 'studio', $actor, $body);
+        $state = $result['operation']['status'];
+        if (in_array($state, ['failed_restored', 'recovery_required', 'expired', 'cancelled'], true)) {
+            jsonResponse(['ok' => false, 'data' => $result, 'error' => $result['operation']['result']['error']
+                ?? ['code' => $state, 'message' => 'Publication needs attention. Inspect the retained operation.']], 409);
+        } else jsonResponse(['ok' => true, 'data' => $result], $state === 'succeeded' ? 200 : 202);
+    } catch (\VoxelSite\Agent\OperationException $error) {
+        jsonResponse(['ok' => false, 'error' => ['code' => $error->errorCode, 'message' => $error->getMessage(), 'details' => $error->details]],
+            $error->errorCode === 'permission_denied' ? 403 : 409);
     }
-
-    // Copy style.css, JS, data, and forms from the internal assets path to docroot
-    // This ensures AI-written assets survive atomic deploys even without shared dirs
-    $internalAssetsDir = dirname(__DIR__, 3) . '/assets';
-    syncAssetDirectory($internalAssetsDir, $docRootAssets);
-
-    // ── Step 4: Auto-generate AEO files (llms.txt, robots.txt, Schema.org, MCP) ──
-    $aeoFiles = [];
-    try {
-        $aeo = new \VoxelSite\AEOGenerator();
-        $siteUrl = rtrim($settings->get('site_url', ''), '/');
-
-        // Auto-detect from request when site_url isn't configured
-        if (empty($siteUrl) && !empty($_SERVER['HTTP_HOST'])) {
-            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $siteUrl = $scheme . '://' . $_SERVER['HTTP_HOST'];
-        }
-
-        $aeoResult = $aeo->generateAll($siteUrl);
-        $aeoFiles = $aeoResult['generated'] ?? [];
-    } catch (\Throwable $e) {
-        // AEO generation is non-critical — don't fail the publish
-        $errors[] = 'AEO generation: ' . $e->getMessage();
-    }
-
-    // ── Step 4b: Deploy Actions Bar (if active actions exist) ──
-    $agenticFiles = [];
-    try {
-        if ($fileManager->hasActiveActions()) {
-            // Deploy actions-bar.js + actions-bar.css to docroot
-            $fileManager->ensureShippedActionsBar($docRoot);
-            $agenticFiles[] = 'actions-bar.js';
-            $agenticFiles[] = 'actions-bar.css';
-
-            // Generate and deploy manifest
-            $actionManager = new \VoxelSite\ActionManager();
-            $manifest = $actionManager->generateManifest();
-            if ($manifest !== null) {
-                $actionsDir = $docRoot . '/actions';
-                if (!is_dir($actionsDir)) {
-                    mkdir($actionsDir, 0755, true);
-                }
-                file_put_contents(
-                    $actionsDir . '/manifest.json',
-                    json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-                );
-                $agenticFiles[] = 'actions/manifest.json';
-            }
-
-            // Deploy submit handler
-            $submitSource = dirname(__DIR__, 2) . '/static/actions-submit.php';
-            if (file_exists($submitSource)) {
-                $actionsDir = $docRoot . '/actions';
-                if (!is_dir($actionsDir)) {
-                    mkdir($actionsDir, 0755, true);
-                }
-                copy($submitSource, $actionsDir . '/submit.php');
-                $agenticFiles[] = 'actions/submit.php';
-            }
-
-            // Deploy i18n translation files
-            $i18nSource = dirname(__DIR__, 2) . '/static/i18n';
-            if (is_dir($i18nSource)) {
-                $publicI18nRoot = $docRoot . '/i18n';
-                if (!is_dir($publicI18nRoot)) {
-                    mkdir($publicI18nRoot, 0755, true);
-                }
-
-                $legacyI18nRoot = $docRoot . '/actions/i18n';
-
-                foreach (glob($i18nSource . '/*', GLOB_ONLYDIR) ?: [] as $localeDir) {
-                    $locale = basename($localeDir);
-                    $localeDest = $publicI18nRoot . '/' . $locale;
-
-                    if (!is_dir($localeDest)) {
-                        mkdir($localeDest, 0755, true);
-                    }
-
-                    foreach (glob($localeDir . '/*.json') ?: [] as $namespaceFile) {
-                        $filename = basename($namespaceFile);
-                        copy($namespaceFile, $localeDest . '/' . $filename);
-                        $agenticFiles[] = 'i18n/' . $locale . '/' . $filename;
-
-                        if ($filename === 'actions.json') {
-                            if (!is_dir($legacyI18nRoot)) {
-                                mkdir($legacyI18nRoot, 0755, true);
-                            }
-                            copy($namespaceFile, $legacyI18nRoot . '/' . $locale . '.json');
-                            $agenticFiles[] = 'actions/i18n/' . $locale . '.json';
-                        }
-                    }
-                }
-            }
-
-            // Inject bar references into published pages (production footer)
-            $fileManager->injectActionsBarIntoFooter($docRoot);
-            // Also inject into preview footer so diff reports zero changes
-            $fileManager->injectActionsBarIntoFooter(null);
-        }
-    } catch (\Throwable $e) {
-        $errors[] = 'Actions Bar deployment: ' . $e->getMessage();
-    }
-
-    Logger::info('system', 'Publish completed', [
-        'published_count' => count($published),
-        'removed_count'   => count($removed),
-        'error_count'     => count($errors),
-        'aeo_files'       => $aeoFiles,
-        'agentic_files'   => $agenticFiles,
-        'snapshot_id'     => $snapshot['id'] ?? null,
-        'published'       => $published,
-    ]);
-
-    jsonResponse(['ok' => true, 'data' => [
-        'message'      => count($published) . ' file(s) published.',
-        'published'    => $published,
-        'removed'      => $removed,
-        'snapshot_id'  => $snapshot['id'] ?? null,
-        'aeo_files'    => $aeoFiles,
-        'agentic_files' => $agenticFiles,
-        'errors'       => $errors,
-    ]]);
     return;
 }
 
@@ -315,115 +69,17 @@ if ($method === 'POST' && $path === '/publish') {
 // ═══════════════════════════════════════════
 
 if ($method === 'POST' && $path === '/publish/rollback') {
-    // Find the most recent pre_publish snapshot
-    $snapshot = $db->queryOne(
-        'SELECT * FROM snapshots
-         WHERE snapshot_type = ?
-         ORDER BY created_at DESC
-         LIMIT 1',
-        ['pre_publish']
-    );
-
-    if (!$snapshot) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'no_snapshot',
-            'message' => 'No pre-publish snapshot found. Cannot rollback.',
-        ]], 404);
-        return;
+    try {
+        $actor = new \VoxelSite\Agent\OperationActor('user', (int) ($_REQUEST['_user']['id'] ?? 0), null, [], 'studio_configured', null);
+        $result = (new \VoxelSite\WebsiteHistoryService($db, $workspace))->rollback($actor, getJsonBody());
+        $ok = in_array($result['status'], ['applying', 'succeeded'], true);
+        jsonResponse(['ok' => $ok, 'data' => ['operation' => $result,
+            'message' => $result['status'] === 'succeeded' ? 'Previous live version restored. Your draft is unchanged.' : 'Live rollback ' . $result['status'] . '.']],
+            $result['status'] === 'applying' ? 202 : ($ok ? 200 : 409));
+    } catch (\VoxelSite\Agent\OperationException $error) {
+        jsonResponse(['ok' => false, 'error' => ['code' => $error->errorCode, 'message' => $error->getMessage(), 'details' => $error->details]],
+            $error->errorCode === 'permission_denied' ? 403 : 409);
     }
-
-    $zipPath = $snapshotDir . '/' . $snapshot['filename'];
-    if (!file_exists($zipPath)) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'snapshot_missing',
-            'message' => 'Snapshot file is missing from disk.',
-        ]], 404);
-        return;
-    }
-
-    // Restore the snapshot payload (preview + assets + production).
-    $zip = new \ZipArchive();
-    if ($zip->open($zipPath) !== true) {
-        jsonResponse(['ok' => false, 'error' => [
-            'code'    => 'restore_failed',
-            'message' => 'Could not open snapshot archive.',
-        ]], 500);
-        return;
-    }
-
-    $snapshotPreview = [];
-    $snapshotAssets = [];
-    $snapshotProduction = [];
-
-    // Read snapshot entries into memory (validated paths only).
-    for ($i = 0; $i < $zip->numFiles; $i++) {
-        $entryName = $zip->getNameIndex($i);
-        if (!is_string($entryName) || str_ends_with($entryName, '/')) {
-            continue;
-        }
-
-        $content = $zip->getFromIndex($i);
-        if ($content === false) {
-            continue;
-        }
-
-        if (str_starts_with($entryName, 'preview/')) {
-            $relativePath = substr($entryName, strlen('preview/'));
-            if (isSafeRelativePath($relativePath)) {
-                $snapshotPreview[$relativePath] = $content;
-            }
-            continue;
-        }
-
-        if (str_starts_with($entryName, 'assets/')) {
-            $relativePath = substr($entryName, strlen('assets/'));
-            if (isSafeRelativePath($relativePath)) {
-                $snapshotAssets[$relativePath] = $content;
-            }
-            continue;
-        }
-
-        if (str_starts_with($entryName, 'production/')) {
-            $relativePath = substr($entryName, strlen('production/'));
-            if (isSafeRelativePath($relativePath)) {
-                $snapshotProduction[$relativePath] = $content;
-            }
-        }
-    }
-
-    $zip->close();
-
-    // Reset current state before applying snapshot payload.
-    clearDirectoryRecursive($previewDir, ['gitkeep']);
-    clearDirectoryRecursive($assetsDir, ['gitkeep']);
-    clearProductionManagedFiles($docRoot);
-
-    foreach ($snapshotPreview as $relativePath => $content) {
-        writeSnapshotFile($previewDir, $relativePath, $content);
-    }
-    foreach ($snapshotAssets as $relativePath => $content) {
-        writeSnapshotFile($assetsDir, $relativePath, $content);
-    }
-    foreach ($snapshotProduction as $relativePath => $content) {
-        writeSnapshotFile($docRoot, $relativePath, $content);
-    }
-
-    // Sync page registry
-    $fileManager = new \VoxelSite\FileManager($db);
-    $fileManager->syncPageRegistry();
-    $fileManager->compileTailwind();
-
-    // Refresh publish manifest to match restored preview state.
-    saveJsonFile($manifestPath, [
-        'files'        => collectPreviewPublishFiles($previewDir),
-        'asset_hashes' => collectAssetHashes($assetsDir),
-        'updated_at'   => now(),
-    ]);
-
-    jsonResponse(['ok' => true, 'data' => [
-        'message'     => 'Rolled back to pre-publish state.',
-        'snapshot_id' => $snapshot['id'],
-    ]]);
     return;
 }
 
@@ -432,90 +88,17 @@ if ($method === 'POST' && $path === '/publish/rollback') {
 // ═══════════════════════════════════════════
 
 if ($method === 'POST' && $path === '/publish/unpublish') {
-    $removed = [];
-    $errors  = [];
-
-    // ── Step 1: Remove published PHP pages ──
-    $preserveRootPhp = ['submit.php', 'LocalValetDriver.php'];
-    foreach (glob($docRoot . '/*.php') ?: [] as $phpFile) {
-        $name = basename($phpFile);
-        if (in_array($name, $preserveRootPhp, true)) {
-            continue;
-        }
-        if (@unlink($phpFile)) {
-            $removed[] = $name;
-        } else {
-            $errors[] = "Could not remove: {$name}";
-        }
+    try {
+        $actor = new \VoxelSite\Agent\OperationActor('user', (int) ($_REQUEST['_user']['id'] ?? 0), null, [], 'studio_configured', null);
+        $result = (new \VoxelSite\WebsiteHistoryService($db, $workspace))->unpublish($actor, getJsonBody());
+        $ok = in_array($result['status'], ['applying', 'succeeded'], true);
+        jsonResponse(['ok' => $ok, 'data' => ['operation' => $result,
+            'message' => $result['status'] === 'succeeded' ? 'Site unpublished. Your draft is unchanged.' : 'Unpublish ' . $result['status'] . '.']],
+            $result['status'] === 'applying' ? 202 : ($ok ? 200 : 409));
+    } catch (\VoxelSite\Agent\OperationException $error) {
+        jsonResponse(['ok' => false, 'error' => ['code' => $error->errorCode, 'message' => $error->getMessage(), 'details' => $error->details]],
+            $error->errorCode === 'permission_denied' ? 403 : 409);
     }
-
-    // ── Step 2: Remove _partials/ ──
-    $partialsDir = $docRoot . '/_partials';
-    if (is_dir($partialsDir)) {
-        clearDirectoryRecursive($partialsDir);
-        $remaining = glob($partialsDir . '/*') ?: [];
-        if (empty($remaining)) {
-            @rmdir($partialsDir);
-        }
-        $removed[] = '_partials/';
-    }
-
-    // ── Step 3: Remove AEO files ──
-    foreach (['llms.txt', 'robots.txt', 'sitemap.xml', 'mcp.php'] as $file) {
-        $fullPath = $docRoot . '/' . $file;
-        if (is_file($fullPath) && @unlink($fullPath)) {
-            $removed[] = $file;
-        }
-    }
-
-    // ── Step 3b: Remove agentic files ──
-    foreach (['actions-bar.js', 'actions-bar.css'] as $file) {
-        $fullPath = $docRoot . '/' . $file;
-        if (is_file($fullPath) && @unlink($fullPath)) {
-            $removed[] = $file;
-        }
-    }
-    $actionsDir = $docRoot . '/actions';
-    if (is_dir($actionsDir)) {
-        foreach (['manifest.json', 'submit.php'] as $file) {
-            $fullPath = $actionsDir . '/' . $file;
-            if (is_file($fullPath) && @unlink($fullPath)) {
-                $removed[] = 'actions/' . $file;
-            }
-        }
-        @rmdir($actionsDir);
-    }
-
-    // ── Step 4: Restore the unpublish placeholder ──
-    $unpublishIndex = dirname(__DIR__, 2) . '/data/default-unpublish-index.php';
-    if (file_exists($unpublishIndex)) {
-        if (copy($unpublishIndex, $docRoot . '/index.php')) {
-            // Bust OPcache
-            if (function_exists('opcache_invalidate')) {
-                opcache_invalidate($docRoot . '/index.php', true);
-            }
-        } else {
-            $errors[] = 'Could not restore default index.php';
-        }
-    } else {
-        $errors[] = 'Default unpublish template not found.';
-    }
-
-    // ── Step 5: Clear publish state ──
-    $settings->set('last_published_at', '');
-    saveJsonFile($manifestPath, ['files' => [], 'asset_hashes' => [], 'updated_at' => now()]);
-
-    Logger::info('system', 'Site unpublished', [
-        'removed'  => $removed,
-        'errors'   => $errors,
-        'user_id'  => $_REQUEST['_user']['id'] ?? null,
-    ]);
-
-    jsonResponse(['ok' => true, 'data' => [
-        'message' => 'Site unpublished. Default page restored.',
-        'removed' => $removed,
-        'errors'  => $errors,
-    ]]);
     return;
 }
 

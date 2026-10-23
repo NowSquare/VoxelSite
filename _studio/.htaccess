@@ -1,6 +1,6 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteBase /_studio/
+    # Relative rewrites retain this installation's directory prefix.
 
     # ── Block direct access to protected directories ──
     # These contain sensitive data and must never be web-accessible
@@ -11,6 +11,8 @@
     RewriteRule ^backups/ - [F,L]
     RewriteRule ^templates/ - [F,L]
     RewriteRule ^prompts/ - [F,L]
+    # Legacy releases can retain development tests after a ZIP upgrade.
+    RewriteRule ^tests(?:/|$) - [F,L]
 
     # ── Allow static UI assets ──
     RewriteRule ^ui/ - [L]

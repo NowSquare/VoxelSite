@@ -23,11 +23,16 @@ $db->insert('users', ['id' => 1, 'email' => 'recovery@example.test', 'name' => '
 file_put_contents($root . '/assets/css/style.css', ':root { --color-primary: #123456; }');
 file_put_contents($root . '/assets/css/tailwind.css', '/* original compiled CSS */');
 file_put_contents($root . '/preview/about.php', '<?php $page=["title"=>"About","slug"=>"about"]; ?><h1>About</h1>');
-// Enough real references to reliably terminate after source deletion and before propagation completes.
-for ($i = 0; $i < 500; $i++) {
+// Multiple real references span bounded continuations; a trusted test hook makes the kill deterministic.
+for ($i = 0; $i < 50; $i++) {
     $slug = $i === 0 ? 'index' : 'page-' . $i;
     file_put_contents($root . '/preview/' . $slug . '.php', '<?php $page=["title"=>"Page","slug"=>"' . $slug . '"]; ?><a href="/about">About</a>' . str_repeat('<p>Text</p>', 40));
 }
+require_once __DIR__ . '/helpers/LegacyWorkspaceFixture.php';
+activateLegacyTestWorkspace($db);
+file_put_contents($root . '/preview/_partials/header.php', '<!doctype html><html><body><main>');
+file_put_contents($root . '/preview/_partials/footer.php', '</main></body></html>');
+file_put_contents($root . '/preview/_partials/nav.php', "<?php\n" . \VoxelSite\NavLinksParser::serialize([['href'=>'/','label'=>'Home','home'=>true], ['href'=>'/about','label'=>'About']]));
 $fm = new FileManager($db);
 $fm->syncPageRegistry();
 $db->exec('PRAGMA wal_checkpoint(TRUNCATE)');
@@ -65,58 +70,62 @@ function response(string $route, array $body): array {
     return json_decode($out, true, 512, JSON_THROW_ON_ERROR);
 }
 
+$workspace = new \VoxelSite\SiteWorkspace($db);
+$actor = new \VoxelSite\Agent\OperationActor('user', 1, null, [], 'studio_configured', null);
+$policy = new \VoxelSite\Agent\ActorPolicy($db);
+$operations = new \VoxelSite\Agent\OperationStore($db, $policy, $workspace->mutationLockPath());
+$changes = new \VoxelSite\Agent\ChangeSetStore($db, $policy, dirname($workspace->draftRoot()) . '/data/agent/changes');
+$executor = new \VoxelSite\Agent\ChangeSetExecutor($db, $policy, $workspace, $changes, $operations);
 $before = state();
 $beforePages = $db->query('SELECT * FROM pages ORDER BY id');
 $id = bin2hex(random_bytes(16));
-$body = ['mutation_id' => $id, 'routeId' => 'route:/about', 'newPath' => '/company'];
+$body = ['operation_id' => $id, 'base_draft_version' => 'draft:' . $workspace->status()['draft_version'], 'routeId' => 'route:/about', 'newPath' => '/company'];
+file_put_contents($root . '/pause-enabled', 'pause at reviewed write');
 [$process, $pipes] = worker('/site-control/url-rename', $body);
-$killed = false;
-$deadline = microtime(true) + 15;
+$killed = false; $deadline = microtime(true) + 15;
 while (microtime(true) < $deadline) {
     clearstatcache();
-    if (is_file($root . '/preview/company.php') && !is_file($root . '/preview/about.php')) {
-        $killed = proc_terminate($process, 9);
-        break;
-    }
+    if (is_file($root . '/worker-paused')) { $killed = proc_terminate($process, 9); break; }
     if (!proc_get_status($process)['running']) break;
-    usleep(100);
+    usleep(1000);
 }
 $out = stream_get_contents($pipes[1]); fclose($pipes[1]);
-$err = stream_get_contents($pipes[2]); fclose($pipes[2]);
-proc_close($process);
-check($killed, 'A real URL rename worker is killed after source deletion');
+$err = stream_get_contents($pipes[2]); fclose($pipes[2]); proc_close($process);
+unlink($root . '/pause-enabled');
+check($killed, 'A real URL rename worker is killed after source deletion: ' . $out . $err);
 check(state() !== $before && !is_file($root . '/preview/about.php'), 'Process termination leaves an actual partial website mutation');
-$journal = new SiteMutationJournal($db);
-$pending = $journal->get($id, 1);
-check($pending['status'] === 'applying' && is_int($pending['snapshotId']), 'Killed operation retains its mutation identity and pre-write snapshot');
-check($journal->get($id, 2) === null, 'Mutation recovery results are private to the requesting user');
-$lock = SiteMutationLock::acquire();
-$journal->recoverInterrupted();
-$recovered = $journal->get($id, 1);
-check($recovered['status'] === 'failed' && $recovered['restored'] === true && $recovered['httpCode'] === 409,
+$pending = $operations->get($actor, $id);
+check($pending['state'] === 'applying' && !empty($pending['recovery']['change_set_id']), 'Killed operation retains its mutation identity and verified pre-write archive');
+$private = false;
+try { $operations->get(new \VoxelSite\Agent\OperationActor('user', 2, null, [], 'studio_configured', null), $id); }
+catch (\VoxelSite\Agent\OperationException $error) { $private = $error->errorCode === 'permission_denied'; }
+check($private, 'Mutation recovery results are private to the requesting user');
+$db->update('agent_operations', ['lease_expires_at' => time() - 1], 'id = ?', [$pending['id']]);
+$recovered = $executor->recover($actor, $id);
+check($recovered['status'] === 'failed_restored' && $recovered['result']['restoration']['restored'] === true,
     'Recovery retains a confirmed interrupted-and-restored terminal result');
 check(state() === $before && $db->query('SELECT * FROM pages ORDER BY id') === $beforePages,
     'Recovery restores every original file, permission, directory, and page ID exactly');
-unset($lock);
-$snapshotCount = $db->scalar('SELECT COUNT(*) FROM snapshots');
+$archiveCount = $db->count('agent_change_sets');
 $retry = response('/site-control/url-rename', $body);
-check($retry['httpCode'] === 409 && ($retry['response']['error']['restored'] ?? null) === true
-    && state() === $before && $db->scalar('SELECT COUNT(*) FROM snapshots') === $snapshotCount,
-    'Retry returns the retained recovery outcome without rerunning the mutation or taking another snapshot');
+check($retry['httpCode'] === 409 && ($retry['response']['error']['details']['operation']['result']['restoration']['restored'] ?? null) === true
+    && state() === $before && $db->count('agent_change_sets') === $archiveCount,
+    'Retry returns the retained recovery outcome without rerunning the mutation or taking another archive');
 $alteredBody = $body; $alteredBody['newPath'] = '/other';
 $different = response('/site-control/url-rename', $alteredBody);
-check($different['httpCode'] === 409 && str_contains($different['response']['error']['message'], 'different request') && state() === $before,
+check($different['httpCode'] === 409 && ($different['response']['error']['code'] ?? '') === 'idempotency_conflict' && state() === $before,
     'A retry identifier cannot authorize a changed mutation');
-
 $successId = bin2hex(random_bytes(16));
-$renameBody = ['mutation_id' => $successId, 'pageId' => 'page:about.php', 'newTitle' => 'Our story'];
+$renameBody = ['operation_id' => $successId, 'base_draft_version' => 'draft:' . $workspace->status()['draft_version'], 'pageId' => 'page:about.php', 'newTitle' => 'Our story'];
 $done = response('/site-control/page-rename', $renameBody);
-check($done['httpCode'] === 200 && $journal->get($successId, 1)['status'] === 'applied', 'Successful deterministic endpoint retains its terminal response');
-$successState = state(); $snapshotCount = $db->scalar('SELECT COUNT(*) FROM snapshots');
+check($done['httpCode'] === 200 && $operations->get($actor, $successId)['state'] === 'succeeded', 'Successful deterministic endpoint retains its terminal response');
+$successState = state(); $archiveCount = $db->count('agent_change_sets');
 $doneAgain = response('/site-control/page-rename', array_reverse($renameBody, true));
-check($doneAgain === $done && state() === $successState && $db->scalar('SELECT COUNT(*) FROM snapshots') === $snapshotCount,
+check($doneAgain === $done && state() === $successState && $db->count('agent_change_sets') === $archiveCount,
     'Successful retry is idempotent even when JSON object key order changes');
 
+// Older installations can retain legacy recovery receipts; continue verifying their semantics.
+$journal = new SiteMutationJournal($db);
 $emptyId = bin2hex(random_bytes(16));
 $lock = SiteMutationLock::acquire();
 $journal->begin($emptyId, 1, '/site-control/page-delete', ['pageId' => 'page:about.php']);
@@ -131,7 +140,8 @@ $journal->begin($failedRestoreId, 1, '/site-control/page-delete', ['pageId' => '
 $safety = createSiteControlSnapshot($db, 'Recovery failure', 'Controlled unwritable restoration');
 check($safety['ok'] === true, 'An incomplete recovery retains an existing safety snapshot');
 file_put_contents($root . '/preview/about.php', 'partially changed');
-chmod($root . '/preview/about.php', 0444);
+// Atomic replacement needs a writable parent, even when the old file itself is writable.
+chmod($root . '/preview', 0555);
 $journal->recoverInterrupted();
 $failedRestore = $journal->get($failedRestoreId, 1);
 check($failedRestore['status'] === 'failed' && $failedRestore['restored'] === false
@@ -147,7 +157,7 @@ $blockedWrite = response('/site-control/page-rename', ['mutation_id' => bin2hex(
 check($blockedWrite['httpCode'] === 409 && state() === $partialState,
     'An actual follow-up endpoint cannot save edits that a later safety restore would discard');
 $lock = SiteMutationLock::acquire();
-chmod($root . '/preview/about.php', 0644);
+chmod($root . '/preview', 0755);
 $restored = restoreSiteControlSnapshot($db, $safety['snapshot']['id']);
 check($restored['ok'] === true && state() === $successState, 'The reported safety snapshot can recover after permissions are repaired');
 $historicalMutation = $journal->get($failedRestoreId, 1)['response'];

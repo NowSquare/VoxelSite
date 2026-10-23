@@ -6,6 +6,8 @@ declare(strict_types=1);
  * Agent API — Publish Endpoint
  *
  * POST /publish — Publish preview → production
+ * Requires a stable operation_id. Retries must reuse it; checkpoint resumes the
+ * retained operation instead of preparing a second publication.
  *
  * Delegates to PublishService for the full pipeline.
  * Receives $_agentContext from router.php.
@@ -19,8 +21,10 @@ $body = json_decode(file_get_contents('php://input'), true) ?? [];
 $createSnapshot = ($body['create_snapshot'] ?? true) !== false;
 
 try {
-    $service = new PublishService();
-    $result = $service->publish($createSnapshot, 'api');
+    $db = \VoxelSite\Database::getInstance();
+    $actor = (new \VoxelSite\Agent\ActorPolicy($db))->fromRestCredential((int) ($ctx['keyData']['id'] ?? 0));
+    $service = new PublishService($db);
+    $result = $service->publish($createSnapshot, 'api', $actor, $body);
 
     Logger::info('agent-api', 'Site published', [
         'snapshot'        => $createSnapshot,
@@ -28,7 +32,14 @@ try {
         'key_label'       => $ctx['keyData']['label'] ?? 'unknown',
     ]);
 
-    agentResponse(['data' => $result]);
+    $state = $result['operation']['status'];
+    if (in_array($state, ['failed_restored', 'recovery_required', 'expired', 'cancelled'], true)) {
+        agentError(409, $result['operation']['result']['error']['code'] ?? $state,
+            $result['operation']['result']['error']['message'] ?? 'Publication needs attention. Inspect its retained operation.',
+            ['operation' => $result['operation']]);
+    } else agentResponse(['data' => $result], $state === 'succeeded' ? 200 : 202);
+} catch (\VoxelSite\Agent\OperationException $e) {
+    agentError($e->errorCode === 'permission_denied' ? 403 : 409, $e->errorCode, $e->getMessage(), $e->details);
 } catch (\RuntimeException $e) {
     $code = $e->getCode();
     $errorCode = match (true) {

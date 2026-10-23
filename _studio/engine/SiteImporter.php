@@ -6,6 +6,8 @@ namespace VoxelSite;
 
 use RuntimeException;
 
+require_once __DIR__ . '/PublicReferenceFetcher.php';
+
 /**
  * Web-to-Design Import — URL Fetcher + HTML Cleaner
  *
@@ -28,6 +30,8 @@ use RuntimeException;
  */
 class SiteImporter
 {
+    public function __construct(private PublicReferenceFetcher $fetcher = new PublicReferenceFetcher()) {}
+
     /**
      * Maximum HTML size after cleaning, in characters.
      * ~30K tokens × 4 chars/token = 120K chars.
@@ -94,7 +98,7 @@ class SiteImporter
         $cleanedHtml = $this->cleanHtml($rawHtml);
 
         Logger::info('ai', 'SiteImporter: fetch complete', [
-            'url'              => $url,
+            'url_host'         => parse_url($url, PHP_URL_HOST),
             'title'            => $title,
             'raw_length'       => strlen($rawHtml),
             'cleaned_length'   => strlen($cleanedHtml),
@@ -192,59 +196,7 @@ class SiteImporter
      */
     private function validateUrl(string $url): string
     {
-        $url = trim($url);
-
-        // Must start with http:// or https://
-        if (!preg_match('#^https?://#i', $url)) {
-            throw new RuntimeException(
-                'Please enter a valid URL starting with http:// or https://'
-            );
-        }
-
-        // Must be a syntactically valid URL
-        $filtered = filter_var($url, FILTER_VALIDATE_URL);
-        if ($filtered === false) {
-            throw new RuntimeException(
-                'Please enter a valid URL starting with http:// or https://'
-            );
-        }
-
-        // Block localhost, private IPs, and file:// URIs
-        $host = parse_url($url, PHP_URL_HOST);
-        if ($host === null || $host === false) {
-            throw new RuntimeException(
-                'Please enter a valid URL starting with http:// or https://'
-            );
-        }
-
-        $forbidden = ['localhost', '127.0.0.1', '0.0.0.0', '::1'];
-        if (in_array(strtolower($host), $forbidden, true)) {
-            throw new RuntimeException(
-                'Please enter a valid URL starting with http:// or https://'
-            );
-        }
-
-        // Phase 1: Block literal private/reserved IPs (covers http://10.0.0.5 directly)
-        if ($this->isPrivateOrReservedIp($host)) {
-            throw new RuntimeException(
-                'Please enter a valid URL starting with http:// or https://'
-            );
-        }
-
-        // Phase 2: Block DNS-resolved private IPs (A + AAAA records)
-        // gethostbyname() only checks A records — a hostname resolving
-        // exclusively to private IPv6 (fd00::/7, fe80::/10) would bypass it.
-        // Use dns_get_record() for both record types when available.
-        $resolvedIps = $this->resolveAllIps($host);
-        foreach ($resolvedIps as $ip) {
-            if ($this->isPrivateOrReservedIp($ip)) {
-                throw new RuntimeException(
-                    'Please enter a valid URL starting with http:// or https://'
-                );
-            }
-        }
-
-        return $filtered;
+        return $this->fetcher->validateUrl(trim($url));
     }
 
     // ═══════════════════════════════════════════
@@ -322,40 +274,8 @@ class SiteImporter
      */
     private function isPrivateOrReservedIp(string $ip): bool
     {
-        // Strip IPv6 brackets if present (e.g., from URL host [::1])
         $ip = trim($ip, '[]');
-
-        // PHP's filter_var with combined flags is the most reliable check
-        if (filter_var($ip, FILTER_VALIDATE_IP) !== false) {
-            // FILTER_FLAG_NO_PRIV_RANGE blocks 10.x, 172.16-31.x, 192.168.x, fc00::/7
-            // FILTER_FLAG_NO_RES_RANGE blocks 127.x, 169.254.x, 0.x, ::1, fe80::/10
-            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
-                return true;
-            }
-        }
-
-        // Manual fallback for literal strings that aren't valid IPs but start with private prefixes
-        // (e.g., "10.0.0.5" as hostname in URL — should be caught above, but belt-and-suspenders)
-        $prefixes = ['10.', '172.16.', '172.17.', '172.18.', '172.19.', '172.20.', '172.21.',
-                     '172.22.', '172.23.', '172.24.', '172.25.', '172.26.', '172.27.',
-                     '172.28.', '172.29.', '172.30.', '172.31.', '192.168.', '127.',
-                     '169.254.', '0.'];
-        foreach ($prefixes as $prefix) {
-            if (str_starts_with($ip, $prefix)) {
-                return true;
-            }
-        }
-
-        // IPv6 private/reserved prefixes
-        $ipLower = strtolower($ip);
-        if ($ipLower === '::1' ||
-            str_starts_with($ipLower, 'fe80:') ||   // Link-local
-            str_starts_with($ipLower, 'fc') ||       // ULA (fc00::/7 = fc00-fdff)
-            str_starts_with($ipLower, 'fd')) {
-            return true;
-        }
-
-        return false;
+        return filter_var($ip, FILTER_VALIDATE_IP) !== false && !PublicReferenceFetcher::isPublicIp($ip);
     }
 
     // ═══════════════════════════════════════════
@@ -365,46 +285,19 @@ class SiteImporter
     /**
      * Check if the target path is allowed by the site's robots.txt.
      *
-     * Permissive approach: if robots.txt is unreachable or unparseable,
-     * assume allowed. Only blocks if an explicit Disallow rule matches.
+     * Missing robots.txt is allowed. Other HTTP or transport failures stop
+     * the import so a failed policy read cannot silently authorize fetching.
      *
      * @return bool True if allowed, false if disallowed
      */
     private function checkRobotsTxt(string $url): bool
     {
         $parsed = parse_url($url);
-        $robotsUrl = ($parsed['scheme'] ?? 'https') . '://' . ($parsed['host'] ?? '');
-        if (!empty($parsed['port'])) {
-            $robotsUrl .= ':' . $parsed['port'];
-        }
-        $robotsUrl .= '/robots.txt';
-
-        $targetPath = $parsed['path'] ?? '/';
-
-        // Fetch robots.txt with a short timeout
-        $ctx = stream_context_create([
-            'http' => [
-                'timeout'         => 5,
-                'follow_location' => true,
-                'max_redirects'   => 3,
-                'user_agent'      => self::USER_AGENT,
-                'ignore_errors'   => true,
-            ],
-            'ssl' => [
-                'verify_peer'      => false,
-                'verify_peer_name' => false,
-            ],
-        ]);
-
-        $robotsTxt = @file_get_contents($robotsUrl, false, $ctx);
-
-        // If robots.txt is unreachable, assume allowed (permissive)
-        if ($robotsTxt === false || $robotsTxt === '') {
-            return true;
-        }
-
-        // Parse robots.txt: look for User-agent: * rules
-        return $this->isPathAllowed($robotsTxt, $targetPath);
+        $robotsUrl = $parsed['scheme'] . '://' . $parsed['host'] . (isset($parsed['port']) ? ':' . $parsed['port'] : '') . '/robots.txt';
+        $response = $this->fetcher->fetch($robotsUrl, ['text/plain'], 65536);
+        if ($response['status'] === 404 || $response['status'] === 410) return true;
+        if ($response['status'] < 200 || $response['status'] >= 300) throw new RuntimeException('Cannot check this public reference’s robots.txt.');
+        return $this->isPathAllowed($response['body'], $parsed['path'] ?? '/');
     }
 
     /**
@@ -459,126 +352,17 @@ class SiteImporter
     // ═══════════════════════════════════════════
 
     /**
-     * Fetch raw HTML via file_get_contents with curl fallback.
+     * Fetch bounded HTML through the same pinned public-reference transport as MCP.
      *
      * @throws RuntimeException On network failure, auth errors, or timeout
      */
     private function fetchHtml(string $url): string
     {
-        // Attempt 1: file_get_contents with stream context
-        $ctx = stream_context_create([
-            'http' => [
-                'timeout'         => self::FETCH_TIMEOUT,
-                'follow_location' => true,
-                'max_redirects'   => 5,
-                'user_agent'      => self::USER_AGENT,
-                'header'          => [
-                    'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language: en-US,en;q=0.5',
-                ],
-                'ignore_errors'   => true,
-            ],
-            'ssl' => [
-                'verify_peer'      => false,
-                'verify_peer_name' => false,
-            ],
-        ]);
-
-        $html = @file_get_contents($url, false, $ctx);
-
-        // Check HTTP status from response headers
-        if ($html !== false && !empty($http_response_header)) {
-            $statusCode = $this->extractHttpStatus($http_response_header);
-            if ($statusCode >= 400) {
-                $html = false; // Treat as failure to trigger curl fallback
-                if ($statusCode === 401 || $statusCode === 403) {
-                    throw new RuntimeException(
-                        'This page requires authentication. Import only works with publicly accessible pages.'
-                    );
-                }
-            }
-        }
-
-        // Attempt 2: curl fallback
-        if ($html === false && function_exists('curl_init')) {
-            $html = $this->fetchWithCurl($url);
-        }
-
-        if ($html === false || $html === '') {
-            throw new RuntimeException(
-                'Could not reach this URL. Check the address and try again.'
-            );
-        }
-
-        return $html;
+        $response = $this->fetcher->fetch($url, ['text/html', 'application/xhtml+xml']);
+        if ($response['status'] === 401 || $response['status'] === 403) throw new RuntimeException('This page requires authentication. Import only works with public pages.');
+        if ($response['status'] < 200 || $response['status'] >= 300 || $response['body'] === '') throw new RuntimeException('The public reference did not return a successful HTML response.');
+        return $response['body'];
     }
-
-    /**
-     * Fetch HTML using curl (fallback for sites that reject file_get_contents).
-     *
-     * @return string|false
-     */
-    private function fetchWithCurl(string $url): string|false
-    {
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL            => $url,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS      => 5,
-            CURLOPT_TIMEOUT        => self::FETCH_TIMEOUT,
-            CURLOPT_CONNECTTIMEOUT => 10,
-            CURLOPT_USERAGENT      => self::USER_AGENT,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => 0,
-            CURLOPT_HTTPHEADER     => [
-                'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language: en-US,en;q=0.5',
-            ],
-        ]);
-
-        $html = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
-
-        // Timeout detection
-        if ($html === false && str_contains($error, 'timed out')) {
-            throw new RuntimeException(
-                'The page took too long to respond. Try again or use a different URL.'
-            );
-        }
-
-        // Auth errors
-        if ($httpCode === 401 || $httpCode === 403) {
-            throw new RuntimeException(
-                'This page requires authentication. Import only works with publicly accessible pages.'
-            );
-        }
-
-        if ($httpCode >= 400 || $html === false) {
-            return false;
-        }
-
-        return $html;
-    }
-
-    /**
-     * Extract HTTP status code from response headers.
-     */
-    private function extractHttpStatus(array $headers): int
-    {
-        foreach ($headers as $header) {
-            if (preg_match('#^HTTP/\d+\.?\d*\s+(\d{3})#', $header, $m)) {
-                return (int) $m[1];
-            }
-        }
-        return 200;
-    }
-
-    // ═══════════════════════════════════════════
-    //  HTML Cleaning
-    // ═══════════════════════════════════════════
 
     /**
      * Clean HTML for AI consumption.

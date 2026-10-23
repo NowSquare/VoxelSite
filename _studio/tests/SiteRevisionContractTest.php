@@ -5,12 +5,16 @@ use VoxelSite\{Database,FileManager,Migrator,RevisionManager,Settings};
 $root=sys_get_temp_dir().'/vs-site-revision-'.bin2hex(random_bytes(6));
 mkdir($root.'/preview',0755,true); mkdir($root.'/assets/css',0755,true); mkdir($root.'/revisions',0755,true);
 putenv('VS_TEST_PREVIEW_DIR='.$root.'/preview'); putenv('VS_TEST_ASSETS_DIR='.$root.'/assets'); putenv('VS_TEST_REVISIONS_DIR='.$root.'/revisions');
+putenv('VS_TEST_DOC_ROOT='.$root); putenv('VS_TEST_MUTATION_LOCK='.$root.'/mutation.lock');
+foreach (['logDir'=>$root.'/logs','initialized'=>true] as $key=>$value) (new ReflectionProperty(\VoxelSite\Logger::class,$key))->setValue(null,$value);
 $db=Database::getInstance($root.'/studio.db'); (new Migrator($db))->run();
 $db->insert('users',['id'=>1,'email'=>'owner@example.test','name'=>'Owner','role'=>'owner','password_hash'=>'disabled','created_at'=>now(),'updated_at'=>now()]);
 $fm=new FileManager($db); $settings=new Settings($db); $manager=new RevisionManager($db,$settings,$fm);
 $before='<head><title>Before</title></head><p class="p-2">Old copy</p>';
 $after='<head><title>After</title></head><p class="p-12">New copy</p>';
 file_put_contents($root.'/preview/index.php',$before); file_put_contents($root.'/assets/css/style.css',':root { --color-primary: #123456; }');
+if ((new ReflectionMethod(FileManager::class,'__construct'))->getNumberOfParameters()<2) throw new RuntimeException('Explicit fixture workspace required.');
+(new \VoxelSite\WorkspaceMigration(new \VoxelSite\SiteWorkspace($db,$root.'/preview',$root),$db))->run();
 $fm->syncPageRegistry(true); $ops=[['path'=>'index.php','action'=>'write']];
 $id=$manager->createRevision($ops,'Site fixture',1,null,['index.php'=>$before]);
 file_put_contents($root.'/preview/index.php',$after);$manager->captureAfterState($id,$ops);$fm->syncPageRegistry(true);
@@ -51,7 +55,7 @@ try{
   check(file_get_contents($root.'/revisions/'.$newId.'/before/index.php')===$before && file_get_contents($root.'/revisions/'.$newId.'/after/index.php')===$after,'Atomic capture stores both exact file states');
  }
 }finally{
- putenv('VS_TEST_PREVIEW_DIR');putenv('VS_TEST_ASSETS_DIR');putenv('VS_TEST_REVISIONS_DIR');
+ putenv('VS_TEST_DOC_ROOT');putenv('VS_TEST_MUTATION_LOCK');putenv('VS_TEST_PREVIEW_DIR');putenv('VS_TEST_ASSETS_DIR');putenv('VS_TEST_REVISIONS_DIR');
  $it=new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root,FilesystemIterator::SKIP_DOTS),RecursiveIteratorIterator::CHILD_FIRST);
  foreach($it as $f){$f->isDir()?rmdir($f->getPathname()):unlink($f->getPathname());}rmdir($root);
 }

@@ -25,6 +25,8 @@ $db->insert('users', ['id'=>1,'email'=>'owner@example.test','name'=>'Owner','rol
 $source = '<?php $page = [\'title\'=>\'About\']; ?><h1>Old</h1>';
 file_put_contents($root . '/preview/about.php', $source);
 file_put_contents($root . '/assets/css/tailwind.css', 'original css');
+require_once __DIR__ . '/helpers/LegacyWorkspaceFixture.php';
+activateLegacyTestWorkspace($db);
 $fm = new FileManager($db);
 $fm->syncPageRegistry();
 $store = new SitePlanStore($db, $fm);

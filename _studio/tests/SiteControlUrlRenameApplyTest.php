@@ -46,76 +46,15 @@ echo "=== Site Control URL Rename Apply Test Suite ===\n\n";
 //  Fresh-install guard
 // ═══════════════════════════════════════════
 
-$liveDbPath = dirname(__DIR__) . '/data/studio.db';
-if (!file_exists($liveDbPath)) {
-    echo "ABORT: No database found at {$liveDbPath}.\n";
-    echo "This test requires a VoxelSite installation with at least one page.\n";
-    exit(1);
-}
+require_once __DIR__.'/helpers/SiteControlFixture.php';
+$tempDir = sys_get_temp_dir().'/vs-control-UrlRenameApply-'.bin2hex(random_bytes(8));
+$tempDbPath = $tempDir.'/studio.db';
+$tempPreview = $tempDir.'/preview';
+$tempAssets = $tempDir.'/published/assets';
+$tempSnaps = $tempDir.'/snapshots';
+[$db,$fileManager] = createSiteControlFixture($tempDir);
+$tempDir = realpath($tempDir);
 
-$livePreviewDir = dirname(__DIR__) . '/preview';
-if (!is_dir($livePreviewDir)) {
-    echo "ABORT: No preview directory found at {$livePreviewDir}.\n";
-    exit(1);
-}
-
-try {
-    $checkDb = new \SQLite3($liveDbPath, SQLITE3_OPEN_READONLY);
-    $result = $checkDb->querySingle("SELECT name FROM sqlite_master WHERE type='table' AND name='pages'");
-    if (!$result) {
-        echo "ABORT: Database exists but 'pages' table is missing.\n";
-        $checkDb->close();
-        exit(1);
-    }
-    $pageCount = $checkDb->querySingle("SELECT COUNT(*) FROM pages");
-    if ((int) $pageCount < 2) {
-        echo "ABORT: Need at least 2 pages to test rename. Found: {$pageCount}\n";
-        $checkDb->close();
-        exit(1);
-    }
-    $checkDb->close();
-} catch (\Throwable $e) {
-    echo "ABORT: Could not verify database schema: " . $e->getMessage() . "\n";
-    exit(1);
-}
-
-// ═══════════════════════════════════════════
-//  Fixture setup — temp copies
-// ═══════════════════════════════════════════
-
-echo "--- Setup: Creating temp fixtures ---\n";
-
-$tempDir     = sys_get_temp_dir() . '/voxelsite_sc_test_' . uniqid();
-$tempDbPath  = $tempDir . '/studio.db';
-$tempPreview = $tempDir . '/preview';
-$tempAssets  = $tempDir . '/assets';
-$tempSnaps   = $tempDir . '/snapshots';
-
-mkdir($tempDir, 0755, true);
-mkdir($tempSnaps, 0755, true);
-
-copy($liveDbPath, $tempDbPath);
-copyDirRecursive($livePreviewDir, $tempPreview);
-
-$liveAssetsDir = dirname(__DIR__, 2) . '/assets';
-if (is_dir($liveAssetsDir)) {
-    copyDirRecursive($liveAssetsDir, $tempAssets);
-} else {
-    mkdir($tempAssets . '/css', 0755, true);
-    mkdir($tempAssets . '/js', 0755, true);
-}
-
-echo "  Temp dir: {$tempDir}\n";
-
-// ── Initialize DB + services for unit-level tests ──
-// Set env vars so FileManager uses temp paths (same seam as the endpoint subprocess)
-putenv("VS_TEST_PREVIEW_DIR={$tempPreview}");
-putenv("VS_TEST_ASSETS_DIR={$tempAssets}");
-
-$db = Database::getInstance($tempDbPath);
-$fileManager = new FileManager($db);
-
-$fileManager->syncPageRegistry();
 // Force WAL checkpoint so subprocess sees the writes
 $db->exec('PRAGMA wal_checkpoint(TRUNCATE)');
 
@@ -143,7 +82,7 @@ $conflictSlug = $conflictPage ? (string) $conflictPage['slug'] : null;
 
 echo "  Test page: slug={$testSlug}, file={$testFilePath}\n";
 
-$snapshotCountBefore = (int) $db->queryOne("SELECT COUNT(*) as c FROM snapshots")['c'];
+$revisionCountBefore = (int) $db->queryOne("SELECT COUNT(*) as c FROM revisions")['c'];
 
 
 // ═══════════════════════════════════════════
@@ -160,8 +99,8 @@ record(
     $errors, $passed, $failed
 );
 record(
-    ($nestedResult['response']['error']['code'] ?? '') === 'nested_path',
-    'nested path error code is "nested_path"',
+    ($nestedResult['response']['error']['code'] ?? '') === 'invalid_schema',
+    'Parent changes use the structural Move operation',
     $errors, $passed, $failed
 );
 
@@ -182,7 +121,7 @@ record(
     $errors, $passed, $failed
 );
 record(
-    ($phpResult['response']['error']['code'] ?? '') === 'same_path',
+    ($phpResult['response']['error']['code'] ?? '') === 'invalid_schema',
     '.php suffix normalizes to same slug → same_path',
     $errors, $passed, $failed
 );
@@ -196,11 +135,11 @@ echo "\n--- Validation gate: through endpoint wrapper ---\n";
 
 // Missing fields
 $missingResult = callEndpoint(['routeId' => '', 'newPath' => '']);
-record($missingResult['httpCode'] === 400, 'missing fields → 400', $errors, $passed, $failed);
+record($missingResult['httpCode'] === 422, 'missing fields → 422', $errors, $passed, $failed);
 
 // Nonexistent route
 $bogusResult = callEndpoint(['routeId' => 'route:/nonexistent-xyz-999', 'newPath' => '/anything']);
-record($bogusResult['httpCode'] === 404, 'nonexistent route → 404', $errors, $passed, $failed);
+record($bogusResult['httpCode'] === 422, 'nonexistent route → 422', $errors, $passed, $failed);
 
 // Homepage rename blocked
 $homePage = $db->queryOne("SELECT slug FROM pages WHERE is_homepage = 1 LIMIT 1");
@@ -210,7 +149,7 @@ if ($homePage) {
     $homeResult = callEndpoint(['routeId' => $homeRouteId, 'newPath' => '/new-home']);
     record($homeResult['httpCode'] === 422, 'homepage rename → 422', $errors, $passed, $failed);
     record(
-        ($homeResult['response']['error']['code'] ?? '') === 'homepage_blocked',
+        ($homeResult['response']['error']['code'] ?? '') === 'invalid_schema',
         'homepage error code is homepage_blocked',
         $errors, $passed, $failed
     );
@@ -220,7 +159,7 @@ if ($homePage) {
 $sameResult = callEndpoint(['routeId' => $testRouteId, 'newPath' => '/' . $testSlug]);
 record($sameResult['httpCode'] === 422, 'same path → 422', $errors, $passed, $failed);
 record(
-    ($sameResult['response']['error']['code'] ?? '') === 'same_path',
+    ($sameResult['response']['error']['code'] ?? '') === 'invalid_schema',
     'same_path error code',
     $errors, $passed, $failed
 );
@@ -230,7 +169,7 @@ if ($conflictSlug !== null && !str_contains($conflictSlug, '/')) {
     $conflictResult = callEndpoint(['routeId' => $testRouteId, 'newPath' => '/' . $conflictSlug]);
     record($conflictResult['httpCode'] === 409, 'conflict slug → 409', $errors, $passed, $failed);
     record(
-        ($conflictResult['response']['error']['code'] ?? '') === 'conflict',
+        ($conflictResult['response']['error']['code'] ?? '') === 'content_conflict',
         'conflict error code',
         $errors, $passed, $failed
     );
@@ -242,17 +181,17 @@ if ($conflictSlug !== null && !str_contains($conflictSlug, '/')) {
 
 // Invalid characters only
 $invalidResult = callEndpoint(['routeId' => $testRouteId, 'newPath' => '/!!!']);
-record($invalidResult['httpCode'] === 400, 'invalid chars → 400', $errors, $passed, $failed);
+record($invalidResult['httpCode'] === 422, 'invalid chars → 422', $errors, $passed, $failed);
 
 // Bad routeId format
 $badFormatResult = callEndpoint(['routeId' => 'not-a-route:foo', 'newPath' => '/anything']);
-record($badFormatResult['httpCode'] === 404, 'bad routeId format → 404', $errors, $passed, $failed);
+record($badFormatResult['httpCode'] === 422, 'bad routeId format → 422', $errors, $passed, $failed);
 
-// No snapshots created during validation
-$snapshotCountAfterValidation = (int) $db->queryOne("SELECT COUNT(*) as c FROM snapshots")['c'];
+// No revisions created during validation
+$revisionCountAfterValidation = (int) $db->queryOne("SELECT COUNT(*) as c FROM revisions")['c'];
 record(
-    $snapshotCountAfterValidation === $snapshotCountBefore,
-    'no snapshots created during validation (' . $snapshotCountAfterValidation . ' == ' . $snapshotCountBefore . ')',
+    $revisionCountAfterValidation === $revisionCountBefore,
+    'no revisions created during validation (' . $revisionCountAfterValidation . ' == ' . $revisionCountBefore . ')',
     $errors, $passed, $failed
 );
 
@@ -284,7 +223,7 @@ if (($successResult['response']['ok'] ?? false) === true) {
     record(isset($data['newPageId']), 'response has newPageId', $errors, $passed, $failed);
     record(isset($data['pageSlug']), 'response has pageSlug', $errors, $passed, $failed);
     record(isset($data['updatedFiles']), 'response has updatedFiles', $errors, $passed, $failed);
-    record(isset($data['snapshotId']), 'response has snapshotId', $errors, $passed, $failed);
+    record(siteControlRetainedOperation($tempDbPath,$data), 'response identifies retained revision', $errors, $passed, $failed);
     record(isset($data['referenceCount']), 'response has referenceCount', $errors, $passed, $failed);
     record(array_key_exists('suggestedPrompt', $data), 'response has suggestedPrompt', $errors, $passed, $failed);
     record(isset($data['message']), 'response has message', $errors, $passed, $failed);
@@ -299,10 +238,10 @@ if (($successResult['response']['ok'] ?? false) === true) {
         $errors, $passed, $failed
     );
 
-    // Snapshot was created
+    // Retained operation links the actual revision
     record(
-        $data['snapshotId'] !== null,
-        'snapshotId is non-null (snapshot was created)',
+        siteControlRetainedOperation($tempDbPath,$data),
+        'retained revision links the sealed review',
         $errors, $passed, $failed
     );
 
@@ -355,9 +294,8 @@ record(
 
 $failSlug = 'fail-test-' . substr(md5(uniqid()), 0, 6);
 
-// Call endpoint with --fail-write: sabotages the page file after snapshot,
-// causing PageService::updatePage() to throw "source file is missing."
-// The REAL endpoint catch block triggers auto-rollback via restoreSiteControlSnapshot.
+// Inject an error after the shared executor writes a reviewed file.
+// The retained operation restores and verifies its complete before-state.
 $failResult = callEndpoint(
     ['routeId' => $testRouteId, 'newPath' => '/' . $failSlug],
     '--fail-write'
@@ -375,29 +313,29 @@ record(
     $errors, $passed, $failed
 );
 
-// The real endpoint maps code 404 exceptions to error.code = 'not_found'
+// The shared runner retains an explicit failed_restored result.
 $failError = $failResult['response']['error'] ?? [];
 record(
-    ($failError['code'] ?? '') === 'not_found',
-    'forced failure error code is not_found (got ' . ($failError['code'] ?? 'none') . ')',
+    ($failError['code'] ?? '') === 'failed_restored',
+    'forced failure error code is failed_restored (got ' . ($failError['code'] ?? 'none') . ')',
     $errors, $passed, $failed
 );
 
 record(
-    str_contains($failError['message'] ?? '', 'missing'),
-    'forced failure message mentions "missing"',
+    ($failError['details']['operation']['result']['restoration']['restored']??false)===true,
+    'forced failure reports verified restoration',
     $errors, $passed, $failed
 );
 
 // Verify that auto-rollback restored the original file on disk
-// (restoreSiteControlSnapshot extracts the snapshot zip back to the preview dir)
+// (the executor verifies retained hashes and restores the exact original bytes)
 record(
     file_exists($tempPreview . '/' . $testFilePath),
     'auto-rollback restored original file on disk',
     $errors, $passed, $failed
 );
 
-// Verify the restore also brought the DB back (syncPageRegistry runs inside restore)
+// Verify exact page projection restoration accompanies restored files.
 $postFailDb = new \SQLite3($tempDbPath, SQLITE3_OPEN_READONLY);
 $postFailRow = $postFailDb->querySingle("SELECT slug FROM pages WHERE slug = '{$testSlug}'");
 $postFailDb->close();
@@ -499,6 +437,8 @@ exit($failed > 0 ? 1 : 0);
 function callEndpoint(array $body, ?string $failMode = null): array
 {
     global $tempDbPath, $tempPreview, $tempAssets;
+    $stateBefore=siteControlState($tempDbPath);
+    $body=siteControlRequest($tempDbPath,$body);
 
     $helperPath = __DIR__ . '/helpers/call-site-control-endpoint.php';
     $jsonBody = json_encode($body, JSON_UNESCAPED_SLASHES);
@@ -563,6 +503,7 @@ function callEndpoint(array $body, ?string $failMode = null): array
         ]]];
     }
 
+    siteControlAssertInvariant($tempDbPath,$stateBefore,$parsed,'POST',$failMode);
     return $parsed;
 }
 

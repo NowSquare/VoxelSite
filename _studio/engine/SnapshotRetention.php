@@ -24,6 +24,14 @@ final class SnapshotRetention
                 if ($required) $ids[(int) $row[$snapshotColumn]] = true;
             }
         }
+        if ($db->scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'agent_restore_plans'")) {
+            // An archive selected for a sealed restore remains recoverable.
+            // Restored plans and their audit dependencies are retained until a
+            // dedicated retention operation proves they can be removed.
+            foreach ($db->query("SELECT snapshot_id FROM agent_restore_plans WHERE status IN ('ready','applied')") as $row) {
+                if (preg_match('/^legacy_([1-9][0-9]*)$/D', $row['snapshot_id'], $match)) $ids[(int) $match[1]] = true;
+            }
+        }
         unset($ids[0]);
         return array_keys($ids);
     }

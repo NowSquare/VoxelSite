@@ -4,7 +4,8 @@
  * Agent action definitions, bar settings, records, and template picker.
  */
 
-import { api } from '../../api.js';
+import { studioUrl } from '../../api.js';
+import { formsActionsApi as api } from '../forms-actions-api.js';
 import { icons } from '../icons.js';
 import { escapeHtml, escapeAttr, formatRelativeTime } from '../helpers.js';
 import { showToast } from '../ui/toasts.js';
@@ -142,7 +143,7 @@ async function loadActions() {
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
           <div>
             <h2 class="vs-settings-card-title" style="margin-bottom: 2px;">Actions Bar</h2>
-            <p style="font-size: 12px; color: var(--vs-text-tertiary); margin: 0;">How actions appear on your published site.</p>
+            <p style="font-size: 12px; color: var(--vs-text-tertiary); margin: 0;">Bar settings are saved to your draft. Publish to update your site.</p>
           </div>
           <div style="display: flex; align-items: center; gap: 8px;">
             <label style="font-size: 12px; color: var(--vs-text-secondary); white-space: nowrap;">Show on</label>
@@ -153,6 +154,7 @@ async function loadActions() {
             </select>
           </div>
         </div>
+        ${barData?.migration_required ? '<p class="vs-settings-hint">Your saved bar settings need to be added to the draft before publishing.</p><button id="bar-migrate-settings" class="vs-btn vs-btn-secondary" type="button">Save these settings to draft</button>' : ''}
         <div id="bar-theme-picker" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
           ${Object.entries(themePreviews).map(([theme, svg]) => {
             const isActive = theme === currentTheme;
@@ -269,15 +271,21 @@ async function loadActions() {
         if (ok) {
           btn.style.boxShadow = '0 0 0 3px var(--vs-accent-dim)';
           setTimeout(() => btn.style.boxShadow = '', 400);
-          showToast('Bar style updated', 'success');
+          showToast('Bar style saved to draft', 'success');
         }
       });
+    });
+
+    document.getElementById('bar-migrate-settings')?.addEventListener('click', async () => {
+      const { ok, error } = await api.put('/agentic/actions/bar-settings', barSettings);
+      if (ok) { showToast('Bar settings saved to draft', 'success'); await loadActions(); }
+      else showToast(error?.message || 'Could not save bar settings.', 'error');
     });
 
     // Bind visibility dropdown
     document.getElementById('bar-visibility')?.addEventListener('change', async (e) => {
       const { ok } = await api.put('/agentic/actions/bar-settings', { visibility: e.target.value });
-      if (ok) showToast('Bar visibility updated', 'success');
+      if (ok) showToast('Bar visibility saved to draft', 'success');
     });
 
     // Bind scheme picker
@@ -1827,7 +1835,7 @@ async function loadActionRecords(actionId, page = 1) {
                             return `
                               <div style="color: var(--vs-text-ghost); font-weight: 500; text-transform: capitalize;">${escapeHtml(key.replace(/_/g, ' '))}</div>
                               <div style="color: var(--vs-text-primary);">
-                                <a href="/_studio/api/router.php?_path=/agentic/actions/${encodeURIComponent(actionId)}/records/${rec.id}/files/${encodeURIComponent(key)}" target="_blank" style="
+                                <a href="${studioUrl('api/router.php')}?_path=/agentic/actions/${encodeURIComponent(actionId)}/records/${rec.id}/files/${encodeURIComponent(key)}" target="_blank" style="
                                   color: var(--vs-accent); text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
                                 " title="Download file">
                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -2009,7 +2017,7 @@ async function loadActionRecords(actionId, page = 1) {
     btn.innerHTML = `${icons.loader} Exporting...`;
     btn.disabled = true;
     try {
-      const resp = await fetch(`/_studio/api/router.php?_path=${encodeURIComponent('/agentic/actions/' + actionId + '/records/export')}`, {
+      const resp = await fetch(`${studioUrl('')}api/router.php?_path=${encodeURIComponent('/agentic/actions/' + actionId + '/records/export')}`, {
         credentials: 'same-origin',
       });
       if (!resp.ok) throw new Error('Export failed');

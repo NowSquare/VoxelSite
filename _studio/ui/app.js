@@ -20,7 +20,7 @@
 
 import { store } from './state.js';
 import { router } from './router.js';
-import { api, apiStream } from './api.js';
+import { studioUrl, api, apiStream, apiOperation, pendingOperationInput } from './api.js';
 import { initializeTheme, toggleTheme } from './theme.js';
 import { initVisualEditor, toggleVisualEditor, deactivateVisualEditor, isVisualEditorActive, dismissVisualEditorSelection, hasVisualEditorSelection, hasVisualEditorFloatingPanel, closeVisualEditorPanels, cancelVisualEditorAI } from './visual-editor.js';
 
@@ -43,7 +43,10 @@ const renderSiteMapView = renderSiteControlView;
 import { showToast, showToastWithAction } from './src/ui/toasts.js';
 import { escapeHtml, escapeAttr, getCodeLanguage, formatRefUrl } from './src/helpers.js';
 import { closeModal, showConfirmModal, showPromptModal, onBackdropClick } from './src/ui/modals.js';
+import { activateDialogFocus } from './src/ui/dialog-focus.js';
 import { initTooltips } from './tooltips.js';
+import { builtInAiAvailable, createDraftActivityPoller } from './src/external-workspace.js';
+import { downloadReviewedExport, pendingExport } from './src/export-workspace.js';
 
 
 // ═══════════════════════════════════════════
@@ -357,6 +360,7 @@ async function init() {
     store.set('user', sessionResult.data.user);
     store.set('sessionToken', sessionResult.data.token);
     store.set('siteName', sessionResult.data.site_name || '');
+    store.set('aiConfigured', sessionResult.data.ai_configured === true);
   });
 
   // Update document title with site name
@@ -377,7 +381,7 @@ async function init() {
     .beforeEach(async (to, from) => {
       // Flush any pending auto-saves (Notes, Contacts, etc.)
       for (const flush of (window.__vsFlushCallbacks || new Map()).values()) {
-        await flush();
+        if (await flush() === false) return false;
       }
       // Existing editor guard
       if (from.startsWith('editor') && !to.startsWith('editor')) {
@@ -440,6 +444,7 @@ async function init() {
 
   // Start routing
   router.start();
+  startExternalActivityPolling();
 }
 
 /**
@@ -544,6 +549,7 @@ function renderApp() {
 
   bindAppEvents();
   bindMobileEvents();
+  syncBuiltInAiControls();
 
   // Initialize editor page after DOM is ready (owner/editor only)
   if (route === 'editor' && !isDesktopOnly && !isViewerRole) {
@@ -738,6 +744,8 @@ function renderDashboardLayout() {
           </div>
         </div>
 
+        <div id="external-activity" aria-live="polite" class="shrink-0">${renderExternalActivity()}</div>
+
         <!-- Chat Messages Area -->
         <div id="chat-messages" class="flex-1 overflow-y-auto px-5 py-6">
           ${renderEmptyChat()}
@@ -806,7 +814,7 @@ function renderDashboardLayout() {
             </div>
           </div>
           <div class="flex items-center justify-between mt-2 px-1">
-            <span class="text-2xs text-vs-text-ghost">⌘+Enter to send · drop images to attach</span>
+            <span class="vs-prompt-hint text-2xs text-vs-text-ghost">⌘+Enter to send · drop images to attach</span>
           </div>
         </div>
       </div>
@@ -840,7 +848,7 @@ function renderDashboardLayout() {
 
         <!-- Preview Iframe -->
         <div id="preview-frame-container" class="vs-preview-frame" style="margin: 16px 20px 20px 20px;">
-          <iframe id="preview-iframe" class="w-full h-full border-0" src="/_studio/api/router.php?_path=%2Fpreview&path=${encodeURIComponent(initialPreviewPath)}"
+          <iframe id="preview-iframe" class="w-full h-full border-0" src="${studioUrl('api/router.php')}?_path=%2Fpreview&path=${encodeURIComponent(initialPreviewPath)}"
             sandbox="allow-scripts allow-same-origin"
             data-voxelsite-preview
             title="Website preview"
@@ -1407,7 +1415,7 @@ async function loadConversation(conversationId) {
     `;
 
     // AI response
-    if (prompt.ai_response || prompt.files_modified) {
+    if (prompt.ai_message || prompt.ai_response || prompt.files_modified) {
       let aiContent = '';
       const assistantMessage = typeof prompt.ai_message === 'string' && prompt.ai_message.trim() !== ''
         ? prompt.ai_message
@@ -1510,7 +1518,7 @@ async function loadConversation(conversationId) {
           ${statusLabel}
         </div>
       `;
-    } else if (prompt.status === 'streaming') {
+    } else if (prompt.status === 'streaming' && !prompt.interrupted) {
       hasStreamingPrompt = true;
       const promptId = prompt.id;
       const stepLabel = prompt.status_message || 'Generation in progress...';
@@ -1521,7 +1529,7 @@ async function loadConversation(conversationId) {
             <svg class="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
             </svg>
-            ${stepLabel}
+            ${escapeHtml(stepLabel)}
             <button onclick="window.__vsCancelStreamingPrompt && window.__vsCancelStreamingPrompt(${promptId})"
               class="vs-btn vs-btn-ghost vs-btn-xs" style="margin-left: 4px; color: var(--vs-text-tertiary);">Stop</button>
           </div>
@@ -1544,9 +1552,27 @@ async function loadConversation(conversationId) {
         </div>
       `;
     }
+    if (prompt.interrupted) messagesHtml += `
+      <div class="mb-5 p-3 text-sm rounded-lg bg-vs-warning-dim text-vs-warning">
+        Generation stopped before it finished. Repair the saved styles, or dismiss this interrupted request.
+        <div class="flex gap-2 mt-2">
+          <button class="vs-btn vs-btn-ghost vs-btn-xs" data-interrupted-action="repair" data-prompt-id="${prompt.id}">Repair styles</button>
+          <button class="vs-btn vs-btn-ghost vs-btn-xs" data-interrupted-action="cancel" data-prompt-id="${prompt.id}">Dismiss</button>
+        </div>
+      </div>`;
   }
 
   chatMessages.innerHTML = messagesHtml;
+  chatMessages.querySelectorAll('[data-interrupted-action]').forEach(button => button.addEventListener('click', async () => {
+    const prompt = conversation.prompts.find(item => String(item.id) === button.dataset.promptId);
+    if (!prompt) return;
+    const endpoint = button.dataset.interruptedAction === 'repair' ? '/ai/repair-generation' : '/ai/cancel-interrupted';
+    const input = pendingOperationInput(endpoint) || { prompt_id: prompt.id, version: prompt.version, draft_version: conversation.draft_version };
+    button.disabled = true;
+    const result = await apiOperation(endpoint, input);
+    if (result.ok) { if (button.dataset.interruptedAction === 'repair') refreshPreview(); loadConversation(conversationId); }
+    else { showToast(result.error?.message || 'The interrupted request still needs attention.', 'error'); button.disabled = false; }
+  }));
   chatMessages.scrollTop = chatMessages.scrollHeight;
 
   if (!window.__vsResumedToastByConversation) {
@@ -1803,13 +1829,13 @@ async function openPageScopeSelector() {
         const iframe = document.getElementById('preview-iframe');
         if (iframe) {
           if (isVisualEditorActive()) deactivateVisualEditor();
-          iframe.src = '/_studio/api/router.php?_path=%2Fpreview&path=' + encodeURIComponent(filePath) + '&t=' + Date.now();
+          iframe.src = studioUrl('api/router.php') + '?_path=%2Fpreview&path=' + encodeURIComponent(filePath) + '&t=' + Date.now();
           window.__vsCurrentPreviewPath = filePath;
           updateScopeSelectorUi();
           close();
           showToast(`Preview: ${title}`, 'success');
         } else {
-          window.open('/_studio/api/router.php?_path=%2Fpreview&path=' + encodeURIComponent(filePath), '_blank');
+          window.open(studioUrl('api/router.php') + '?_path=%2Fpreview&path=' + encodeURIComponent(filePath), '_blank');
         }
       } else if (action === 'delete') {
         close();
@@ -1827,13 +1853,13 @@ async function openPageScopeSelector() {
       const title = item.dataset.title;
       const iframe = document.getElementById('preview-iframe');
       if (iframe) {
-        iframe.src = '/_studio/api/router.php?_path=%2Fpreview&path=' + encodeURIComponent(filePath) + '&t=' + Date.now();
+        iframe.src = studioUrl('api/router.php') + '?_path=%2Fpreview&path=' + encodeURIComponent(filePath) + '&t=' + Date.now();
         window.__vsCurrentPreviewPath = filePath;
         updateScopeSelectorUi();
         close();
         showToast(`Preview: ${title}`, 'success');
       } else {
-        window.open('/_studio/api/router.php?_path=%2Fpreview&path=' + encodeURIComponent(filePath), '_blank');
+        window.open(studioUrl('api/router.php') + '?_path=%2Fpreview&path=' + encodeURIComponent(filePath), '_blank');
       }
     });
   });
@@ -1844,6 +1870,7 @@ async function openPageScopeSelector() {
  * innerHTML replacement destroys event listeners, so we re-attach.
  */
 function bindQuickPromptButtons() {
+  document.querySelectorAll('[data-connect-ai-tool]').forEach(link => link.addEventListener('click', () => { window.__vsSettingsSection = 'settings-mcp'; }));
   document.querySelectorAll('[data-quick-prompt]').forEach(btn => {
     btn.addEventListener('click', () => {
       const promptInput = document.getElementById('prompt-input');
@@ -1870,7 +1897,99 @@ function bindQuickPromptButtons() {
 //  Empty Chat State
 // ═══════════════════════════════════════════
 
+function renderExternalOnlyChat() {
+  const owner = store.get('user')?.role === 'owner';
+  const hasSite = (store.get('pages') || []).length > 0;
+  return `<div class="vs-empty-state">
+    <h2 class="vs-empty-title">${hasSite ? 'Your draft is ready to work on' : 'Connect your AI tool'}</h2>
+    <p class="vs-empty-description">Have the conversation in your AI tool. Review its website changes here in Studio.</p>
+    <div class="flex flex-wrap items-center justify-center gap-3">
+      ${owner ? '<a href="#/settings" data-connect-ai-tool class="vs-btn vs-btn-primary vs-btn-sm">Connect your AI tool</a>' : '<p class="text-sm text-vs-text-secondary">Ask the owner to connect your AI tool.</p>'}
+      <a href="#/editor" class="vs-btn vs-btn-secondary vs-btn-sm">Open editor</a>
+    </div>
+    <p class="text-xs text-vs-text-tertiary mt-6">Built-in AI is not configured.${owner ? ' <a href="#/settings" class="underline">Configure it in Settings</a> whenever you want.' : ' The owner can configure it in Settings.'}</p>
+  </div>`;
+}
+
+function syncBuiltInAiControls() {
+  const available = builtInAiAvailable(store);
+  ['prompt-input', 'btn-send', 'btn-attach-image', 'btn-attach-website', 'btn-voice-input'].forEach(id => {
+    const element = document.getElementById(id);
+    if (!element) return;
+    element.disabled = !available || (id === 'btn-send' && store.get('aiStreaming'));
+    if (!available) element.setAttribute('aria-describedby', 'built-in-ai-status');
+    else element.removeAttribute('aria-describedby');
+  });
+  const prompt = document.getElementById('prompt-input');
+  if (prompt) prompt.placeholder = available ? 'Describe what you want to build...' : 'Built-in AI is not configured';
+  const hint = document.querySelector('.vs-prompt-hint');
+  if (hint) hint.hidden = !available;
+  let status = document.getElementById('built-in-ai-status');
+  if (!status && prompt) {
+    status = document.createElement('p');
+    status.id = 'built-in-ai-status';
+    status.className = 'text-xs text-vs-text-tertiary px-3 pb-2';
+    prompt.closest('.vs-prompt-container')?.appendChild(status);
+  }
+  if (status) { status.hidden = available; status.textContent = 'Use your connected AI tool, or configure built-in AI in Settings.'; }
+}
+
+window.builtInAiAvailable = () => builtInAiAvailable(store);
+window.builtInAiGuard = () => {
+  if (builtInAiAvailable(store)) return false;
+  showToast('Built-in AI is not configured. Use your connected tool or open Settings.', 'info');
+  return true;
+};
+store.on('aiConfigured', () => {
+  syncBuiltInAiControls();
+  const messages = document.getElementById('chat-messages');
+  if (messages?.querySelector('.vs-empty-state')) { messages.innerHTML = renderEmptyChat(); bindQuickPromptButtons(); }
+});
+
+function renderExternalActivity() {
+  const revision = store.get('lastExternalRevision');
+  if (!revision) return '';
+  const files = Array.isArray(revision.affected_files) ? revision.affected_files : [];
+  return `<details class="px-5 py-3 border-b border-vs-border-subtle text-xs text-vs-text-secondary">
+    <summary class="cursor-pointer">Draft updated by ${escapeHtml(revision.source || 'Connected AI tool')}</summary>
+    <p class="mt-2 break-words">${escapeHtml(revision.description || 'Saved website changes.')}</p>
+    ${files.length ? `<ul class="mt-2 pl-4 list-disc">${files.map(path => `<li class="break-words">${escapeHtml(path)}</li>`).join('')}</ul>` : ''}
+    <p class="text-vs-text-tertiary mt-2">${escapeHtml(revision.created_at || '')}</p>
+  </details>`;
+}
+
+function updateExternalActivity(data) {
+  store.set('lastExternalRevision', data.last_external_revision || null);
+  const container = document.getElementById('external-activity');
+  if (container) container.innerHTML = renderExternalActivity();
+}
+
+function startExternalActivityPolling() {
+  if (window.__vsExternalActivityTimer) clearInterval(window.__vsExternalActivityTimer);
+  const polling = createDraftActivityPoller({
+    read: () => api.get('/settings/mcp/activity'),
+    visible: () => !document.hidden && !!store.get('user'),
+    busy: () => !!store.get('aiStreaming'),
+    initial: updateExternalActivity,
+    changed: async data => {
+      const previous = store.get('lastExternalRevision')?.id;
+      updateExternalActivity(data);
+      const editor = await window.__vsEditorPage?.reconcileExternalDraft?.(data);
+      const modal = await window.__vsCodeEditorModal?.reconcileExternalDraft?.(data);
+      if (editor?.failed?.length || modal?.failed?.length) throw new Error('Draft files could not be refreshed.');
+      // A visual-editor panel may contain an unfinished input. Leave it intact.
+      if (!hasVisualEditorFloatingPanel()) refreshPreview();
+      await Promise.all([prefetchPagesForContext(), refreshRevisionState(), refreshPublishState({ silent: true })]);
+      const revision = data.last_external_revision;
+      if (revision && revision.id !== previous) showToast(`Draft updated by ${revision.source || 'Connected AI tool'}.`, 'info');
+    },
+  });
+  polling.refresh();
+  window.__vsExternalActivityTimer = setInterval(() => polling.refresh(), 15000);
+}
+
 function renderEmptyChat() {
+  if (!builtInAiAvailable(store)) return renderExternalOnlyChat();
   const pages = store.get('pages') || [];
   const hasSite = pages.length > 0;
   const existingSlugs = new Set(pages.map(p => p.slug));
@@ -2123,7 +2242,7 @@ function renderMobileNav() {
       // that doesn't belong to any workspace group.
       const moreActive = !getGroupForRoute(route);
       return `
-        <button class="vs-mobile-nav-item ${moreActive ? 'vs-mobile-nav-item-active' : ''}" id="btn-mobile-more" aria-label="More">
+        <button class="vs-mobile-nav-item ${moreActive ? 'vs-mobile-nav-item-active' : ''}" id="btn-mobile-more" aria-label="More" aria-haspopup="dialog" aria-controls="mobile-more-sheet" aria-expanded="false">
           ${icons[item.icon] || icons.layoutGrid}
           <span>${item.label}</span>
         </button>
@@ -2194,7 +2313,7 @@ function renderMobileMoreSheet() {
       ${theme === 'dark' ? 'Light mode' : 'Dark mode'}
     </button>
     <div class="vs-mobile-more-divider"></div>
-    <button id="btn-mobile-publish" class="vs-mobile-more-item" style="color: var(--vs-accent); font-weight: 600;">
+    <button id="btn-mobile-publish" class="vs-mobile-more-item" style="color: var(--vs-accent-text); font-weight: 600;">
       ${icons.publish} Publish
     </button>
     <div class="vs-mobile-more-divider"></div>
@@ -2204,12 +2323,12 @@ function renderMobileMoreSheet() {
   `;
 
   return `
-    <div id="mobile-more-sheet" class="vs-mobile-more-sheet">
+    <div id="mobile-more-sheet" class="vs-mobile-more-sheet" aria-hidden="true" inert>
       <div class="vs-mobile-more-backdrop" id="mobile-more-backdrop"></div>
-      <div class="vs-mobile-more-content">
+      <div class="vs-mobile-more-content" role="dialog" aria-modal="true" aria-labelledby="mobile-more-title" tabindex="-1">
         <div class="vs-mobile-more-header">
-          <span class="vs-mobile-more-title">${escapeHtml(user?.name || 'Menu')}</span>
-          <button id="btn-mobile-more-close" class="vs-mobile-more-close">${icons.x}</button>
+          <span id="mobile-more-title" class="vs-mobile-more-title">${escapeHtml(user?.name || 'Menu')}</span>
+          <button id="btn-mobile-more-close" class="vs-mobile-more-close" aria-label="Close menu">${icons.x}</button>
         </div>
         ${overflowHtml}
       </div>
@@ -2229,11 +2348,26 @@ function bindMobileEvents() {
   const moreSheet = document.getElementById('mobile-more-sheet');
   const moreBackdrop = document.getElementById('mobile-more-backdrop');
   const moreClose = document.getElementById('btn-mobile-more-close');
+  let releaseMoreFocus;
 
   function openMoreSheet() {
-    moreSheet?.classList.add('vs-sheet-open');
+    if (!moreSheet || releaseMoreFocus) return;
+    moreSheet.inert = false;
+    moreSheet.removeAttribute('aria-hidden');
+    moreSheet.classList.add('vs-sheet-open');
+    moreBtn?.setAttribute('aria-expanded', 'true');
+    releaseMoreFocus = activateDialogFocus(moreSheet.querySelector('.vs-mobile-more-content'), {
+      initialFocus: moreClose, returnFocus: moreBtn, onEscape: closeMoreSheet,
+    });
   }
   function closeMoreSheet() {
+    releaseMoreFocus?.();
+    releaseMoreFocus = null;
+    moreBtn?.setAttribute('aria-expanded', 'false');
+    if (moreSheet) {
+      moreSheet.inert = true;
+      moreSheet.setAttribute('aria-hidden', 'true');
+    }
     moreSheet?.classList.remove('vs-sheet-open');
   }
 
@@ -2262,6 +2396,7 @@ function bindMobileEvents() {
       toggleTheme();
       closeMoreSheet();
       renderApp(); // Re-render to update icons
+      document.getElementById('btn-mobile-more')?.focus();
     });
   }
 
@@ -2284,7 +2419,7 @@ function bindMobileEvents() {
       await api.post('/auth/logout');
       // Full navigation ensures clean SPA bootstrap — the router,
       // store, and all event listeners start fresh.
-      window.location.href = '/_studio/';
+      window.location.href = studioUrl();
     });
   }
 }
@@ -3205,7 +3340,7 @@ function bindAppEvents() {
       await api.post('/auth/logout');
       // Full navigation ensures clean SPA bootstrap — the router,
       // store, and all event listeners start fresh.
-      window.location.href = '/_studio/';
+      window.location.href = studioUrl();
     });
   }
 
@@ -3224,7 +3359,7 @@ function bindAppEvents() {
   const previewBtn = document.getElementById('btn-preview-site');
   if (previewBtn) {
     previewBtn.addEventListener('click', () => {
-      window.open('/_studio/api/router.php?_path=%2Fpreview&path=index.php', '_blank');
+      window.open(studioUrl('api/router.php') + '?_path=%2Fpreview&path=index.php', '_blank');
     });
   }
 
@@ -3309,9 +3444,30 @@ function bindAppEvents() {
       applyPublishStateUi();
       setStatusText('Publishing...');
 
-      const { ok, data, error } = await api.post('/publish', {
+      // Keep the identity across a lost response or reload. The first request
+      // reads any retained outcome; only an explicit checkpoint advances it.
+      let operationId;
+      try { operationId = sessionStorage.getItem('vs_pending_publish'); } catch {}
+      if (!operationId) operationId = `publish_${crypto.randomUUID().replaceAll('-', '')}`;
+      try { sessionStorage.setItem('vs_pending_publish', operationId); } catch {}
+      let response = await api.post('/publish', {
         create_snapshot: result.createSnapshot,
+        operation_id: operationId,
       });
+      let steps = 0;
+      while (response.ok && response.data?.operation?.status === 'applying' && steps++ < 100) {
+        setStatusText(`Publishing... checkpoint ${response.data.operation.checkpoint}`);
+        response = await api.post('/publish', {
+          create_snapshot: result.createSnapshot,
+          operation_id: operationId,
+          checkpoint: response.data.operation.checkpoint,
+        });
+      }
+      const { data, error } = response;
+      const ok = response.ok && data?.operation?.status === 'succeeded';
+      if (ok || ['failed_restored', 'expired', 'cancelled'].includes(data?.operation?.status)) {
+        try { sessionStorage.removeItem('vs_pending_publish'); } catch {}
+      }
       publishState.publishing = false;
 
       if (ok) {
@@ -3329,8 +3485,9 @@ function bindAppEvents() {
         // Open the live site
         window.open('/', '_blank');
       } else {
-        showToast(error?.message || 'Publish failed.', 'error');
-        setStatusText('✗ ' + (error?.message || 'Publish failed'), 'error', 5000);
+        const message = error?.message || 'Publication is paused. Click Publish to resume its retained progress.';
+        showToast(message, 'error');
+        setStatusText('✗ ' + message, 'error', 5000);
         refreshPublishState({ silent: true });
       }
     });
@@ -3375,7 +3532,7 @@ function bindAppEvents() {
         if (demoGuard()) return;
 
         setStatusText('Unpublishing...');
-        const { ok, data, error } = await api.post('/publish/unpublish');
+        const { ok, data, error } = await apiOperation('/publish/unpublish');
 
         if (ok) {
           showToast('Unpublished. Default page restored.', 'success');
@@ -3690,7 +3847,7 @@ function bindAppEvents() {
   if (externalPreviewBtn) {
     externalPreviewBtn.addEventListener('click', () => {
       const path = window.__vsCurrentPreviewPath || 'index.php';
-      window.open('/_studio/api/router.php?_path=%2Fpreview&path=' + encodeURIComponent(path), '_blank');
+      window.open(studioUrl('api/router.php') + '?_path=%2Fpreview&path=' + encodeURIComponent(path), '_blank');
     });
   }
 
@@ -3895,7 +4052,7 @@ function refreshPreview(pagePath) {
   if (iframe) {
     // Use explicit path, or the tracked current path, or fallback to index
     const path = pagePath || window.__vsCurrentPreviewPath || 'index.php';
-    iframe.src = '/_studio/api/router.php?_path=%2Fpreview&path=' + encodeURIComponent(path) + '&t=' + Date.now();
+    iframe.src = studioUrl('api/router.php') + '?_path=%2Fpreview&path=' + encodeURIComponent(path) + '&t=' + Date.now();
   }
 }
 window.refreshPreview = refreshPreview;
@@ -3935,23 +4092,27 @@ window.sendPreviewMessage = sendPreviewMessage;
 
 async function performUndo() {
   dismissVisualEditorSelection(); // Clear stale selection before preview reloads
-  const result = await api.post('/revisions/undo');
+  const result = await apiOperation('/revisions/undo');
   if (result.ok) {
     // Small delay to let filesystem settle after file restoration
     setTimeout(() => refreshPreview(), 300);
     await refreshRevisionState();
     refreshPublishState({ silent: true });
+  } else {
+    showToast(result.error?.message || 'History change needs attention.', 'error');
   }
 }
 
 async function performRedo() {
   dismissVisualEditorSelection(); // Clear stale selection before preview reloads
-  const result = await api.post('/revisions/redo');
+  const result = await apiOperation('/revisions/redo');
   if (result.ok) {
     // Small delay to let filesystem settle after file restoration
     setTimeout(() => refreshPreview(), 300);
     await refreshRevisionState();
     refreshPublishState({ silent: true });
+  } else {
+    showToast(result.error?.message || 'History change needs attention.', 'error');
   }
 }
 
@@ -4268,6 +4429,7 @@ function openDownloadModal() {
       </div>
       <div class="vs-modal-body" style="padding-top: 16px;">
         ${warningHtml}
+        <p id="vs-download-version" class="text-xs text-vs-text-tertiary mb-3 break-all" role="status">Loading the published version…</p>
         <div class="vs-download-cards" id="vs-download-cards">
           <button type="button" class="vs-download-card is-selected" data-format="php">
             <div class="vs-download-card-icon">
@@ -4294,7 +4456,7 @@ function openDownloadModal() {
         </div>
       </div>
       <div style="padding: 0 24px 24px;">
-        <button id="vs-download-action" class="vs-btn vs-btn-primary" type="button" style="width: 100%; justify-content: center; height: 42px; font-size: 14px; font-weight: 600;">
+        <button id="vs-download-action" class="vs-btn vs-btn-primary" type="button" disabled style="width: 100%; justify-content: center; height: 42px; font-size: 14px; font-weight: 600;">
           ${icons.download} Download PHP
         </button>
       </div>
@@ -4332,6 +4494,23 @@ function openDownloadModal() {
   const cards = overlay.querySelectorAll('.vs-download-card');
   const actionBtn = overlay.querySelector('#vs-download-action');
   let selectedFormat = 'php';
+  let exportVersion = null;
+  const exportAccount = store.get('user')?.id;
+  const versionLabel = overlay.querySelector('#vs-download-version');
+  const showVersion = () => {
+    const pending = pendingExport(selectedFormat, exportAccount, sessionStorage);
+    versionLabel.textContent = `${pending ? 'Retrying saved download' : 'Published version'}: ${pending?.version || exportVersion}`;
+  };
+  api.get('/export').then(response => {
+    if (!overlay.isConnected || store.get('user')?.id !== exportAccount) return;
+    if (!response.ok) {
+      versionLabel.textContent = response.error?.message || 'The published version could not be loaded. Open Download again.';
+      return;
+    }
+    exportVersion = response.data.version;
+    showVersion();
+    actionBtn.disabled = false;
+  }).catch(() => { versionLabel.textContent = 'The published version could not be loaded. Open Download again.'; });
 
   cards.forEach(card => {
     card.addEventListener('click', () => {
@@ -4341,13 +4520,14 @@ function openDownloadModal() {
       selectedFormat = card.dataset.format;
       const label = selectedFormat === 'php' ? 'Download PHP' : 'Download HTML';
       actionBtn.innerHTML = `${icons.download} ${label}`;
+      if (exportVersion) showVersion();
     });
   });
 
   // ── Download action ──
   let isDownloading = false;
   actionBtn.addEventListener('click', async () => {
-    if (isDownloading) return;
+    if (isDownloading || !exportVersion) return;
     isDownloading = true;
 
     // Enter loading state
@@ -4363,31 +4543,19 @@ function openDownloadModal() {
       };
       if (token) headers['X-VS-Token'] = token;
 
-      const res = await fetch('/_studio/api/router.php?_path=%2Fexport', {
+      const result = await downloadReviewedExport(selectedFormat, exportVersion, exportAccount, input => fetch(studioUrl('api/router.php') + '?_path=%2Fexport', {
         method: 'POST',
         headers,
         credentials: 'same-origin',
-        body: JSON.stringify({ format: selectedFormat }),
-      });
+        body: JSON.stringify(input),
+      }), sessionStorage, () => store.get('user')?.id);
 
-      if (!res.ok) {
-        // Try to parse an error message
-        let errMsg = 'Export failed.';
-        try {
-          const errJson = await res.json();
-          errMsg = errJson?.error?.message || errMsg;
-        } catch (_) {}
-        showToast(errMsg, 'error');
+      if (!result.ok) {
+        showToast(result.error.message, 'error');
         return;
       }
 
-      // Get the filename from Content-Disposition header
-      const disposition = res.headers.get('Content-Disposition') || '';
-      const filenameMatch = disposition.match(/filename="?(.+?)"?$/i);
-      const filename = filenameMatch ? filenameMatch[1] : `site-${selectedFormat}-${new Date().toISOString().slice(0, 10)}.zip`;
-
-      // Stream the response as a blob and trigger download
-      const blob = await res.blob();
+      const { blob, filename } = result.data;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -4402,13 +4570,14 @@ function openDownloadModal() {
 
       showToast(`✓ ${filename} downloaded`, 'success');
     } catch (err) {
-      showToast('Download failed. Check your connection.', 'error');
+      showToast('Download failed. Retry to retrieve the same archive.', 'error');
     } finally {
       isDownloading = false;
       actionBtn.disabled = false;
       const label = selectedFormat === 'php' ? 'Download PHP' : 'Download HTML';
       actionBtn.innerHTML = `${icons.download} ${label}`;
       cards.forEach(c => c.style.pointerEvents = '');
+      showVersion();
     }
   });
 }
@@ -4782,6 +4951,7 @@ function bindWebsiteRefEvents() {
 // ═══════════════════════════════════════════
 
 async function handleSend() {
+  if (window.builtInAiGuard()) return;
   if (demoGuard()) return;
 
   const input = document.getElementById('prompt-input');
@@ -5716,7 +5886,7 @@ function renderLoginRedirect() {
       // Fetch recovery mode and render the right form
       const forgotContent = document.getElementById('forgot-content');
       try {
-        const res = await fetch('/_studio/api/router.php?_path=%2Fauth%2Frecovery-mode');
+        const res = await fetch(studioUrl('api/router.php') + '?_path=%2Fauth%2Frecovery-mode');
         const json = await res.json();
         const mode = json?.data?.mode || 'file';
 
@@ -5747,7 +5917,7 @@ function renderLoginRedirect() {
             if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Sending...'; }
 
             try {
-              const res = await fetch('/_studio/api/router.php?_path=%2Fauth%2Fsend-reset', {
+              const res = await fetch(studioUrl('api/router.php') + '?_path=%2Fauth%2Fsend-reset', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email }),
@@ -5928,7 +6098,7 @@ function renderLoginRedirect() {
         if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Resetting...'; }
 
         try {
-          const res = await fetch('/_studio/api/router.php?_path=%2Fauth%2Freset-with-token', {
+          const res = await fetch(studioUrl('api/router.php') + '?_path=%2Fauth%2Freset-with-token', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token: resetToken, new_password: pw }),

@@ -120,6 +120,7 @@ assert.equal(demoRequests, 0, 'Demo mode never calls the budget POST endpoint');
 assert.equal(get('set-model-budget').textContent, 'Model limits appear after setup.');
 demoControls.invalidate();
 
+const saveConfigurationSource = source.slice(source.indexOf('async function saveConfiguration('), source.indexOf('\nfunction mailSettingValues('));
 const bindSettingsSource = source.slice(source.indexOf('function bindSettingsEvents('), source.indexOf('\n// ─── Email Settings Events'));
 for (const role of ['owner', 'editor']) {
   const roleFields = new Map([
@@ -130,24 +131,33 @@ for (const role of ['owner', 'editor']) {
     ['set-api-key', element('new-fixture-key')],
   ]);
   const roleContainer = { querySelector: selector => roleFields.get(selector.slice(1)) };
-  let budgetBinding, savedBody, previewBody;
+  let budgetBinding, savedBody, previewBody, readiness;
   const roleContext = vm.createContext({
     document: {
       getElementById: id => id === 'settings-content' ? roleContainer : roleFields.get(id),
       documentElement: { dataset: {} },
     },
     window: { demoGuard: () => false },
-    store: { get: () => ({ role }) },
+    store: { get: () => ({ role }), set: (key, value) => { if (key === 'aiConfigured') readiness = value; } },
     api: {
+      get: async () => ({ ok: true, data: { ai_configured: true } }),
       post: async (_, body) => { previewBody = body; return response(64000, 32000); },
       put: async (_, body) => { savedBody = body; return { ok: true }; },
+    },
+    configurationVersions: { provider: 'fixture-version' },
+    configurationGroupKeys: { provider: ['ai_openai_compatible_model', 'ai_max_tokens', 'ai_openai_compatible_api_key', 'ai_openai_compatible_model_limits'] },
+    pendingOperationInput: () => null,
+    apiOperation: async (path, body, method) => {
+      assert.equal(path, '/settings'); assert.equal(method, 'put');
+      assert.equal(body.versions.provider, 'fixture-version', 'Settings save carries the displayed configuration version');
+      savedBody = body.values; return { ok: true };
     },
     bindModelBudgetControls: (container, options) => {
       budgetBinding = bindModelBudgetControls(container, { ...options, delay: 0 });
       return budgetBinding;
     },
   });
-  vm.runInContext(bindSettingsSource, roleContext);
+  vm.runInContext(saveConfigurationSource + "\n" + bindSettingsSource, roleContext);
   roleContext.bindSettingsEvents({ ai_provider: 'openai_compatible', ai_openai_compatible_model_limits: saved }, {});
   assert.equal(Boolean(roleFields.get('set-model-output-limit').readOnly), role !== 'owner', `${role}: output override access`);
   assert.equal(Boolean(roleFields.get('set-model-context-window').readOnly), role !== 'owner', `${role}: context override access`);
@@ -156,6 +166,7 @@ for (const role of ['owner', 'editor']) {
   assert.equal(Object.hasOwn(previewBody, 'model_limits'), role === 'owner', `${role}: editor previews use the server’s saved overrides`);
   assert.ok(roleFields.get('set-model-budget').innerHTML.includes(`${(32000).toLocaleString()} tokens`), `${role}: saved override budget is displayed`);
   await roleFields.get('btn-save-settings').handlers.click();
+  assert.equal(readiness, true, `${role}: successful configuration refreshes built-in AI availability`);
   assert.equal(savedBody.ai_openai_compatible_model, 'private-model', `${role}: ordinary model setting is saved`);
   assert.equal(savedBody.ai_max_tokens, 64000, `${role}: ordinary output ceiling is saved`);
   assert.equal(savedBody.ai_openai_compatible_api_key, 'new-fixture-key', `${role}: ordinary API key setting is saved`);

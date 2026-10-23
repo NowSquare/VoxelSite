@@ -1,4 +1,4 @@
-import { api } from '../../../api.js';
+import { api, apiOperation } from '../../../api.js';
 
 const PENDING_KEY = 'vs-sc-pending-mutation';
 
@@ -25,26 +25,32 @@ function unpackResponse(response) {
 /** Save a stable request ID before the write; uncertain results are read back. */
 export async function siteMutation(route, body, options = {}) {
   if (getPendingMutation()) return recoverSiteMutation(options);
-  const pending = { id: (options.createId || createMutationId)(), route, body };
-  // An operation without a recoverable identifier must not start.
+  const pending = { id: (options.createId || createMutationId)(), kind: 'shared', route, body };
   try { sessionStorage.setItem(PENDING_KEY, JSON.stringify(pending)); }
   catch { return { ok: false, error: { code: 'recovery_unavailable', message: 'Your browser could not save the recovery identifier. Enable session storage, then try again.' } }; }
-  let response;
-  try { response = await (options.post || api.post)(route, { ...body, mutation_id: pending.id }); }
-  catch { response = { ok: false, error: { code: 'network_error' } }; }
-  if (response?.error?.code === 'network_error' || !response) return recoverSiteMutation(options);
-  sessionStorage.removeItem(PENDING_KEY);
-  return response;
+  return resumeSharedMutation(pending, options);
+}
+async function resumeSharedMutation(pending, options = {}) {
+  const response = await (options.operation || apiOperation)(pending.route, pending.body);
+  if (response.ok || ['invalid_schema','invalid_path','content_conflict','idempotency_conflict','permission_denied','review_expired'].includes(response.error?.code)
+      || ['succeeded','failed_restored','expired','cancelled'].includes(response.data?.operation?.status)) {
+    sessionStorage.removeItem(PENDING_KEY);
+    return response;
+  }
+  return { ...response, ok: false, error: { ...response.error, outcome_unknown: true,
+    message: response.error?.message || 'This operation is still retained. Retry to read or continue the same request.' } };
 }
 
-/** Recovery only reads the journal; it never resends a write. */
+/** New requests resume the same retained operation; old requests only read their legacy journal. */
 export async function recoverSiteMutation({
   read = path => api.get(path, { silent: true }),
   pause = () => new Promise(resolve => setTimeout(resolve, 1000)),
   attempts = 15,
+  operation = apiOperation,
 } = {}) {
   const pending = getPendingMutation();
   if (!pending) return { ok: false, error: { code: 'no_pending_mutation', message: 'No Site mutation needs recovery.' } };
+  if (pending.kind === 'shared') return resumeSharedMutation(pending, { operation });
   let latest = {};
   for (let attempt = 0; attempt < attempts; attempt++) {
     const response = await read('/site-control/mutations/' + pending.id);

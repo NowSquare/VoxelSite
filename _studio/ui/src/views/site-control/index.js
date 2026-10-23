@@ -172,6 +172,8 @@ export function renderSiteControlView() {
 //  Data Loading
 // ═══════════════════════════════════════════
 
+let graphDraftVersion = null;
+function acceptGraph(data) { graphDraftVersion = data.draft_version || null; setGraphModel(normalizeGraph(data)); }
 async function loadSiteMap() {
   const root = document.getElementById('vs-site-root');
   if (!root) return;
@@ -199,7 +201,7 @@ async function loadSiteMap() {
     return;
   }
 
-  setGraphModel(normalizeGraph(data));
+  acceptGraph(data);
   graphRefreshFailed = false;
   setFilterText('');
   blastRadiusCache.clear();
@@ -450,7 +452,7 @@ async function performApply() {
     // Reload graph
     const graphResponse = await api.get('/site-graph');
     if (graphResponse.ok && graphResponse.data) {
-      setGraphModel(normalizeGraph(graphResponse.data));
+      acceptGraph(graphResponse.data);
       blastRadiusCache.clear();
       setHierarchyTree(buildHierarchyTree());
     }
@@ -562,7 +564,7 @@ async function performMoveApply() {
       // Reload graph with new structure
       const graphResponse = await api.get('/site-graph');
       if (graphResponse.ok && graphResponse.data) {
-        setGraphModel(normalizeGraph(graphResponse.data));
+        acceptGraph(graphResponse.data);
         blastRadiusCache.clear();
         setHierarchyTree(buildHierarchyTree());
       }
@@ -612,7 +614,7 @@ async function performMoveApply() {
       // Reload graph
       const graphResponse = await api.get('/site-graph');
       if (graphResponse.ok && graphResponse.data) {
-        setGraphModel(normalizeGraph(graphResponse.data));
+        acceptGraph(graphResponse.data);
         blastRadiusCache.clear();
         setHierarchyTree(buildHierarchyTree());
       }
@@ -668,7 +670,7 @@ async function performRename(newTitle) {
     // Reload graph (title may have changed on the card)
     const graphResponse = await api.get('/site-graph');
     if (graphResponse.ok && graphResponse.data) {
-      setGraphModel(normalizeGraph(graphResponse.data));
+      acceptGraph(graphResponse.data);
       blastRadiusCache.clear();
       setHierarchyTree(buildHierarchyTree());
     }
@@ -726,7 +728,7 @@ async function performDelete() {
 
       const graphResponse = await api.get('/site-graph');
       if (graphResponse.ok && graphResponse.data) {
-        setGraphModel(normalizeGraph(graphResponse.data));
+        acceptGraph(graphResponse.data);
         blastRadiusCache.clear();
         setHierarchyTree(buildHierarchyTree());
       }
@@ -971,7 +973,8 @@ function siteBusy() {
 }
 
 async function performSiteMutation(route, body) {
-  const response = await siteMutation(route, body);
+  if (!graphDraftVersion) return { ok: false, error: { code: 'content_conflict', message: 'Reload the site graph before changing it.' } };
+  const response = await siteMutation(route, { ...body, base_draft_version: graphDraftVersion });
   if (response.error?.outcome_unknown) showMutationRecoveryFailure(response.error);
   return response;
 }

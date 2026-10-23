@@ -15,12 +15,13 @@
  *   - Auto-save with debounce + visual "Saved ✓" feedback
  */
 
-import { api } from '../../api.js';
+import { businessApi as api } from '../business-api.js';
 import { store } from '../../state.js';
 import { icons } from '../icons.js';
 import { escapeHtml, escapeAttr } from '../helpers.js';
 import { showToast, showToastWithAction } from '../ui/toasts.js';
 import { showConfirmModal, closeModal, onBackdropClick } from '../ui/modals.js';
+import { activateDialogFocus } from '../ui/dialog-focus.js';
 
 /** Track whether initBoardView() has been called this mount cycle */
 let _boardInitialized = false;
@@ -105,6 +106,17 @@ async function loadBoard() {
   }
 
   const cards = data?.cards || [];
+  if (_expandedCardId && cards.some(card => card.id === _expandedCardId)) {
+    const selected = _expandedCardId;
+    const detail = await api.get(`/cards/${selected}`);
+    if (detail.ok && selected === _expandedCardId) {
+      cards[cards.findIndex(card => card.id === selected)] = detail.data.card;
+    } else if (!detail.ok) {
+      // Keep the current editor intact when its full text cannot be read.
+      showToast('Could not refresh the open card. Your local text is kept.', 'error');
+      return;
+    }
+  }
   store.set('cards', cards);
   store.set('cardsLoaded', true);
   renderColumns(cards);
@@ -259,14 +271,14 @@ function renderCardExpanded(card, col, editable) {
                 rows="3"
                 placeholder="Add details…">${escapeHtml(card.body || '')}</textarea>
       <div class="vs-board-inline-row">
-        <label class="vs-board-inline-label">Column</label>
-        <select class="vs-board-inline-select" data-field="column" data-card-id="${card.id}">
+        <label class="vs-board-inline-label" for="board-column-${card.id}">Column</label>
+        <select id="board-column-${card.id}" class="vs-board-inline-select" data-field="column" data-card-id="${card.id}">
           ${COLUMNS.map(c => `<option value="${c.id}" ${c.id === card.column_name ? 'selected' : ''}>${c.label}</option>`).join('')}
         </select>
       </div>
       <div class="vs-board-inline-row">
-        <label class="vs-board-inline-label">Linked page</label>
-        <select class="vs-board-inline-select" data-field="linked_page" data-card-id="${card.id}">
+        <label class="vs-board-inline-label" for="board-page-${card.id}">Linked page</label>
+        <select id="board-page-${card.id}" class="vs-board-inline-select" data-field="linked_page" data-card-id="${card.id}">
           <option value="">None</option>
           ${pages.map(p => `<option value="${escapeAttr(p.slug)}" ${p.slug === card.linked_page ? 'selected' : ''}>${escapeHtml(p.title || p.slug)}</option>`).join('')}
         </select>
@@ -323,6 +335,7 @@ function bindExpandedCardEvents(cardEl, cardId) {
       return;
     }
     const newColumn = columnSelect.value;
+    if (await flushSave() === false) return;
     showSaveStatus(cardId, 'saving');
     const { ok } = await api.put(`/cards/${cardId}/move`, {
       column_name: newColumn,
@@ -363,6 +376,7 @@ function bindExpandedCardEvents(cardEl, cardId) {
  * a single draft, so title + body edits don't clobber each other.
  */
 function scheduleSave(cardId, fields) {
+  if (!window.IS_DEMO) api.markDraft('cards', cardId, fields);
   // Merge into pending draft
   if (_pendingDraft && _pendingDraft.cardId === cardId) {
     Object.assign(_pendingDraft.fields, fields);
@@ -383,12 +397,8 @@ function scheduleSave(cardId, fields) {
 async function flushSave() {
   clearTimeout(_saveTimer);
   _saveTimer = null;
-
-  if (!_pendingDraft) {
-    // Nothing to save — just await any in-flight request
-    if (_pendingSave) await _pendingSave;
-    return;
-  }
+  if (_pendingSave) await _pendingSave;
+  if (!_pendingDraft) return !api.hasDirty('cards');
 
   const { cardId, fields } = _pendingDraft;
   _pendingDraft = null;
@@ -396,13 +406,21 @@ async function flushSave() {
   // Demo mode — fake save success without hitting the API
   if (window.IS_DEMO) {
     showSaveStatus(cardId, 'saved');
-    return;
+    return true;
   }
 
-  _pendingSave = api.put(`/cards/${cardId}`, fields);
-  const { ok } = await _pendingSave;
-  _pendingSave = null;
-  showSaveStatus(cardId, ok ? 'saved' : 'error');
+  const save = api.put(`/cards/${cardId}`, fields).then(result => {
+    if (!result.ok) {
+      const newer = _pendingDraft?.cardId === cardId ? _pendingDraft.fields : {};
+      _pendingDraft = { cardId, fields: { ...fields, ...newer } };
+    }
+    showSaveStatus(cardId, result.ok ? 'saved' : 'error');
+    return result;
+  });
+  _pendingSave = save;
+  await save;
+  if (_pendingSave === save) _pendingSave = null;
+  return !api.hasDirty('cards');
 }
 
 /**
@@ -425,7 +443,7 @@ function autoResizeTextarea(textarea) {
 async function expandCard(cardId) {
   // Collapse any currently expanded card first
   if (_expandedCardId && _expandedCardId !== cardId) {
-    await collapseCard();
+    if (await collapseCard() === false) return;
   }
 
   // Fetch latest card data
@@ -460,16 +478,27 @@ async function expandCard(cardId) {
 }
 
 async function collapseCard() {
-  if (!_expandedCardId) return;
+  if (!_expandedCardId) return true;
 
   // Flush any pending draft immediately — don't lose edits
-  await flushSave();
+  if (await flushSave() === false) return false;
 
   _expandedCardId = null;
 
   // Reload the board to collapse the card back to its list form
   // with the latest data (in case fields were edited)
   await loadBoard();
+  return true;
+}
+
+async function onCardReloaded(event) {
+  if (event.detail.kind !== 'cards') return;
+  const { id } = event.detail;
+  if (_pendingDraft?.cardId === id) {
+    clearTimeout(_saveTimer); _saveTimer = null; _pendingDraft = null;
+  }
+  await loadBoard();
+  document.querySelector(`[data-card-id="${id}"] [data-field="body"]`)?.focus();
 }
 
 
@@ -539,6 +568,7 @@ function showCardMenu(cardId, anchorEl) {
         showToast('Demo mode — this action is disabled.', 'warning');
         return;
       }
+      if (await flushSave() === false) return;
       const { ok } = await api.post(`/cards/${id}/archive`);
       if (ok) {
         if (_expandedCardId === id) _expandedCardId = null;
@@ -560,6 +590,7 @@ function showCardMenu(cardId, anchorEl) {
         danger: true,
       });
       if (!confirmed) return;
+      if (await flushSave() === false) return;
       const { ok } = await api.delete(`/cards/${id}`);
       if (ok) {
         if (_expandedCardId === id) _expandedCardId = null;
@@ -594,6 +625,7 @@ function renderArchivedLink(count) {
 function initBoardView() {
   if (_boardInitialized) return;
   _boardInitialized = true;
+  window.addEventListener('vs:business-record-reloaded', onCardReloaded);
 
   const editable = canEdit();
 
@@ -725,6 +757,7 @@ async function handleArchive(cardId) {
     showToast('Demo mode — this action is disabled.', 'warning');
     return;
   }
+  if (await flushSave() === false) return;
   const { ok } = await api.post(`/cards/${cardId}/archive`);
   if (ok) {
     _expandedCardId = null;
@@ -748,6 +781,7 @@ async function handleDelete(cardId) {
     danger: true,
   });
   if (!confirmed) return;
+  if (await flushSave() === false) return;
   const { ok } = await api.delete(`/cards/${cardId}`);
   if (ok) {
     _expandedCardId = null;
@@ -771,9 +805,9 @@ function openCreateModal() {
   overlay.id = 'vs-board-create-overlay';
   overlay.className = 'vs-modal-overlay';
   overlay.innerHTML = `
-    <div class="vs-modal" style="max-width: 440px;">
+    <div class="vs-modal" role="dialog" aria-modal="true" aria-labelledby="card-new-heading" tabindex="-1" style="max-width: 440px;">
       <div class="vs-modal-header">
-        <h2 class="vs-modal-title">New Card</h2>
+        <h2 class="vs-modal-title" id="card-new-heading">New Card</h2>
       </div>
       <div class="vs-modal-body">
         <div class="flex flex-col gap-4">
@@ -796,7 +830,7 @@ function openCreateModal() {
               ${pages.map(p => `<option value="${escapeAttr(p.slug)}">${escapeHtml(p.title || p.slug)}</option>`).join('')}
             </select>
           </div>
-          <div id="card-create-error" class="hidden text-sm" style="color: var(--vs-error);"></div>
+          <div id="card-create-error" class="hidden text-sm" role="alert" style="color: var(--vs-error);"></div>
         </div>
       </div>
       <div class="vs-modal-footer">
@@ -807,25 +841,25 @@ function openCreateModal() {
   `;
 
   document.body.appendChild(overlay);
-  requestAnimationFrame(() => overlay.classList.add('is-visible'));
+  let closed = false;
+  requestAnimationFrame(() => { if (!closed) overlay.classList.add('is-visible'); });
 
-  const close = () => closeModal(overlay);
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    releaseFocus();
+    overlay.inert = true;
+    overlay.setAttribute('aria-hidden', 'true');
+    closeModal(overlay);
+  };
+  const releaseFocus = activateDialogFocus(overlay.querySelector('.vs-modal'), {
+    initialFocus: () => overlay.querySelector('#card-new-title'),
+    returnFocus: () => document.getElementById('btn-board-add'),
+    onEscape: close,
+  });
 
   onBackdropClick(overlay, close);
   document.getElementById('btn-card-cancel')?.addEventListener('click', close);
-
-  // Escape
-  const onKeydown = (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
-  };
-  document.addEventListener('keydown', onKeydown);
-  const observer = new MutationObserver(() => {
-    if (!document.body.contains(overlay)) {
-      document.removeEventListener('keydown', onKeydown);
-      observer.disconnect();
-    }
-  });
-  observer.observe(document.body, { childList: true });
 
   // Enter key submits
   document.getElementById('card-new-title')?.addEventListener('keydown', (e) => {
@@ -876,8 +910,6 @@ function openCreateModal() {
     }
   });
 
-  // Focus title
-  setTimeout(() => document.getElementById('card-new-title')?.focus(), 80);
 }
 
 async function populatePagesCache() {
@@ -1008,7 +1040,9 @@ function initDragAndDrop(container) {
     }
 
     // Send move request — server handles rebalancing
-    const { ok } = await api.put(`/cards/${_dragState.cardId}/move`, {
+    const movedId = _dragState.cardId;
+    if (await flushSave() === false) { _dragState = null; return; }
+    const { ok } = await api.put(`/cards/${movedId}/move`, {
       column_name: targetColumn,
       position: newPosition,
     });
@@ -1182,7 +1216,7 @@ function resolvePageTitle(slug) {
  */
 export async function cleanupBoard() {
   // Flush pending draft to server before teardown
-  await flushSave();
+  if (await flushSave() === false) return false;
 
   _dragState = null;
   _expandedCardId = null;
@@ -1191,6 +1225,7 @@ export async function cleanupBoard() {
   closeCardMenu();
   document.removeEventListener('keydown', handleBoardKeydown);
   document.removeEventListener('mousedown', handleOutsideClick);
+  window.removeEventListener('vs:business-record-reloaded', onCardReloaded);
 
   // Unregister from the router flush system
   if (window.__vsFlushCallbacks) {

@@ -11,7 +11,7 @@
  * shows serif headings. The card IS the preview.
  */
 
-import { api } from '../../api.js';
+import { studioUrl, api, apiOperation, pendingOperationInput, pendingOperationEntries } from '../../api.js';
 import { store } from '../../state.js';
 import { icons } from '../icons.js';
 import { escapeHtml, escapeAttr, timeAgo } from '../helpers.js';
@@ -65,6 +65,11 @@ export function renderDesignsView() {
       </div>
     </div>
   `;
+}
+
+export function renderSnapshotHistoryView() {
+  activeTab = 'history';
+  return renderDesignsView();
 }
 
 function initDesignsView() {
@@ -188,7 +193,7 @@ function renderDesignCard(design, isActive) {
     : `${pageCount} ${pageCount === 1 ? 'page' : 'pages'}`;
 
   // Preview URL for browsing the full design in a new tab
-  const previewUrl = `/_studio/api/router.php?_path=%2Fdesigns%2F${encodeURIComponent(design.id)}%2Fpreview&path=index.php`;
+  const previewUrl = `${studioUrl('')}api/router.php?_path=%2Fdesigns%2F${encodeURIComponent(design.id)}%2Fpreview&path=index.php`;
   // Embed URL adds &embed=1 so the backend injects reveal-animation overrides
   const embedUrl = `${previewUrl}&embed=1`;
 
@@ -252,7 +257,7 @@ function bindGalleryEvents(container) {
       // If user chose to save, save explicitly first
       if (result.saveDesign) {
         const siteName = store.get('siteName') || 'Untitled';
-        const saveResult = await api.post('/designs', {
+        const saveResult = await apiOperation('/designs', {
           name: `${siteName}`,
           description: 'Saved before switching designs',
         });
@@ -266,7 +271,7 @@ function bindGalleryEvents(container) {
       }
 
       // Load the selected design; skip auto-save if user already saved (or opted out)
-      const { ok, data, error } = await api.post(`/designs/${id}/load`, {
+      const { ok, data, error } = await apiOperation(`/designs/${id}/load`, {
         skip_auto_save: true,
       });
 
@@ -308,7 +313,7 @@ function bindGalleryEvents(container) {
       const id = btn.dataset.deleteId;
       const confirmed = await showConfirmModal({
         title: 'Delete Design',
-        description: 'This design will be removed permanently. This cannot be undone.',
+        description: 'Remove this design from the gallery. Retained archive bytes stay available for history.',
         confirmLabel: 'Delete',
         danger: true,
       });
@@ -317,7 +322,7 @@ function bindGalleryEvents(container) {
       btn.innerHTML = `Deleting…`;
       btn.disabled = true;
 
-      const { ok, error } = await api.delete(`/designs/${id}`);
+      const { ok, error } = await apiOperation(`/designs/${id}`, {}, 'delete');
 
       if (ok) {
         showToast('Design deleted.', 'success');
@@ -338,184 +343,194 @@ function bindGalleryEvents(container) {
 async function loadHistory() {
   const container = document.getElementById('designs-content');
   if (!container) return;
-
-  // Create snapshot button inside History tab
   container.innerHTML = `
     <div class="flex justify-end mb-4">
-      <button id="btn-create-snapshot" class="vs-btn vs-btn-ghost vs-btn-sm">
-        ${icons.camera} Create Snapshot
-      </button>
+      <button id="btn-create-snapshot" class="vs-btn vs-btn-ghost vs-btn-sm">${icons.camera} Create Snapshot</button>
     </div>
-    <div id="snapshots-list">
-      <div class="text-sm text-vs-text-ghost py-8 text-center">Loading snapshots…</div>
-    </div>
-  `;
-
+    <p class="text-sm text-vs-text-secondary mb-4">Draft snapshots restore your private work. Published snapshots change the live website only when you select that domain.</p>
+    <div id="snapshot-pending-deletions"></div>
+    <div id="snapshots-list"><div class="text-sm text-vs-text-ghost py-8 text-center">Loading snapshots…</div></div>`;
   document.getElementById('btn-create-snapshot')?.addEventListener('click', () => {
-    if (window.demoGuard?.()) return;
-    if (window.viewerGuard?.()) return;
+    if (window.demoGuard?.() || window.viewerGuard?.()) return;
     showSnapshotCreateModal();
   });
+  await loadHistoryPage();
+}
 
+async function loadHistoryPage(offset = 0, version = null) {
   const listEl = document.getElementById('snapshots-list');
   if (!listEl) return;
-
-  const { ok, data } = await api.get('/snapshots');
-
-  if (!ok || !data?.snapshots?.length) {
-    listEl.innerHTML = `
-      <div class="vs-empty-state">
-        <div class="vs-empty-state-inner">
-          <div class="vs-empty-state-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          </div>
-          <p class="vs-empty-state-title">No snapshots yet</p>
-          <p class="vs-empty-state-desc">Create your first restore point. Experiment fearlessly.</p>
-          <button id="btn-empty-create-snapshot" class="vs-btn vs-btn-primary vs-btn-sm">${icons.camera} Create Snapshot</button>
-        </div>
-      </div>
-    `;
-    document.getElementById('btn-empty-create-snapshot')?.addEventListener('click', () => {
-      if (window.demoGuard?.()) return;
-      showSnapshotCreateModal();
-    });
+  const pendingEl = document.getElementById('snapshot-pending-deletions');
+  if (pendingEl) {
+    const pending = pendingOperationEntries('/snapshots/', 'delete').filter(entry => /^\/snapshots\/(?:snapshot_[a-f0-9]{32}|legacy_[1-9][0-9]*)$/.test(entry.endpoint));
+    pendingEl.innerHTML = pending.length ? `<div class="vs-card mb-4"><p class="text-sm mb-2">These deletion requests still need a confirmed result.</p>${pending.map(entry =>
+      `<button class="vs-btn vs-btn-secondary vs-btn-sm" data-pending-delete="${escapeAttr(entry.endpoint.slice(11))}">Check ${escapeHtml(entry.endpoint.slice(11))}</button>`).join('')}</div>` : '';
+    pendingEl.querySelectorAll('[data-pending-delete]').forEach(button => button.addEventListener('click', () => showSnapshotDeleteModal(button.dataset.pendingDelete)));
+  }
+  const query = new URLSearchParams({ history: 'all', limit: '25', offset: String(offset) });
+  if (version) query.set('inventory_version', version);
+  const { ok, data, error } = await api.get('/snapshots?' + query);
+  if (!ok) {
+    listEl.innerHTML = `<p class="text-sm text-vs-text-secondary py-8">${escapeHtml(error?.message || 'History could not be loaded.')}</p>`;
     return;
   }
-
-  const snapshots = data.snapshots;
-
-  listEl.innerHTML = `
-    <div class="vs-timeline">
-      ${snapshots.map((snap, i) => {
-        const ago = timeAgo(snap.created_at);
-        const fullDate = new Date(snap.created_at).toLocaleString();
-        const sizeKB = snap.size_bytes ? (snap.size_bytes / 1024).toFixed(0) + ' KB' : '—';
-        const isLast = i === snapshots.length - 1;
-
-        let dotColor, badgeClass, badgeLabel;
-        if (snap.snapshot_type === 'pre_publish') {
-          dotColor = 'var(--vs-success)';
-          badgeClass = 'vs-snap-badge-green';
-          badgeLabel = 'Pre-publish';
-        } else if (snap.snapshot_type === 'manual') {
-          dotColor = 'var(--vs-accent)';
-          badgeClass = 'vs-snap-badge-amber';
-          badgeLabel = 'Manual';
-        } else {
-          dotColor = 'var(--vs-text-ghost)';
-          badgeClass = 'vs-snap-badge-gray';
-          badgeLabel = 'Auto';
-        }
-
-        const description = snap.description
-          ? `<p class="vs-timeline-desc">${escapeHtml(snap.description)}</p>`
-          : '';
-
-        return `
-          <div class="vs-timeline-item${isLast ? ' vs-timeline-last' : ''}">
-            <div class="vs-timeline-rail">
-              <div class="vs-timeline-dot" style="background: ${dotColor}; box-shadow: 0 0 0 3px color-mix(in srgb, ${dotColor} 20%, transparent);"></div>
-              <div class="vs-timeline-connector"></div>
-            </div>
-            <div class="vs-timeline-card">
-              <div class="vs-timeline-card-header">
-                <div class="flex items-center gap-2">
-                  <span class="${badgeClass}">${badgeLabel}</span>
-                  <span class="vs-timeline-label">${escapeHtml(snap.label || 'Snapshot #' + snap.id)}</span>
-                </div>
-                <span class="vs-timeline-ago" title="${fullDate}">${ago}</span>
-              </div>
-              ${description}
-              <div class="vs-timeline-meta">Snapshot #${escapeHtml(String(snap.id))} · ${snap.file_count} files · ${sizeKB}</div>
-              <div class="vs-timeline-actions">
-                <button data-preview-id="${snap.id}" data-snap='${JSON.stringify({ id: snap.id, label: snap.label, description: snap.description, type: snap.snapshot_type, files: snap.file_count, size: sizeKB, date: fullDate }).replace(/'/g, '&#39;')}' class="vs-btn vs-btn-ghost vs-btn-xs" style="color: var(--vs-text-secondary);">
-                  ${icons.eye} Preview
-                </button>
-                <button data-restore-id="${snap.id}" class="vs-btn vs-btn-ghost vs-btn-xs" style="color: var(--vs-text-secondary);">
-                  ${icons.rotateCcw} Restore
-                </button>
-                <button data-delete-snap-id="${snap.id}" class="vs-btn vs-btn-ghost vs-btn-xs" style="color: var(--vs-text-ghost);">
-                  ${icons.trash2}
-                </button>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('')}
-    </div>
-  `;
-
+  if (!data.snapshots.length) {
+    listEl.innerHTML = '<div class="vs-empty-state"><p class="vs-empty-state-title">No snapshots yet</p><p class="vs-empty-state-desc">Create a restore point before your next change.</p></div>';
+    return;
+  }
+  listEl.innerHTML = `<div class="vs-timeline">${data.snapshots.map((snap, index) => {
+    const id = escapeAttr(snap.snapshot_id);
+    const domains = snap.domains.map(domain => domain === 'draft' ? 'Draft' : 'Published').join(' + ');
+    const size = snap.bytes === null ? 'Size checked on inspection' : Math.ceil(snap.bytes / 1024) + ' KB';
+    return `<div class="vs-timeline-item${index === data.snapshots.length - 1 ? ' vs-timeline-last' : ''}">
+      <div class="vs-timeline-rail"><div class="vs-timeline-dot"></div><div class="vs-timeline-connector"></div></div>
+      <div class="vs-timeline-card">
+        <div class="vs-timeline-card-header"><div class="flex items-center gap-2"><span class="vs-snap-badge-gray">${domains}</span><span class="vs-timeline-label">${escapeHtml(snap.label || 'Website snapshot')}</span></div><span class="vs-timeline-ago">${timeAgo(snap.created_at)}</span></div>
+        <div class="vs-timeline-meta break-all">${escapeHtml(snap.snapshot_id)} · ${snap.file_count} files · ${size} · Format ${snap.format}${snap.protected ? ' · Retained for history' : ''}</div>
+        <div class="vs-timeline-actions">
+          <button data-inspect-id="${id}" class="vs-btn vs-btn-ghost vs-btn-xs">${icons.eye} Details</button>
+          <button data-restore-id="${id}" data-domains="${escapeAttr(snap.domains.join(','))}" class="vs-btn vs-btn-ghost vs-btn-xs">${icons.rotateCcw} Restore…</button>
+          ${!snap.protected ? `<button data-delete-snap-id="${id}" class="vs-btn vs-btn-ghost vs-btn-xs">${icons.trash2} Delete</button>` : ''}
+        </div>
+      </div></div>`;
+  }).join('')}</div>
+  <div class="flex items-center justify-between mt-4"><span class="text-sm text-vs-text-secondary">${offset + 1}–${offset + data.snapshots.length} of ${data.total}</span><div class="flex gap-2">${offset ? '<button id="snapshot-first-page" class="vs-btn vs-btn-ghost vs-btn-sm">First page</button>' : ''}${data.next_offset !== null ? '<button id="snapshot-next-page" class="vs-btn vs-btn-secondary vs-btn-sm">Older snapshots</button>' : ''}</div></div>`;
+  document.getElementById('snapshot-first-page')?.addEventListener('click', () => loadHistoryPage());
+  document.getElementById('snapshot-next-page')?.addEventListener('click', () => loadHistoryPage(data.next_offset, data.inventory_version));
   bindHistoryEvents(listEl);
 }
 
 function bindHistoryEvents(container) {
-  // Preview buttons
-  container.querySelectorAll('[data-preview-id]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const snap = JSON.parse(btn.dataset.snap);
-      showSnapshotPreviewModal(snap);
-    });
-  });
+  container.querySelectorAll('[data-inspect-id]').forEach(btn => btn.addEventListener('click', async () => {
+    const { ok, data, error } = await api.get(`/snapshots/${encodeURIComponent(btn.dataset.inspectId)}/inspect`);
+    if (!ok) { showToast(error?.message || 'Snapshot inspection failed.', 'error'); return; }
+    showSnapshotPreviewModal(data);
+  }));
+  container.querySelectorAll('[data-restore-id]').forEach(btn => btn.addEventListener('click', () => {
+    if (window.demoGuard?.() || window.viewerGuard?.()) return;
+    showSnapshotRestoreModal(btn.dataset.restoreId, btn.dataset.domains.split(','));
+  }));
+  container.querySelectorAll('[data-delete-snap-id]').forEach(btn => btn.addEventListener('click', async () => {
+    if (window.demoGuard?.() || window.viewerGuard?.()) return;
+    await showSnapshotDeleteModal(btn.dataset.deleteSnapId);
+  }));
+}
 
-  // Restore buttons
-  container.querySelectorAll('[data-restore-id]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      if (window.demoGuard?.()) return;
-      if (window.viewerGuard?.()) return;
-
-      const id = btn.dataset.restoreId;
-      const confirmed = await showConfirmModal({
-        title: 'Restore snapshot #' + id,
-        description: 'This replaces preview files and shared assets. Asset changes can affect the live site. PHP pages still need Publish. VoxelSite saves a safety snapshot before restoring.',
-        confirmLabel: 'Restore',
-      });
-      if (!confirmed) return;
-
-      btn.innerHTML = `${icons.rotateCcw} Restoring…`;
-      btn.disabled = true;
-
-      const { ok, error } = await api.post(`/snapshots/${id}/restore`);
-
-      if (ok) {
-        showToast('Snapshot restored.', 'success');
-        loadHistory();
-      } else {
-        showToast(error?.message || 'Failed to restore snapshot.', 'error');
-        btn.innerHTML = `${icons.rotateCcw} Restore`;
-        btn.disabled = false;
+async function showSnapshotDeleteModal(id) {
+  const previousFocus = document.activeElement;
+  const historyContainer = document.getElementById('designs-content');
+  const endpoint = `/snapshots/${encodeURIComponent(id)}`;
+  const pending = pendingOperationInput(endpoint, 'delete');
+  let review = null;
+  if (!pending) {
+    const response = await api.get(`${endpoint}/delete-review`);
+    if (!response.ok || response.data.protected) {
+      showToast(response.error?.message || response.data?.reason || 'This snapshot is retained for recovery.', 'error'); return;
+    }
+    review = response.data;
+  }
+  const version = pending?.version || review.version;
+  document.getElementById('vs-snapshot-delete-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'vs-snapshot-delete-overlay'; overlay.className = 'vs-modal-overlay';
+  overlay.innerHTML = `<div class="vs-modal" role="dialog" aria-modal="true" aria-labelledby="snapshot-delete-title" style="max-width: 600px;">
+    <div class="vs-modal-header"><h2 class="vs-modal-title" id="snapshot-delete-title">${pending ? 'Continue snapshot deletion' : 'Delete snapshot'}</h2>
+    <p class="vs-modal-desc break-all">${escapeHtml(id)}. ${pending ? 'Inspect and continue the same retained request.' : 'Remove this archive permanently. Current draft and published files stay unchanged.'}</p></div>
+    <div class="vs-modal-body"><p style="overflow-wrap: anywhere;">Reviewed version: ${escapeHtml(version)}</p>
+    ${review ? `<p class="mt-3">${review.files.length} files · ${(review.bytes / 1024).toFixed(1)} KB</p>
+    <details class="mt-3"><summary>Exact archive files</summary><ul style="max-height: 220px; overflow: auto; overflow-wrap: anywhere;">${review.files.map(file => `<li class="mt-2">${escapeHtml(file.path)}<br><small>${escapeHtml(file.sha256)}</small></li>`).join('')}</ul></details>` : ''}
+    <p class="mt-3" data-delete-status role="status" aria-live="polite"></p></div>
+    <div class="vs-modal-footer"><button class="vs-btn vs-btn-secondary vs-btn-sm" data-delete-close>Close</button>
+    <button class="vs-btn vs-btn-danger vs-btn-sm" data-delete-confirm>${pending ? 'Continue deletion' : 'Delete archive'}</button></div></div>`;
+  document.body.appendChild(overlay); requestAnimationFrame(() => overlay.classList.add('is-visible'));
+  let closed = false;
+  const close = (restoreFocus = true) => {
+    if (closed) return;
+    const ownedFocus = !document.activeElement || document.activeElement === document.body || overlay.contains(document.activeElement);
+    closed = true; document.removeEventListener('keydown', keydown); closeModal(overlay);
+    if (!restoreFocus || !ownedFocus) return;
+    let trigger = previousFocus?.isConnected ? previousFocus : null;
+    if (!trigger) {
+      const currentHistory = document.getElementById('designs-content');
+      trigger = [...(currentHistory?.querySelectorAll('[data-delete-snap-id], [data-pending-delete]') || [])]
+        .find(button => button.isConnected && (button.dataset.deleteSnapId === id || button.dataset.pendingDelete === id))
+        || currentHistory?.querySelector('#btn-create-snapshot');
+    }
+    if (trigger?.isConnected) trigger.focus();
+  };
+  const keydown = event => {
+    if (event.key === 'Escape') { event.preventDefault(); close(); }
+    if (event.key === 'Tab') {
+      const buttons = [...overlay.querySelectorAll('button:not(:disabled),summary')];
+      if (event.shiftKey && document.activeElement === buttons[0]) { event.preventDefault(); buttons.at(-1)?.focus(); }
+      else if (!event.shiftKey && document.activeElement === buttons.at(-1)) { event.preventDefault(); buttons[0]?.focus(); }
+    }
+  };
+  document.addEventListener('keydown', keydown); onBackdropClick(overlay, close);
+  overlay.querySelector('[data-delete-close]').onclick = close;
+  overlay.querySelector('[data-delete-close]').focus();
+  overlay.querySelector('[data-delete-confirm]').onclick = async event => {
+    event.currentTarget.disabled = true;
+    const result = await apiOperation(endpoint, pending || { version }, 'delete');
+    if (result.ok) {
+      const ownedFocus = !closed && (!document.activeElement || document.activeElement === document.body || overlay.contains(document.activeElement));
+      close(ownedFocus); showToast('Snapshot deleted.', 'success');
+      if (document.getElementById('designs-content') === historyContainer) {
+        const afterClose = document.activeElement;
+        await loadHistory();
+        if (ownedFocus && (!document.activeElement || document.activeElement === document.body || document.activeElement === afterClose)) {
+          document.getElementById('btn-create-snapshot')?.focus();
+        }
       }
-    });
-  });
+      return;
+    }
+    overlay.querySelector('[data-delete-status]').textContent = result.error?.message || 'Deletion needs attention. The retained operation is still available.';
+    overlay.querySelector('[data-delete-confirm]').disabled = false;
+  };
+}
 
-  // Delete buttons
-  container.querySelectorAll('[data-delete-snap-id]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      if (window.demoGuard?.()) return;
-      if (window.viewerGuard?.()) return;
-
-      const id = btn.dataset.deleteSnapId;
-      const confirmed = await showConfirmModal({
-        title: 'Delete Snapshot',
-        description: 'This snapshot will be removed permanently.',
-        confirmLabel: 'Delete',
-        danger: true,
-      });
-      if (!confirmed) return;
-
-      btn.innerHTML = `Deleting…`;
-      btn.disabled = true;
-
-      const { ok, error } = await api.delete(`/snapshots/${id}`);
-
-      if (ok) {
-        showToast('Snapshot deleted.', 'success');
-        loadHistory();
-      } else {
-        showToast(error?.message || 'Failed to delete snapshot.', 'error');
-        btn.innerHTML = `${icons.trash2}`;
-        btn.disabled = false;
-      }
-    });
+function showSnapshotRestoreModal(id, domains) {
+  document.getElementById('vs-snapshot-restore-overlay')?.remove();
+  const endpoint = `/snapshots/${encodeURIComponent(id)}/apply-restore`;
+  const pending = pendingOperationInput(endpoint);
+  const options = [...domains, ...(domains.length === 2 ? ['both'] : [])];
+  const labels = { draft: 'Draft only', published: 'Published website only', both: 'Draft and published website' };
+  const overlay = document.createElement('div');
+  overlay.id = 'vs-snapshot-restore-overlay'; overlay.className = 'vs-modal-overlay';
+  overlay.innerHTML = `<div class="vs-modal" style="max-width: 640px;">
+    <div class="vs-modal-header"><h2 class="vs-modal-title">Restore snapshot</h2><p class="vs-modal-desc">${escapeHtml(id)}</p></div>
+    <div class="vs-modal-body"><label class="block text-sm text-vs-text-secondary mb-1" for="snap-restore-domain">Restore</label>
+      <select id="snap-restore-domain" class="vs-input w-full" ${pending ? 'disabled' : ''}>${options.map(domain => `<option value="${domain}">${labels[domain]}</option>`).join('')}</select>
+      <p class="text-sm text-vs-text-secondary mt-3">Draft only preserves the live website. Published only preserves your newer draft. A verified safety archive is retained before changes begin.</p>
+      <div id="snap-restore-review" class="text-sm text-vs-text-secondary mt-3">${pending ? 'A previous restoration request is pending. Continue that same operation to see its retained result.' : 'Review the affected files before restoring.'}</div>
+    </div><div class="vs-modal-footer"><button id="snap-restore-cancel" class="vs-btn vs-btn-secondary vs-btn-sm">Close</button><button id="snap-restore-submit" class="vs-btn vs-btn-primary vs-btn-sm">${pending ? 'Continue restoration' : 'Review restoration'}</button></div></div>`;
+  document.body.appendChild(overlay); requestAnimationFrame(() => overlay.classList.add('is-visible'));
+  onBackdropClick(overlay, () => closeModal(overlay));
+  document.getElementById('snap-restore-cancel')?.addEventListener('click', () => closeModal(overlay));
+  const button = document.getElementById('snap-restore-submit');
+  const selector = document.getElementById('snap-restore-domain');
+  const review = document.getElementById('snap-restore-review');
+  let prepared = pending;
+  if (pending?.domain && selector) selector.value = pending.domain;
+  selector?.addEventListener('change', () => { prepared = null; button.textContent = 'Review restoration'; review.textContent = 'Review the affected files before restoring.'; });
+  button?.addEventListener('click', async () => {
+    button.disabled = true;
+    if (!prepared) {
+      const requestId = `review_${crypto.randomUUID().replaceAll('-', '')}`;
+      const result = await api.post(`/snapshots/${encodeURIComponent(id)}/prepare-restore`, { request_id: requestId, domain: selector.value });
+      button.disabled = false;
+      if (!result.ok) { review.textContent = result.error?.message || 'Restoration review failed.'; return; }
+      const plan = result.data;
+      prepared = { plan_id: plan.plan_id, digest: plan.digest, domain: plan.domain };
+      const domainName = labels[plan.domain];
+      review.innerHTML = `<p><strong>${domainName}</strong> · ${plan.files.length} file changes</p><p>Safety archive: ${escapeHtml(plan.safety_snapshot_id)}</p><details class="mt-3"><summary>Affected files</summary><ul style="max-height: 180px; overflow: auto;">${plan.files.map(file => `<li>${escapeHtml(file.domain)} · ${escapeHtml(file.action)} · ${escapeHtml(file.path)}</li>`).join('')}</ul></details><p class="mt-3">Excluded: ${plan.excluded_domains.map(escapeHtml).join(', ')}.</p>`;
+      button.textContent = plan.domain === 'draft' ? 'Restore draft' : 'Restore live website';
+      return;
+    }
+    const result = await apiOperation(endpoint, prepared);
+    button.disabled = false;
+    if (result.ok) { closeModal(overlay); showToast('Snapshot restored.', 'success'); await refreshAfterDesignSwitch(); loadHistory(); }
+    else { review.textContent = result.error?.message || 'Restoration needs attention.'; button.textContent = 'Check retained operation'; }
   });
 }
 
@@ -604,7 +619,7 @@ export function showSaveDesignModal() {
     saveBtn.innerHTML = 'Saving…';
     saveBtn.disabled = true;
 
-    const { ok, error } = await api.post('/designs', { name, description });
+    const { ok, error } = await apiOperation('/designs', { name, description });
 
     close();
 
@@ -690,7 +705,7 @@ function showEditDesignModal(id, currentName, currentDesc) {
     saveBtn.innerHTML = 'Saving…';
     saveBtn.disabled = true;
 
-    const { ok, error } = await api.put(`/designs/${id}`, { name, description });
+    const { ok, error } = await apiOperation(`/designs/${id}`, { name, description }, 'put');
 
     close();
 
@@ -783,7 +798,7 @@ export async function confirmNewDesign() {
 
   // If user chose to save, save with their chosen name first
   if (result.saveDesign && result.designName) {
-    const saveResult = await api.post('/designs', {
+    const saveResult = await apiOperation('/designs', {
       name: result.designName,
       description: '',
     });
@@ -799,7 +814,7 @@ export async function confirmNewDesign() {
   // Clear the workspace
   // Always skip auto-save: either the user saved explicitly above,
   // or they unchecked the checkbox (opted out of saving entirely).
-  const { ok, error } = await api.post('/designs/new', {
+  const { ok, error } = await apiOperation('/designs/new', {
     skip_auto_save: true,
   });
 
@@ -949,13 +964,16 @@ function showSnapshotCreateModal() {
     <div class="vs-modal" style="max-width: 480px;">
       <div class="vs-modal-header">
         <h2 class="vs-modal-title">${icons.camera} Create Snapshot</h2>
-        <p class="vs-modal-desc">Save a restore point of your current site state.</p>
+        <p class="vs-modal-desc">Save the selected website files and their domain metadata. Submissions, secrets, and Action definitions are excluded.</p>
       </div>
       <div class="vs-modal-body">
         <div class="flex flex-col gap-4">
           <div>
             <label class="block text-sm text-vs-text-secondary mb-1">Description <span class="text-vs-text-ghost">(optional)</span></label>
-            <input id="snap-desc" type="text" class="vs-input w-full" placeholder="e.g. Before redesigning the header" autofocus>
+            <input id="snap-desc" type="text" maxlength="200" class="vs-input w-full" placeholder="e.g. Before redesigning the header" autofocus>
+          </div>
+          <div><label for="snap-domain" class="block text-sm text-vs-text-secondary mb-1">Capture</label>
+            <select id="snap-domain" class="vs-input w-full"><option value="draft">Private draft</option><option value="published">Published website</option><option value="both">Draft and published website</option></select>
           </div>
         </div>
       </div>
@@ -976,6 +994,13 @@ function showSnapshotCreateModal() {
 
   const descInput = document.getElementById('snap-desc');
   const saveBtn = document.getElementById('snap-save');
+  const domainInput = document.getElementById('snap-domain');
+  const pending = pendingOperationInput('/snapshots/capture');
+  if (pending) {
+    if (descInput) { descInput.value = pending.label; descInput.disabled = true; }
+    if (domainInput) { domainInput.value = pending.domain; domainInput.disabled = true; }
+    if (saveBtn) saveBtn.textContent = 'Continue snapshot';
+  }
 
   descInput?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') saveBtn?.click();
@@ -986,10 +1011,8 @@ function showSnapshotCreateModal() {
     saveBtn.innerHTML = 'Creating…';
     saveBtn.disabled = true;
 
-    const { ok, error } = await api.post('/snapshots', {
-      type: 'manual',
-      label: 'Manual snapshot',
-      description,
+    const { ok, error } = await apiOperation('/snapshots/capture', pending || {
+      domain: domainInput?.value || 'draft', label: description || 'Manual snapshot',
     });
 
     close();
@@ -1015,42 +1038,21 @@ function showSnapshotPreviewModal(snap) {
   overlay.id = 'vs-snapshot-preview-overlay';
   overlay.className = 'vs-modal-overlay';
 
-  let dotColor, typeName;
-  if (snap.type === 'pre_publish') { dotColor = 'var(--vs-success)'; typeName = 'Pre-publish'; }
-  else if (snap.type === 'manual') { dotColor = 'var(--vs-accent)'; typeName = 'Manual'; }
-  else { dotColor = 'var(--vs-text-ghost)'; typeName = 'Auto'; }
-
-  overlay.innerHTML = `
-    <div class="vs-modal" style="max-width: 480px;">
-      <div class="vs-modal-header">
-        <h2 class="vs-modal-title">${icons.eye} Snapshot #${escapeHtml(String(snap.id))}</h2>
-      </div>
-      <div class="vs-modal-body">
-        <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px;">
-          <span style="color: var(--vs-text-ghost);">Snapshot</span>
-          <span style="color: var(--vs-text-primary);">#${escapeHtml(String(snap.id))}</span>
-          <span style="color: var(--vs-text-ghost);">Type</span>
-          <span style="display: flex; align-items: center; gap: 6px;">
-            <span style="width: 8px; height: 8px; border-radius: 50%; background: ${dotColor}; display: inline-block;"></span>
-            ${typeName}
-          </span>
-          <span style="color: var(--vs-text-ghost);">Label</span>
-          <span style="color: var(--vs-text-primary);">${escapeHtml(snap.label || '—')}</span>
-          <span style="color: var(--vs-text-ghost);">Description</span>
-          <span style="color: var(--vs-text-primary);">${escapeHtml(snap.description || '—')}</span>
-          <span style="color: var(--vs-text-ghost);">Date</span>
-          <span style="color: var(--vs-text-primary);">${snap.date}</span>
-          <span style="color: var(--vs-text-ghost);">Files</span>
-          <span style="color: var(--vs-text-primary);">${snap.files} files</span>
-          <span style="color: var(--vs-text-ghost);">Size</span>
-          <span style="color: var(--vs-text-primary);">${snap.size}</span>
-        </div>
-      </div>
-      <div class="vs-modal-footer">
-        <button id="snap-preview-close" class="vs-btn vs-btn-secondary vs-btn-sm" type="button">Close</button>
-      </div>
-    </div>
-  `;
+  const rows = [
+    ['Snapshot', snap.snapshot_id], ['Label', snap.label || '—'],
+    ['Domains', snap.domains.map(domain => domain === 'draft' ? 'Draft' : 'Published').join(' + ')],
+    ['Format', String(snap.format)], ['Validation', snap.validity],
+    ['Date', new Date(snap.created_at).toLocaleString()], ['Files', String(snap.file_count)],
+    ['Size', snap.bytes === null ? 'Not recorded' : Math.ceil(snap.bytes / 1024) + ' KB'],
+    ['Retention', snap.protected ? 'Required by retained history' : 'Unprotected legacy archive'],
+    ['Excluded', snap.excluded_domains.join(', ')],
+  ];
+  overlay.innerHTML = `<div class="vs-modal" style="max-width: 560px;">
+    <div class="vs-modal-header"><h2 class="vs-modal-title">${icons.eye} Snapshot details</h2></div>
+    <div class="vs-modal-body"><dl style="display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px;">
+      ${rows.map(([label, value]) => `<dt class="text-vs-text-secondary">${label}</dt><dd style="overflow-wrap: anywhere;">${escapeHtml(value)}</dd>`).join('')}
+    </dl>${snap.diagnostics.length ? `<p class="text-sm text-vs-text-secondary mt-3">${snap.diagnostics.map(escapeHtml).join(' ')}</p>` : ''}</div>
+    <div class="vs-modal-footer"><button id="snap-preview-close" class="vs-btn vs-btn-secondary vs-btn-sm">Close</button></div></div>`;
 
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('is-visible'));

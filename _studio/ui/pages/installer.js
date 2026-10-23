@@ -43,6 +43,7 @@ const state = {
   canProceed: false,
   checksLoading: true,
   // AI provider config
+  aiSetupMode: 'builtin',
   aiProvider: 'claude',
   aiApiKey: '',
   aiBaseUrl: '',
@@ -90,7 +91,8 @@ const state = {
 // The installer calls router.php directly with a _path parameter.
 // This bypasses URL rewriting entirely, so the installer works on
 // any server (Apache, Nginx, Herd) without needing rewrite rules.
-const API_BASE = '/_studio/api/router.php';
+const STUDIO_BASE = new URL('./', window.location.href);
+const API_BASE = new URL('api/router.php', STUDIO_BASE).pathname;
 
 async function apiPost(endpoint, data = {}) {
   const res = await fetch(`${API_BASE}?_path=${encodeURIComponent(endpoint)}`, {
@@ -326,6 +328,26 @@ function renderStep1() {
 // ═══════════════════════════════════════════
 
 function renderStep2() {
+  const choices = `<fieldset class="min-w-0 mb-6">
+    <legend class="text-xl font-semibold text-vs-text-primary mb-4">How would you like to work?</legend>
+    <div class="flex flex-col gap-3">
+      ${[
+        ['builtin', 'Use built-in AI', 'Add a provider API key and chat inside Studio.'],
+        ['external', 'Connect my AI tool', 'Use an external AI conversation through Studio MCP. No provider key needed here.'],
+        ['later', 'Configure AI later', 'Set up your website and account now. Choose an AI connection when you are ready.'],
+      ].map(([value, title, description]) => `<label class="flex items-start gap-3 cursor-pointer">
+        <input type="radio" name="ai-setup-mode" value="${value}" ${state.aiSetupMode === value ? 'checked' : ''} class="mt-1">
+        <span><span class="block text-sm font-semibold text-vs-text-primary">${title}</span>
+          <span class="block text-xs text-vs-text-tertiary mt-1">${description}</span></span></label>`).join('')}
+    </div></fieldset>`;
+  if (state.aiSetupMode !== 'builtin') return `${choices}
+    <p class="text-sm text-vs-text-secondary">${state.aiSetupMode === 'external'
+      ? 'After installation, open Settings to enable connections and create a credential. Your conversation stays in your AI tool.'
+      : 'You can use the editor, preview, publishing and content tools without configuring built-in AI.'}</p>
+    <div class="flex justify-between mt-6">
+      <button id="btn-back" class="px-6 py-2.5 rounded-lg text-sm font-medium text-vs-text-secondary hover:text-vs-text-primary cursor-pointer">Back</button>
+      ${renderButton('btn-next', 'Continue', true)}
+    </div>`;
   const providers = state.providers;
   const providerIds = Object.keys(providers);
   const currentProvider = providers[state.aiProvider] || {};
@@ -418,7 +440,8 @@ function renderStep2() {
   const canContinue = state.aiVerified && state.aiModel;
 
   return `
-    <h2 class="text-xl font-semibold text-vs-text-primary" style="margin-bottom: 24px;">Connect Your AI</h2>
+    ${choices}
+    <h2 class="text-sm font-semibold text-vs-text-primary mb-4">Built-in AI provider</h2>
 
     <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); margin-bottom: 24px;">
       ${providerCards}
@@ -712,7 +735,7 @@ function renderError(msg) {
 
 function field(id, label, type, placeholder, value, optional = false) {
   return `<div>
-    <label class="block text-sm font-medium text-vs-text-secondary" style="margin-bottom: 6px;">${label}${optional ? ' <span class="text-vs-text-ghost font-normal">(optional)</span>' : ''}</label>
+    <label for="${id}" class="block text-sm font-medium text-vs-text-secondary" style="margin-bottom: 6px;">${label}${optional ? ' <span class="text-vs-text-ghost font-normal">(optional)</span>' : ''}</label>
     <input id="${id}" type="${type}"
       class="w-full bg-vs-bg-input border border-vs-border-subtle rounded-lg text-sm text-vs-text-primary placeholder:text-vs-text-tertiary focus:outline-none focus:border-vs-accent focus:ring-1 focus:ring-vs-accent"
       style="padding: 10px 12px;"
@@ -723,14 +746,14 @@ function field(id, label, type, placeholder, value, optional = false) {
 
 function passwordField(id, label, placeholder, value, isVisible) {
   return `<div>
-    <label class="block text-sm font-medium text-vs-text-secondary" style="margin-bottom: 6px;">${label}</label>
+    <label for="${id}" class="block text-sm font-medium text-vs-text-secondary" style="margin-bottom: 6px;">${label}</label>
     <div class="relative">
       <input id="${id}" type="${isVisible ? 'text' : 'password'}"
         class="w-full bg-vs-bg-input border border-vs-border-subtle rounded-lg text-sm text-vs-text-primary placeholder:text-vs-text-tertiary focus:outline-none focus:border-vs-accent focus:ring-1 focus:ring-vs-accent font-mono"
         style="padding: 10px 40px 10px 12px;"
         placeholder="${placeholder}"
         value="${esc(value)}">
-      <button data-toggle-password="${id}" type="button"
+      <button data-toggle-password="${id}" type="button" aria-label="${isVisible ? 'Hide password' : 'Show password'}" aria-controls="${id}"
         class="absolute top-1/2 -translate-y-1/2 text-vs-text-tertiary hover:text-vs-text-secondary cursor-pointer" style="right: 12px;">
         ${isVisible ? icons.eyeOff : icons.eye}
       </button>
@@ -806,12 +829,21 @@ function bindPasswordToggles() {
         input.focus();
         input.setSelectionRange(pos, pos);
         btn.innerHTML = state[stateKey] ? icons.eyeOff : icons.eye;
+        btn.setAttribute('aria-label', state[stateKey] ? 'Hide password' : 'Show password');
       }
     });
   });
 }
 
 function bindStep2() {
+  document.querySelectorAll('[name="ai-setup-mode"]').forEach(input => {
+    input.addEventListener('change', () => {
+      state.aiSetupMode = input.value;
+      render();
+      document.querySelector('[name="ai-setup-mode"]:checked')?.focus();
+    });
+  });
+  if (state.aiSetupMode !== 'builtin') return;
   // Provider selection
   document.querySelectorAll('[data-provider]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1167,10 +1199,13 @@ async function handleComplete() {
 
   try {
     const result = await apiPost('/install/complete', {
-      ai_provider: state.aiProvider,
-      ai_api_key: state.aiApiKey,
-      ai_model: state.aiModel,
-      ai_base_url: state.aiBaseUrl,
+      ai_setup_mode: state.aiSetupMode,
+      ...(state.aiSetupMode === 'builtin' ? {
+        ai_provider: state.aiProvider,
+        ai_api_key: state.aiApiKey,
+        ai_model: state.aiModel,
+        ai_base_url: state.aiBaseUrl,
+      } : {}),
       admin_name: state.adminName,
       admin_email: state.adminEmail,
       admin_password: state.adminPassword,
@@ -1184,7 +1219,9 @@ async function handleComplete() {
       state.currentStep = 6;
       render();
       // Redirect after animation completes
-      setTimeout(() => { window.location.href = '/_studio/#/chat'; }, 1400);
+      const redirect = typeof result.redirect === 'string' && result.redirect.startsWith(STUDIO_BASE.pathname)
+        ? result.redirect : new URL('workspace.php', STUDIO_BASE).pathname;
+      setTimeout(() => { window.location.href = redirect; }, 1400);
     } else {
       state.installing = false;
       state.error = result.error?.message || 'Installation failed. Please try again.';

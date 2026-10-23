@@ -1,5 +1,11 @@
-@import "tailwindcss";
-@import "../fonts/inter/inter.css";
+@import "tailwindcss" source(none);
+/* PHP entrypoints load the self-hosted font stylesheet from its own directory. */
+
+/* Studio output is independent of generated websites, tests and old bundles. */
+@source "../**/*.js";
+@source not "../dist/**";
+@source not "../lib/**";
+@source "../../*.php";
 
 /* ═══════════════════════════════════════════════════════════════
    VoxelSite Studio — Premium Design System
@@ -122,6 +128,8 @@
 
   --vs-accent: var(--border-focus);
   --vs-accent-hover: #C2410C;
+  --vs-action-fill: #C2410C; /* White action text needs 4.5:1 in both themes. */
+  --vs-accent-text: #C2410C;
   --vs-accent-dim: rgba(234, 88, 12, 0.1);
   --vs-accent-glow: rgba(234, 88, 12, 0.05);
   
@@ -179,6 +187,7 @@
 
   --vs-accent: var(--border-focus);
   --vs-accent-hover: #EA580C;
+  --vs-accent-text: #F97316;
   --vs-accent-dim: rgba(234, 88, 12, 0.15);
   --vs-accent-glow: rgba(234, 88, 12, 0.1);
   
@@ -464,20 +473,20 @@ body {
 }
 
 .vs-btn-primary {
-  background: var(--border-focus);
+  background: var(--vs-action-fill);
   color: #fff;
   border-color: transparent;
 }
 
 .vs-btn-primary:hover {
-  background: #C2410C;
+  background: var(--vs-action-fill);
   box-shadow: 0 4px 14px rgba(234, 88, 12, 0.2);
 }
 [data-theme="dark"] .vs-btn-primary {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.1);
 }
 [data-theme="dark"] .vs-btn-primary:hover {
-  background: #C2410C;
+  background: var(--vs-action-fill);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 14px rgba(234, 88, 12, 0.2);
 }
 
@@ -2134,7 +2143,7 @@ select.vs-input {
 
 /* Primary state: amber hover */
 .vs-publish-split .vs-btn-primary.vs-publish-chevron:hover {
-  background: var(--vs-accent-hover);
+  background: var(--vs-action-fill);
 }
 
 /* Ghost state (up-to-date): subtle zinc hover like other ghost buttons */
@@ -8451,7 +8460,7 @@ select.vx-form-input {
   }
 
   .vs-mobile-nav-item-active {
-    color: var(--vs-accent);
+    color: var(--vs-accent-text);
   }
 
   .vs-mobile-nav-item-active::before {
@@ -9365,7 +9374,7 @@ select.vx-form-input {
   gap: 4px;
   border: none;
   background: transparent;
-  color: var(--vs-accent);
+  color: var(--vs-accent-text);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;

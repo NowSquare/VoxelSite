@@ -4,7 +4,8 @@
  * Asset grid, upload, lightbox, drag-and-drop, category filters.
  */
 
-import { api } from '../../api.js';
+import { studioUrl, api, apiOperation } from '../../api.js';
+import { uploadReviewedAssets } from '../asset-workspace.js';
 import { store } from '../../state.js';
 import { icons } from '../icons.js';
 import { escapeHtml, formatBytes } from '../helpers.js';
@@ -14,6 +15,8 @@ import { openCodeEditorModal } from './editor.js';
 
 const demoGuard = () => window.demoGuard?.() || false;
 const viewerGuard = () => window.viewerGuard?.() || false;
+let assetVersion = null;
+let uploadRunning = false;
 
 export function renderAssetsView() {
   setTimeout(() => loadAssets(), 0);
@@ -113,6 +116,7 @@ async function loadAssets(filter = 'all') {
   const isCodeFilter = filter === 'code';
   const params = (!isCodeFilter && filter !== 'all') ? `?category=${filter}` : '';
   const { ok, data } = await api.get(`/assets${params}`);
+  assetVersion = ok ? data?.draft_version : null;
 
   if (!ok || !data?.assets?.length) {
     container.innerHTML = `
@@ -196,7 +200,7 @@ async function loadAssets(filter = 'all') {
           <div class="vs-asset-card-actions">
             <button data-copy-path="${asset.path}" title="Copy web path"
               class="vs-asset-overlay-btn">${icons.copy}</button>
-            <button data-delete-asset="${asset.path}" title="Delete"
+            <button data-delete-asset="${asset.path}" data-asset-hash="${asset.sha256}" title="Delete"
               class="vs-asset-overlay-btn vs-asset-overlay-btn--danger">${icons.x}</button>
           </div>
         </div>
@@ -227,7 +231,7 @@ async function loadAssets(filter = 'all') {
             <button data-copy-path="${asset.path}" title="Copy web path"
               class="vs-asset-action-btn">${icons.copy}</button>
             ${asset.category !== 'css' && asset.category !== 'js' ? `
-              <button data-delete-asset="${asset.path}" title="Delete"
+              <button data-delete-asset="${asset.path}" data-asset-hash="${asset.sha256}" title="Delete"
                 class="vs-asset-action-btn vs-asset-action-btn--danger">${icons.trash2}</button>
             ` : ''}
           </div>
@@ -282,12 +286,16 @@ async function loadAssets(filter = 'all') {
         danger: true,
       });
       if (!confirmed) return;
-      const { ok } = await api.delete('/assets', { path: btn.dataset.deleteAsset });
+      const { ok, error } = await apiOperation('/assets', {
+        path: btn.dataset.deleteAsset,
+        expected_hash: btn.dataset.assetHash,
+        base_draft_version: data.draft_version,
+      }, 'delete');
       if (ok) {
         showToast('Asset deleted.', 'success');
         loadAssets(filter);
       } else {
-        showToast('Could not delete asset.', 'error');
+        showToast(error?.message || 'Could not delete asset.', 'error');
       }
     });
   });
@@ -330,7 +338,7 @@ function openAssetLightbox(imageAssets, startIndex, currentFilter) {
       <div class="vs-lightbox-stage">
         <div class="vs-lightbox-center">
           <div class="vs-lightbox-image-wrap${['svg', 'png'].includes(asset.extension) ? ' is-transparent' : ''}">
-            <img src="${asset.path}" alt="${escapeHtml(asset.meta?.alt || asset.filename)}" />
+            <img src="${asset.preview_url || asset.path}" alt="${escapeHtml(asset.meta?.alt || asset.filename)}" />
           </div>
 
           <div class="vs-lightbox-info">
@@ -450,28 +458,31 @@ function openAssetLightbox(imageAssets, startIndex, currentFilter) {
 async function uploadAssets(fileList) {
   if (demoGuard()) return;
   if (viewerGuard()) return;
+  if (uploadRunning) return;
+  uploadRunning = true;
 
   const setStatus = window.__vsSetGlobalStatus;
   if (setStatus) setStatus('saving', `Uploading ${fileList.length} file(s)…`);
-
-  const formData = new FormData();
-  for (const file of fileList) {
-    formData.append('file[]', file);
-  }
 
   const token = store.get('sessionToken');
   const headers = token ? { 'X-VS-Token': token } : {};
 
   try {
-    const resp = await fetch('/_studio/api/router.php?_path=%2Fassets%2Fupload', {
-      method: 'POST',
-      body: formData,
-      credentials: 'same-origin',
-      headers,
-    });
-    const result = await resp.json();
+    const account = store.get('user')?.id;
+    const result = await uploadReviewedAssets(Array.from(fileList), assetVersion, account, async (file, fields) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      for (const [key, value] of Object.entries(fields)) formData.append(key, value);
+      try {
+        const resp = await fetch(studioUrl('api/router.php') + '?_path=%2Fassets%2Fupload', {
+          method: 'POST', body: formData, credentials: 'same-origin', headers,
+        });
+        return await resp.json();
+      } catch { return { ok: false, error: { code: 'network_error', message: 'The upload response was lost. Choose the same files to retry safely.' } }; }
+    }, sessionStorage, () => store.get('user')?.id);
     if (result.ok) {
-      const count = result.data?.uploaded?.length || 0;
+      const count = result.data?.count || 0;
+      assetVersion = result.data.draft_version;
       showToast(`${count} file(s) uploaded.`, 'success');
       if (setStatus) setStatus('saved', `✓ ${count} file(s) uploaded`);
     } else {
@@ -482,6 +493,8 @@ async function uploadAssets(fileList) {
   } catch (e) {
     showToast('Upload failed.', 'error');
     if (setStatus) setStatus('error', '✗ Upload failed');
+  } finally {
+    uploadRunning = false;
   }
 }
 

@@ -8,12 +8,39 @@
 
 import { icons } from '../icons.js';
 import { store } from '../../state.js';
-import { api, apiStream } from '../../api.js';
+import { studioUrl, api, apiStream, apiOperation } from '../../api.js';
 import { showToast, showToastWithAction } from '../ui/toasts.js';
 import { escapeHtml, getCodeLanguage } from '../helpers.js';
 import { closeModal, showConfirmModal, showPromptModal } from '../ui/modals.js';
+import { reconcileEditorTabs, resolveEditorConflict, retainSavedBuffer } from '../external-workspace.js';
 
+import { readAuthoringFile, saveAuthoringFile, captureAuthoringList, createAuthoringFile, deleteAuthoringFile, compileAuthoringStyles } from '../authoring-workspace.js';
+let fileListVersion = null;
 let monacoLoadPromise = null;
+
+const promptVersions = new Map();
+async function readEditorFile(path) {
+  if (!path.startsWith('_prompts/')) return readAuthoringFile(path);
+  const response = await api.get(`/settings/prompts/content?path=${encodeURIComponent(path.slice(9))}`);
+  if (response.ok) promptVersions.set(path, { version: response.data.prompt_version, hash: response.data.content_sha256 });
+  return response;
+}
+async function saveEditorFile(body) {
+  if (!body.path.startsWith('_prompts/')) return saveAuthoringFile(body);
+  const source = promptVersions.get(body.path);
+  const version = source?.version;
+  if (!version || (body.expected_content_sha256 && body.expected_content_sha256 !== source.hash)) return { ok: false, error: { code: 'content_conflict', message: 'Reload this prompt before saving its override.' } };
+  const response = await apiOperation('/settings/prompts/content', { path: body.path.slice(9), version, content: body.content }, 'put');
+  if (!response.ok) return response;
+  return readEditorFile(body.path);
+}
+async function resetEditorPrompt(path) {
+  if (!promptVersions.has(path)) { const read = await readEditorFile(path); if (!read.ok) return read; }
+  const response = await apiOperation('/settings/prompts/content', { path: path.slice(9), version: promptVersions.get(path).version }, 'delete');
+  if (response.ok) promptVersions.delete(path);
+  return response;
+}
+
 
 function renderEditorLayout() {
   return `
@@ -100,6 +127,8 @@ function renderEditorLayout() {
           </div>
         </div>
 
+        <div id="editor-external-conflict" hidden></div>
+
         <!-- Editor Host -->
         <div id="editor-host" class="vs-editor-host" style="position: relative;">
           <div id="editor-empty-state" class="vs-editor-empty">
@@ -179,6 +208,7 @@ async function initEditorPage() {
 
   // Make accessible for cleanup on route change + cross-workspace reconciliation
   window.__vsEditorPage = {
+    reconcileExternalDraft: data => reconcileExternalDraft(data),
     dispose: () => {
       persistEditorState();   // ← save before teardown
       editorState.disposed = true;
@@ -205,9 +235,11 @@ async function initEditorPage() {
       }
 
       // Reload content from the new path
-      const { ok, data } = await api.get(`/files/content?path=${encodeURIComponent(newPath)}`);
+      const { ok, data } = await readEditorFile(newPath);
       if (ok && typeof data?.content === 'string') {
         tab.baseline = data.content;
+        tab.contentHash = data.content_sha256 || null;
+        tab.draftVersion = data.draft_version || null;
         tab._buffer = data.content;
         tab.dirty = false;
         if (editorState.activeTab === newPath && editorState.monacoInstance) {
@@ -541,7 +573,7 @@ async function initEditorPage() {
     }
 
     setStatus('Loading…');
-    const { ok, data, error } = await api.get(`/files/content?path=${encodeURIComponent(path)}`);
+    const { ok, data, error } = await readEditorFile(path);
     if (!ok) {
       showToast(error?.message || 'Could not load file.', 'error');
       setStatus('Load failed', 'error');
@@ -549,7 +581,7 @@ async function initEditorPage() {
     }
 
     const content = typeof data?.content === 'string' ? data.content : '';
-    tab = { path, baseline: content, dirty: false };
+    tab = { path, baseline: content, contentHash: data.content_sha256 || null, draftVersion: data.draft_version || null, dirty: false };
     editorState.openTabs.push(tab);
 
     hideEmptyState();
@@ -652,7 +684,7 @@ async function initEditorPage() {
     if (!confirmed) return;
 
     setStatus('Deleting…');
-    const { ok, error } = await api.delete(`/files?path=${encodeURIComponent(path)}`);
+    const { ok, error } = await deleteAuthoringFile(path);
     if (!ok) {
       showToast(error?.message || 'Could not delete file.', 'error');
       setStatus('Delete failed', 'error');
@@ -698,7 +730,7 @@ async function initEditorPage() {
     if (!confirmed) return;
 
     setStatus('Resetting…');
-    const { ok, error } = await api.delete(`/files?path=${encodeURIComponent(path)}`);
+    const { ok, error } = await resetEditorPrompt(path);
     if (!ok) {
       showToast(error?.message || 'Could not reset file.', 'error');
       setStatus('Reset failed', 'error');
@@ -709,10 +741,12 @@ async function initEditorPage() {
     const tabIdx = editorState.openTabs.findIndex(t => t.path === path);
     if (tabIdx !== -1) {
       // Trigger a silent reload for the newly restored baseline
-      const { ok: okLoad, data } = await api.get(`/files/content?path=${encodeURIComponent(path)}`);
+      const { ok: okLoad, data } = await readEditorFile(path);
       if (okLoad && typeof data?.content === 'string') {
         const tab = editorState.openTabs[tabIdx];
         tab.baseline = data.content;
+        tab.contentHash = data.content_sha256 || null;
+        tab.draftVersion = data.draft_version || null;
         tab.dirty = false;
         tab._buffer = data.content;
         if (editorState.activeTab === path) {
@@ -759,8 +793,56 @@ async function initEditorPage() {
     fileInfoEl.textContent = [editorState.activeTab, lang, size].filter(Boolean).join(' • ');
   };
 
+  function currentBuffer(tab) {
+    return editorState.activeTab === tab.path && editorState.monacoInstance
+      ? editorState.monacoInstance.getValue() : (tab._buffer ?? tab.baseline);
+  }
+
+  function updateExternalNotice() {
+    const container = document.getElementById('editor-external-conflict');
+    if (!container) return;
+    const tab = editorState.openTabs.find(item => item.path === editorState.activeTab);
+    container.hidden = !tab?.externalConflict;
+    if (!tab?.externalConflict) { container.innerHTML = ''; container._conflict = null; return; }
+    if (container._conflict === tab.externalConflict && container.dataset.path === tab.path) return;
+    const expanded = container.querySelector('details')?.open;
+    container._conflict = tab.externalConflict; container.dataset.path = tab.path;
+    container.innerHTML = renderExternalConflictNotice(tab.externalConflict, tab.path);
+    if (expanded && container.querySelector('details')) container.querySelector('details').open = true;
+    container.querySelectorAll('[data-external-choice]').forEach(button => button.addEventListener('click', async () => {
+      const choice = button.dataset.externalChoice;
+      const conflict = tab.externalConflict, path = tab.path;
+      if (choice === 'saved' && tab.dirty && !(await showConfirmModal({ title: 'Replace your unsaved edits?', description: 'The saved version will replace this editor buffer.', confirmLabel: 'Use saved version', cancelLabel: 'Keep editing', danger: true }))) return;
+      if (editorState.disposed || !editorState.openTabs.includes(tab) || tab.path !== path || tab.externalConflict !== conflict) {
+        showToast('The saved version changed again. Review it before choosing.', 'info'); return;
+      }
+      if (!resolveEditorConflict(tab, choice, currentBuffer(tab))) return;
+      if (editorState.activeTab === tab.path) setEditorContent(tab._buffer, tab.path);
+      updateSaveState(); renderTabs(); renderTree();
+      setStatus(tab.dirty ? 'Your edits are preserved. Save when ready.' : 'Saved version loaded', tab.dirty ? 'warning' : 'muted');
+      editorState.monacoInstance?.focus();
+    }));
+  }
+
+  async function reconcileExternalDraft(data) {
+    const result = await reconcileEditorTabs({
+      tabs: editorState.openTabs,
+      read: path => readEditorFile(path),
+      buffer: currentBuffer,
+      alive: () => !editorState.disposed,
+      version: data.draft_version,
+      apply: (tab, content) => { if (editorState.activeTab === tab.path) setEditorContent(content, tab.path); },
+    });
+    if (editorState.disposed) return result;
+    await loadFileTree();
+    renderTabs(); updateFileInfo(); updateSaveState();
+    if (result.conflicts.length) setStatus('Draft changed. Your unsaved edits are preserved.', 'warning');
+    return result;
+  }
+
   // ── Update save button state ──
   const updateSaveState = () => {
+    updateExternalNotice();
     if (!saveBtn) return;
     const tab = editorState.openTabs.find(t => t.path === editorState.activeTab);
     const isReadonly = editorState.activeTab ? (isFileReadonly(editorState.activeTab) || !window.canWrite?.()) : false;
@@ -771,6 +853,10 @@ async function initEditorPage() {
       saveBtn.classList.remove('vs-btn-primary');
       saveBtn.classList.add('vs-btn-ghost');
       return;
+    }
+
+    if (tab?.externalConflict) {
+      saveBtn.disabled = false; saveBtn.textContent = 'Review changes'; return;
     }
 
     if (!tab || !tab.dirty) {
@@ -810,29 +896,35 @@ async function initEditorPage() {
     if (window.demoGuard?.()) return;
     if (window.viewerGuard?.()) return;
     const tab = editorState.openTabs.find(t => t.path === editorState.activeTab);
-    if (!tab || !tab.dirty || !editorState.monacoInstance) return;
+    if (!tab || !editorState.monacoInstance) return;
+    if (tab.externalConflict) { document.getElementById('editor-external-conflict')?.querySelector('summary')?.focus(); return; }
+    if (!tab.dirty) return;
+    if (!tab.contentHash) { showToast('Reload this file before saving so Studio can check for newer changes.', 'warning'); return; }
 
     const content = editorState.monacoInstance.getValue();
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving…';
     setStatus('Saving…');
 
-    const { ok, error } = await api.put('/files/content', {
+    const { ok, data, error } = await saveEditorFile({
       path: tab.path,
       content: content,
+      expected_content_sha256: tab.contentHash,
+      base_draft_version: tab.draftVersion,
     });
 
     if (!ok) {
+      if (error?.code === 'content_conflict') await reconcileExternalDraft({ draft_version: null });
       saveBtn.disabled = false;
       saveBtn.textContent = 'Save';
       showToast(error?.message || 'Could not save file.', 'error');
-      setStatus('Save failed', 'error');
+      setStatus(tab.externalConflict ? 'Draft changed. Your edits are preserved.' : 'Save failed', 'error');
+      updateSaveState();
       return;
     }
 
-    tab.baseline = content;
-    tab.dirty = false;
-    tab._buffer = content;
+    retainSavedBuffer(tab, content, data?.content_sha256, currentBuffer(tab));
+    tab.draftVersion = data?.draft_version || null;
     updateSaveState();
     renderTabs();
     renderTree();
@@ -850,7 +942,7 @@ async function initEditorPage() {
     // If tailwind.css is open in a tab, reload it secretly since backend might have rebuilt it 
     const tailwindTab = editorState.openTabs.find(t => t.path === 'assets/css/tailwind.css');
     if (tailwindTab && tab.path !== 'assets/css/tailwind.css') {
-      api.get(`/files/content?path=assets/css/tailwind.css`).then(({ ok, data }) => {
+      readAuthoringFile('assets/css/tailwind.css').then(({ ok, data }) => {
         if (ok && typeof data?.content === 'string') {
           tailwindTab.baseline = data.content;
           tailwindTab._buffer = data.content;
@@ -900,7 +992,9 @@ async function initEditorPage() {
           btn.style.pointerEvents = 'none';
           setStatus('Compiling Tailwind…');
 
-          const { ok, data, error } = await api.post('/files/compile-tailwind');
+          const compiled = await compileAuthoringStyles(fileListVersion);
+          const { ok, data, error } = compiled.ok ? await readAuthoringFile('assets/css/tailwind.css') : compiled;
+          if (ok) await loadFileTree();
 
           btn.style.opacity = '';
           btn.style.pointerEvents = '';
@@ -916,14 +1010,15 @@ async function initEditorPage() {
           const tab = editorState.openTabs.find(t => t.path === twPath);
           if (tab) {
             tab.baseline = data.content;
+        tab.contentHash = data.content_sha256 || null;
+        tab.draftVersion = data.draft_version || null;
             tab.dirty = false;
             if (editorState.activeTab === twPath && editorState.monacoInstance) {
               editorState.monacoInstance.setValue(data.content);
             }
           }
 
-          const classCount = data.class_count ?? 0;
-          showToast(`Tailwind CSS recompiled — ${classCount} utilities.`, 'success');
+          showToast('Tailwind CSS is up to date.', 'success');
           setStatus('Compiled');
         });
       });
@@ -1086,7 +1181,7 @@ async function initEditorPage() {
 
     // Attempt to create via the backend
     setStatus('Creating…');
-    const { ok, error } = await api.post('/files/create', { path });
+    const { ok, error } = await createAuthoringFile(path, fileListVersion);
     if (!ok) {
       showToast(error?.message || 'Could not create file.', 'error');
       setStatus('Create failed', 'error');
@@ -1120,6 +1215,8 @@ async function initEditorPage() {
       if (treePromptsEl) treePromptsEl.innerHTML = '';
       return;
     }
+    fileListVersion = data.draft_version;
+    captureAuthoringList(data);
     editorState.files = data.files;
     
     // Split into three sections: site files, config files (_root/), and prompts
@@ -1177,6 +1274,7 @@ async function initEditorPage() {
 
     // ── AI Inline Code Editor (Cmd+K) ──
     monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, async () => {
+      if (window.builtInAiGuard?.()) return;
       // 1. Guard against read-only or empty state
       if (editorState.monacoInstance.getOption(monaco.editor.EditorOption.readOnly)) {
         showToast('Cannot use inline AI on a read-only file.', 'warning');
@@ -1285,12 +1383,12 @@ async function initEditorPage() {
             });
             if (hasModified) {
               // Re-fetch the file content with cache buster
-              const { ok, data } = await api.get(`/files/content?path=${encodeURIComponent(activePath)}&_t=${Date.now()}`);
+              const { ok, data } = await readEditorFile(activePath);
               if (ok && data?.content) {
                 const newContent = data.content;
                 
                 // Revert the backend file so this is strictly an unsaved edit
-                await api.put('/files/content', { path: activePath, content: originalContent });
+                await saveEditorFile({ path: activePath, content: originalContent });
 
                 const model = editorState.monacoInstance.getModel();
                 model.setValue(newContent);
@@ -1418,9 +1516,9 @@ async function initEditorPage() {
     for (const path of tabs) {
       // Check the path actually exists in the file tree
       if (!editorState.files.some(f => f.path === path)) continue;
-      const { ok, data } = await api.get(`/files/content?path=${encodeURIComponent(path)}`);
+      const { ok, data } = await readEditorFile(path);
       if (ok && typeof data?.content === 'string') {
-        editorState.openTabs.push({ path, baseline: data.content, dirty: false });
+        editorState.openTabs.push({ path, baseline: data.content, contentHash: data.content_sha256 || null, draftVersion: data.draft_version || null, dirty: false });
       }
     }
 
@@ -1454,6 +1552,20 @@ async function initEditorPage() {
   }
 }
 
+function renderExternalConflictNotice(conflict, path) {
+  return `<div class="px-4 py-3 border-b border-vs-border-subtle bg-vs-bg-surface text-xs text-vs-text-secondary" role="status">
+    <p>${conflict.missing ? 'This file was removed from the saved draft.' : 'This file changed in the saved draft.'} Your editor buffer is preserved.</p>
+    ${conflict.missing ? '<p class="mt-2">Copy any work you want to keep before closing this file.</p>' : `<details class="mt-2">
+      <summary class="cursor-pointer">Review saved version of ${escapeHtml(path)}</summary>
+      <textarea readonly aria-label="Latest saved version" class="vs-input mt-2 w-full" rows="8" spellcheck="false">${escapeHtml(conflict.content)}</textarea>
+      <div class="flex flex-wrap gap-2 mt-2">
+        <button type="button" data-external-choice="saved" class="vs-btn vs-btn-secondary vs-btn-xs">Use saved version</button>
+        <button type="button" data-external-choice="local" class="vs-btn vs-btn-secondary vs-btn-xs">Keep my edits</button>
+      </div><p class="mt-2 text-vs-text-tertiary">Keeping your edits does not save them. Review and save when ready.</p>
+    </details>`}
+  </div>`;
+}
+
 function monacoThemeForCurrentUi() {
   return document.documentElement.getAttribute('data-theme') === 'light' ? 'vs' : 'vs-dark';
 }
@@ -1478,15 +1590,15 @@ async function ensureMonacoReady() {
         getWorkerUrl: function (workerId, label) {
           return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
             self.MonacoEnvironment = {
-              baseUrl: '${window.location.origin}/_studio/ui/lib/monaco/'
+              baseUrl: '${window.location.origin}${studioUrl('ui/lib/monaco/')}'
             };
-            importScripts('${window.location.origin}/_studio/ui/lib/monaco/vs/base/worker/workerMain.js');
+            importScripts('${window.location.origin}${studioUrl('ui/lib/monaco/')}vs/base/worker/workerMain.js');
           `)}`;
         }
       };
 
       window.require.config({
-        paths: { vs: '/_studio/ui/lib/monaco/vs' },
+        paths: { vs: studioUrl('ui/lib/monaco/vs') },
       });
       window.require(['vs/editor/editor.main'], () => {
         resolve(window.monaco);
@@ -1508,7 +1620,7 @@ async function ensureMonacoReady() {
 
     const script = document.createElement('script');
     script.id = 'vs-monaco-loader-script';
-    script.src = '/_studio/ui/lib/monaco/vs/loader.js';
+    script.src = studioUrl('ui/lib/monaco/vs/loader.js');
     script.async = true;
     script.onload = loadMain;
     script.onerror = () => reject(new Error('Could not load Monaco loader.'));
@@ -1541,6 +1653,7 @@ async function openCodeEditorModal(initialPath = '') {
           <button id="vs-code-close-btn" type="button" class="vs-btn vs-btn-secondary vs-btn-sm">Close</button>
         </div>
       </div>
+      <div id="vs-code-external-conflict" hidden></div>
       <div class="vs-code-editor-shell">
         <div id="vs-code-editor-host" class="vs-code-editor-host">
           <div class="text-sm text-vs-text-ghost py-12 text-center">Loading editor…</div>
@@ -1568,6 +1681,8 @@ async function openCodeEditorModal(initialPath = '') {
     files: [],
     path: '',
     baseline: '',
+    contentHash: null,
+    externalConflict: null,
     editor: null,
     editorCleanup: null,
     closed: false,
@@ -1605,6 +1720,7 @@ async function openCodeEditorModal(initialPath = '') {
   };
 
   const updateSaveButton = () => {
+    updateExternalNotice();
     if (!saveBtn) return;
     const ro = isCurrentFileReadOnly();
     if (ro) {
@@ -1613,6 +1729,7 @@ async function openCodeEditorModal(initialPath = '') {
       setStatus('Read-only mode', 'muted');
       return;
     }
+    if (state.externalConflict) { saveBtn.disabled = false; saveBtn.textContent = 'Review changes'; return; }
     const dirty = isDirty();
     saveBtn.disabled = !dirty;
     saveBtn.textContent = dirty ? 'Save Changes' : 'Saved';
@@ -1637,6 +1754,7 @@ async function openCodeEditorModal(initialPath = '') {
     }
 
     state.closed = true;
+    if (window.__vsCodeEditorModal?.state === state) window.__vsCodeEditorModal = null;
     if (state.editorCleanup?.dispose) {
       state.editorCleanup.dispose();
       state.editorCleanup = null;
@@ -1648,10 +1766,13 @@ async function openCodeEditorModal(initialPath = '') {
     closeModal(overlay);
   };
 
-  const applyFileContent = (content, fileMeta = null) => {
+  const applyFileContent = (content, fileMeta = null, contentHash = null, draftVersion = null) => {
     if (!state.editor) return;
     state.editor.setValue(content);
     state.baseline = content;
+    state.contentHash = contentHash;
+    state.draftVersion = draftVersion;
+    state.externalConflict = null;
 
     const language = fileMeta?.language || getCodeLanguage(state.path);
     if (state.editor.setLanguage) {
@@ -1675,7 +1796,7 @@ async function openCodeEditorModal(initialPath = '') {
       setStatus('Loading file…');
     }
 
-    const { ok, data, error } = await api.get(`/files/content?path=${encodeURIComponent(pathToLoad)}`);
+    const { ok, data, error } = await readEditorFile(pathToLoad);
     if (!ok) {
       showToast(error?.message || 'Could not load file.', 'error');
       setStatus('Load failed', 'error');
@@ -1683,7 +1804,7 @@ async function openCodeEditorModal(initialPath = '') {
     }
 
     const content = typeof data?.content === 'string' ? data.content : '';
-    applyFileContent(content, data?.file || getSelectedMeta());
+    applyFileContent(content, data?.file || getSelectedMeta(), data?.content_sha256 || null, data?.draft_version || null);
     return true;
   };
 
@@ -1714,6 +1835,9 @@ async function openCodeEditorModal(initialPath = '') {
   const saveCurrentFile = async () => {
     if (!state.editor || !state.path || !saveBtn) return;
 
+    if (state.externalConflict) { overlay.querySelector('#vs-code-external-conflict summary')?.focus(); return; }
+    if (!state.contentHash) { showToast('Reload this file before saving so Studio can check for newer changes.', 'warning'); return; }
+    const savedPath = state.path;
     const nextContent = state.editor.getValue();
     if (nextContent === state.baseline) {
       updateSaveButton();
@@ -1724,20 +1848,26 @@ async function openCodeEditorModal(initialPath = '') {
     saveBtn.textContent = 'Saving…';
     setStatus('Saving…');
 
-    const { ok, error } = await api.put('/files/content', {
+    const { ok, data, error } = await saveEditorFile({
       path: state.path,
       content: nextContent,
+      expected_content_sha256: state.contentHash,
+      base_draft_version: state.draftVersion,
     });
 
+    if (state.closed || state.path !== savedPath) return;
     if (!ok) {
+      if (error?.code === 'content_conflict') await reconcileExternalDraft({ draft_version: null });
       saveBtn.disabled = false;
       saveBtn.textContent = 'Save Changes';
       showToast(error?.message || 'Could not save file.', 'error');
-      setStatus('Save failed', 'error');
+      updateSaveButton();
+      setStatus(state.externalConflict ? 'Draft changed. Your edits are preserved.' : 'Save failed', 'error');
       return;
     }
 
-    state.baseline = nextContent;
+    retainSavedBuffer(state, nextContent, data?.content_sha256, state.editor.getValue());
+    state.draftVersion = data?.draft_version || null;
     updateSaveButton();
     setStatus(state.path || 'Ready', 'muted');
 
@@ -1751,6 +1881,43 @@ async function openCodeEditorModal(initialPath = '') {
     window.refreshPublishState?.({ silent: true });
 
   };
+
+  function updateExternalNotice() {
+    const container = overlay.querySelector('#vs-code-external-conflict');
+    if (!container) return;
+    container.hidden = !state.externalConflict;
+    if (!state.externalConflict) { container.innerHTML = ''; container._conflict = null; return; }
+    if (container._conflict === state.externalConflict && container.dataset.path === state.path) return;
+    const expanded = container.querySelector('details')?.open;
+    container._conflict = state.externalConflict; container.dataset.path = state.path;
+    container.innerHTML = renderExternalConflictNotice(state.externalConflict, state.path);
+    if (expanded && container.querySelector('details')) container.querySelector('details').open = true;
+    container.querySelectorAll('[data-external-choice]').forEach(button => button.addEventListener('click', async () => {
+      const choice = button.dataset.externalChoice;
+      const conflict = state.externalConflict;
+      if (choice === 'saved' && isDirty() && !(await showConfirmModal({ title: 'Replace your unsaved edits?', description: 'The saved version will replace this editor buffer.', confirmLabel: 'Use saved version', cancelLabel: 'Keep editing', danger: true }))) return;
+      if (state.closed || state.externalConflict !== conflict) {
+        showToast('The saved version changed again. Review it before choosing.', 'info'); return;
+      }
+      if (!resolveEditorConflict(state, choice, state.editor.getValue())) return;
+      state.editor.setValue(state._buffer);
+      updateSaveButton();
+      state.editor.focus?.();
+    }));
+  }
+
+  async function reconcileExternalDraft(data) {
+    if (state.closed || !state.editor || !state.path) return;
+    state.dirty = isDirty();
+    const result = await reconcileEditorTabs({ tabs: [state],
+      read: path => readEditorFile(path),
+      buffer: () => state.editor.getValue(), alive: () => !state.closed,
+      version: data.draft_version, apply: (_tab, content) => state.editor.setValue(content),
+    });
+    if (!state.closed) updateSaveButton();
+    return result;
+  }
+  window.__vsCodeEditorModal = { state, reconcileExternalDraft, hasUnsavedChanges: isDirty };
 
   const escHandler = (event) => {
     if (event.key === 'Escape') {

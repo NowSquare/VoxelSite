@@ -4,7 +4,8 @@
  * Form list, form detail, submissions list, submission detail panel.
  */
 
-import { api } from '../../api.js';
+import { studioUrl } from '../../api.js';
+import { formsActionsApi as api } from '../forms-actions-api.js';
 import { icons } from '../icons.js';
 import { escapeHtml, formatRelativeTime } from '../helpers.js';
 import { showToast } from '../ui/toasts.js';
@@ -213,7 +214,7 @@ async function loadFormDetail(formId) {
     btn.innerHTML = `${icons.loader} Exporting...`;
     btn.disabled = true;
     try {
-      const resp = await fetch(`/_studio/api/router.php?_path=${encodeURIComponent('/forms/' + formId + '/submissions/export')}`, {
+      const resp = await fetch(`${studioUrl('')}api/router.php?_path=${encodeURIComponent('/forms/' + formId + '/submissions/export')}`, {
         credentials: 'same-origin',
       });
       if (!resp.ok) throw new Error('Export failed');
@@ -238,6 +239,9 @@ async function loadFormDetail(formId) {
   document.getElementById('btn-upgrade-to-action')?.addEventListener('click', async () => {
     if (demoGuard()) return;
     if (viewerGuard()) return;
+
+    const configuration = await api.get('/agentic/actions');
+    if (!configuration.ok) { showToast('Could not inspect Action settings. Try again.', 'error'); return; }
 
     // Confirm before converting
     const fieldCount = (form.fields || []).length;
@@ -284,7 +288,7 @@ async function loadFormDetail(formId) {
 
         // Carry over options for select/radio
         if ((actionType === 'select' || actionType === 'radio') && f.options) {
-          actionField.options = f.options;
+          actionField.options = f.options.map(option => typeof option === 'object' ? String(option.value) : String(option));
         }
 
         // Carry over placeholder
@@ -542,7 +546,7 @@ async function openSubmissionDetail(formId, subId) {
 
   // Find the submission data from the DOM cards
   // We re-fetch to get the latest data
-  const { ok, data } = await api.get(`/forms/${encodeURIComponent(formId)}/submissions?page=1&per_page=1000`);
+  const { ok, data } = await api.get(`/forms/${encodeURIComponent(formId)}/submissions?record_id=${encodeURIComponent(subId)}&per_page=1`);
   if (!ok || !data) return;
 
   const sub = (data.submissions || []).find(s => String(s.id) === String(subId));

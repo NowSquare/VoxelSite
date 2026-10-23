@@ -14,7 +14,7 @@
  * Mobile: single-panel toggle between list and detail via store key.
  */
 
-import { api } from '../../api.js';
+import { businessApi as api } from '../business-api.js';
 import { store } from '../../state.js';
 import { icons } from '../icons.js';
 import { escapeHtml, timeAgo } from '../helpers.js';
@@ -84,11 +84,10 @@ function registerFlush() {
  * Called by the router's beforeEach guard before route changes.
  */
 async function flushPendingSave() {
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-    saveTimer = null;
-    await saveActiveNote();
-  }
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  if (activeNoteId && api.hasDirty('notes', activeNoteId)) await saveActiveNote();
+  return !api.hasDirty('notes');
 }
 
 // ── Markdown Renderer (lightweight, no deps) ──────────────────────────
@@ -258,6 +257,32 @@ async function initNotes() {
   bindNotesEvents();
 }
 
+async function readFullNote(id) {
+  const result = await api.get(`/notes/${id}`);
+  if (!result.ok || !result.data?.note) {
+    showToast(result.error?.message || 'Could not load this note.', 'error');
+    return null;
+  }
+  const note = result.data.note;
+  const index = notes.findIndex(item => item.id === id);
+  if (index >= 0) notes[index] = note;
+  return note;
+}
+
+function onNoteReloaded(event) {
+  if (event.detail.kind !== 'notes') return;
+  const { id, record } = event.detail;
+  const index = notes.findIndex(note => note.id === id);
+  if (index >= 0) notes[index] = record;
+  if (activeNoteId === id) {
+    clearTimeout(saveTimer); saveTimer = null; previewMode = false;
+    if (mobileView === 'detail') renderMobileDetail(record);
+    else renderEditor(record, { restoring: true });
+    document.getElementById('vs-note-body')?.focus();
+  }
+  renderNotesList();
+}
+
 async function loadNotes() {
   let result;
   if (searchQuery) {
@@ -277,8 +302,10 @@ async function loadNotes() {
 
   // Restore previously selected note after navigation (module state survives
   // route changes because JS modules are singletons, but the DOM was rebuilt).
-  if (activeNoteId) {
-    const activeNote = notes.find(n => n.id === activeNoteId);
+  if (activeNoteId && !api.hasDirty('notes', activeNoteId)) {
+    const selected = activeNoteId;
+    const activeNote = await readFullNote(selected);
+    if (selected !== activeNoteId) return;
     if (activeNote) {
       const isMobile = window.matchMedia('(max-width: 767px)').matches;
       if (isMobile) {
@@ -421,7 +448,9 @@ async function selectNote(id) {
   if (id === activeNoteId) return;
 
   // Flush any pending save from the previous note
-  await flushPendingSave();
+  if (await flushPendingSave() === false) return;
+  const note = await readFullNote(id);
+  if (!note) return;
 
   activeNoteId = id;
   previewMode = false;
@@ -431,9 +460,6 @@ async function selectNote(id) {
   document.querySelectorAll('.vs-note-item').forEach(el => {
     el.classList.toggle('vs-note-item--active', parseInt(el.dataset.noteId, 10) === id);
   });
-
-  const note = notes.find(n => n.id === id);
-  if (!note) return;
 
   const isMobile = window.matchMedia('(max-width: 767px)').matches;
 
@@ -455,7 +481,8 @@ async function selectNote(id) {
  * - Deleting the active note
  */
 async function deselectNote() {
-  await flushPendingSave();
+  if (await flushPendingSave() === false) return;
+  const previousNoteId = activeNoteId;
   activeNoteId = null;
   previewMode = false;
   saveState = 'idle';
@@ -474,6 +501,8 @@ async function deselectNote() {
       editorPanel.innerHTML = renderEditorPlaceholder();
     }
   }
+  const listItem = document.querySelector(`.vs-note-item[data-note-id="${previousNoteId}"]`);
+  (listItem || document.getElementById('btn-note-new'))?.focus();
 }
 
 /**
@@ -524,11 +553,11 @@ function renderEditor(note, opts = {}) {
 
       <!-- Editor Body -->
       <div class="vs-note-editor-body">
-        <input id="vs-note-title" class="vs-note-title-input" type="text"
+        <input id="vs-note-title" class="vs-note-title-input" type="text" aria-label="Note title"
                value="${escapeHtml(note.title)}" placeholder="Untitled"
                autocomplete="off" spellcheck="true" ${window.IS_DEMO ? 'readonly' : ''} />
         <div id="vs-note-body-wrap" class="vs-note-body-wrap">
-          <textarea id="vs-note-body" class="vs-note-body-textarea"
+          <textarea id="vs-note-body" class="vs-note-body-textarea" aria-label="Note body"
                     placeholder="${window.IS_DEMO ? 'Read-only in demo mode.' : 'Start writing…'}" spellcheck="true" ${window.IS_DEMO ? 'readonly' : ''}>${escapeHtml(note.body)}</textarea>
         </div>
       </div>
@@ -548,6 +577,7 @@ function renderEditor(note, opts = {}) {
     // attention — the user may be looking at the list, not editing.
     if (!opts.restoring) {
       setTimeout(() => {
+        if (activeNoteId !== note.id || !textarea.isConnected) return;
         textarea.focus();
         textarea.setSelectionRange(textarea.value.length, textarea.value.length);
       }, 50);
@@ -570,20 +600,20 @@ function renderMobileDetail(note) {
       </button>
       <div class="vs-note-mobile-actions">
         ${window.IS_DEMO ? '<span class="vs-note-save-status vs-note-save-status--readonly">Read-only</span>' : ''}
-        ${window.IS_DEMO ? '' : `<button id="btn-note-pin" class="vs-note-toolbar-btn ${isPinned ? 'vs-note-toolbar-btn--active' : ''}">
+        ${window.IS_DEMO ? '' : `<button id="btn-note-pin" class="vs-note-toolbar-btn ${isPinned ? 'vs-note-toolbar-btn--active' : ''}" aria-label="${isPinned ? 'Unpin note' : 'Pin note'}">
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="${isPinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
         </button>`}
-        ${window.IS_DEMO ? '' : `<button id="btn-note-delete" class="vs-note-toolbar-btn vs-note-toolbar-btn--danger">
+        ${window.IS_DEMO ? '' : `<button id="btn-note-delete" class="vs-note-toolbar-btn vs-note-toolbar-btn--danger" aria-label="Delete note">
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
         </button>`}
       </div>
     </div>
     <div class="vs-note-editor-body">
-      <input id="vs-note-title" class="vs-note-title-input" type="text"
+      <input id="vs-note-title" class="vs-note-title-input" type="text" aria-label="Note title"
              value="${escapeHtml(note.title)}" placeholder="Untitled"
              autocomplete="off" spellcheck="true" ${window.IS_DEMO ? 'readonly' : ''} />
       <div id="vs-note-body-wrap" class="vs-note-body-wrap">
-        <textarea id="vs-note-body" class="vs-note-body-textarea"
+        <textarea id="vs-note-body" class="vs-note-body-textarea" aria-label="Note body"
                   placeholder="${window.IS_DEMO ? 'Read-only in demo mode.' : 'Start writing…'}" spellcheck="true" ${window.IS_DEMO ? 'readonly' : ''}>${escapeHtml(note.body)}</textarea>
       </div>
     </div>
@@ -593,18 +623,14 @@ function renderMobileDetail(note) {
   bindEditorEvents(note);
 
   const backBtn = document.getElementById('btn-note-back');
-  backBtn?.addEventListener('click', async () => {
-    await flushPendingSave();
-    mobileView = 'list';
-    container.style.display = 'none';
-    activeNoteId = null;
-    renderNotesList();
-  });
+  backBtn?.addEventListener('click', deselectNote);
 
   const textarea = document.getElementById('vs-note-body');
   if (textarea) {
     autoGrow(textarea);
-    setTimeout(() => textarea.focus(), 50);
+    setTimeout(() => {
+      if (activeNoteId === note.id && mobileView === 'detail' && textarea.isConnected) textarea.focus();
+    }, 50);
   }
 }
 
@@ -618,6 +644,7 @@ function bindEditorEvents(note) {
 
   // Auto-save on input
   const onInput = () => {
+    if (!window.IS_DEMO) api.markDraft('notes', note.id, getLiveNoteContent());
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => saveActiveNote(), SAVE_DEBOUNCE_MS);
   };
@@ -642,6 +669,8 @@ function bindEditorEvents(note) {
 
       // Refresh pin button state
       pinBtn.classList.toggle('vs-note-toolbar-btn--active', data.note.pinned == 1);
+      pinBtn.setAttribute('aria-label', data.note.pinned == 1 ? 'Unpin note' : 'Pin note');
+      pinBtn.setAttribute('title', data.note.pinned == 1 ? 'Unpin' : 'Pin');
       const svg = pinBtn.querySelector('svg');
       if (svg) svg.setAttribute('fill', data.note.pinned == 1 ? 'currentColor' : 'none');
 
@@ -675,22 +704,15 @@ function bindEditorEvents(note) {
 // ═══════════════════════════════════════════
 
 async function saveActiveNote() {
-  if (!activeNoteId) return;
-  if (window.IS_DEMO) return; // Demo mode — never attempt writes
-
-  const titleInput = document.getElementById('vs-note-title');
-  const bodyTextarea = document.getElementById('vs-note-body');
-
-  if (!titleInput && !bodyTextarea) return;
-
-  const title = titleInput?.value ?? '';
-  const body = bodyTextarea?.value ?? '';
-
-  const { ok, data } = await api.put(`/notes/${activeNoteId}`, { title, body });
+  if (!activeNoteId || window.IS_DEMO) return true;
+  const id = activeNoteId;
+  if (!document.getElementById('vs-note-title')) return false;
+  const { title, body } = getLiveNoteContent();
+  const { ok, data } = await api.put(`/notes/${id}`, { title, body });
 
   if (ok && data?.note) {
     // Update cached note
-    const idx = notes.findIndex(n => n.id === activeNoteId);
+    const idx = notes.findIndex(n => n.id === id);
     if (idx >= 0) {
       notes[idx] = { ...notes[idx], ...data.note };
     }
@@ -698,6 +720,7 @@ async function saveActiveNote() {
     // Refresh list to reflect title/time changes
     renderNotesList();
   }
+  return ok;
   // Save status feedback is handled by the global indicator in api.js
 }
 
@@ -711,6 +734,7 @@ async function saveActiveNote() {
 
 async function createNote() {
   if (demoGuard() || viewerGuard()) return;
+  if (await flushPendingSave() === false) return;
 
   const { ok, data } = await api.post('/notes', { title: '', body: '' });
   if (ok && data?.note) {
@@ -723,6 +747,7 @@ async function createNote() {
 
 async function deleteNote(id) {
   if (demoGuard() || viewerGuard()) return;
+  if (await flushPendingSave() === false) return;
 
   const { ok } = await api.delete(`/notes/${id}`);
   if (!ok) {
@@ -784,7 +809,7 @@ function togglePreview() {
     // Exiting preview — restore the textarea from the cached body text.
     previewMode = false;
 
-    bodyWrap.innerHTML = `<textarea id="vs-note-body" class="vs-note-body-textarea"
+    bodyWrap.innerHTML = `<textarea id="vs-note-body" class="vs-note-body-textarea" aria-label="Note body"
                     placeholder="Start writing…" spellcheck="true">${escapeHtml(previewBodyCache)}</textarea>`;
     const newTextarea = document.getElementById('vs-note-body');
 
@@ -793,6 +818,7 @@ function togglePreview() {
       autoGrow(newTextarea);
       newTextarea.addEventListener('input', () => {
         autoGrow(newTextarea);
+        if (!window.IS_DEMO) api.markDraft('notes', activeNoteId, getLiveNoteContent());
         if (saveTimer) clearTimeout(saveTimer);
         saveTimer = setTimeout(() => saveActiveNote(), SAVE_DEBOUNCE_MS);
       });
@@ -824,10 +850,12 @@ function getLiveNoteContent() {
  * in-progress edits are included.
  */
 async function sendNoteToChat(noteOverride) {
-  await flushPendingSave();
+  if (await flushPendingSave() === false) return;
 
   let title, body;
   if (noteOverride) {
+    noteOverride = await readFullNote(noteOverride.id);
+    if (!noteOverride) return;
     title = noteOverride.title || '';
     body = noteOverride.body || '';
   } else {
@@ -861,10 +889,12 @@ async function sendNoteToChat(noteOverride) {
  */
 async function addNoteToBoard(noteOverride) {
   if (demoGuard() || viewerGuard()) return;
-  await flushPendingSave();
+  if (await flushPendingSave() === false) return;
 
   let title, body, noteId;
   if (noteOverride) {
+    noteOverride = await readFullNote(noteOverride.id);
+    if (!noteOverride) return;
     title = noteOverride.title || '';
     body = noteOverride.body || '';
     noteId = noteOverride.id;
@@ -968,10 +998,12 @@ function showNoteContextMenu(e, noteId) {
       }
       case 'use': {
         // Paste note body into chat composer as a ready-to-send prompt
-        await flushPendingSave();
+        if (await flushPendingSave() === false) return;
+        const fullNote = noteId === activeNoteId ? null : await readFullNote(noteId);
+        if (noteId !== activeNoteId && !fullNote) return;
         const useBody = noteId === activeNoteId
           ? getLiveNoteContent().body
-          : (note.body || '');
+          : (fullNote.body || '');
         window.location.hash = '#/chat';
         setTimeout(() => {
           const input = document.getElementById('prompt-input');
@@ -1008,6 +1040,7 @@ function showNoteContextMenu(e, noteId) {
 // ═══════════════════════════════════════════
 
 function bindNotesEvents() {
+  window.addEventListener('vs:business-record-reloaded', onNoteReloaded);
   // New note button
   const newBtn = document.getElementById('btn-note-new');
   newBtn?.addEventListener('click', createNote);
@@ -1088,6 +1121,7 @@ function handleNotesKeyboard(e) {
     if (document.querySelector('.vs-modal-overlay.is-visible')) return;
 
     if (activeNoteId) {
+      e.preventDefault();
       deselectNote();
     }
     return;
@@ -1166,6 +1200,7 @@ function autoGrow(textarea) {
 // ═══════════════════════════════════════════
 
 export function cleanupNotes() {
+  window.removeEventListener('vs:business-record-reloaded', onNoteReloaded);
   document.removeEventListener('keydown', handleNotesKeyboard);
   if (saveTimer) {
     clearTimeout(saveTimer);

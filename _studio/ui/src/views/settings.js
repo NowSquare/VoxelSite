@@ -7,15 +7,50 @@
 
 import { icons } from '../icons.js';
 import { store } from '../../state.js';
-import { api } from '../../api.js';
+import { studioUrl, api, apiOperation, pendingOperationInput } from '../../api.js';
 import { showToast } from '../ui/toasts.js';
 import { escapeHtml } from '../helpers.js';
 import { closeModal, showConfirmModal, onBackdropClick } from '../ui/modals.js';
 import { router } from '../../router.js';
 import { renderRouterSettings, bindRouterSettings } from './router.js';
 import { modelOptions, bindModelBudgetControls } from './settings-model-budget.js';
+import { bindMcpConnections } from './settings-mcp.js';
+import { bindOwnerRecovery } from './settings-recovery.js';
+import { executeReviewedReset, prepareReviewedReset } from '../reset-workspace.js';
+import { bindReviewedUpdates } from './settings-updates.js';
+import { showFactoryResetReview } from '../factory-reset-workspace.js';
 
 let modelDiscoveryRequest = 0;
+let configurationVersions = {};
+let configurationGroupKeys = {};
+let faviconVersion = null;
+let logInventory = null;
+let logPage = null;
+async function saveConfiguration(values, endpoint = '/settings', method = 'put') {
+  const clean = Object.fromEntries(Object.entries(values).filter(([key, value]) => !(typeof value === 'string' && value.startsWith('••'))));
+  const groups = Object.keys(configurationGroupKeys).filter(group => configurationGroupKeys[group].some(key => Object.hasOwn(clean, key)));
+  const pending = pendingOperationInput(endpoint, method);
+  const versions = pending?.versions || Object.fromEntries(groups.map(group => [group, configurationVersions[group]]));
+  const result = await apiOperation(endpoint, { values: clean, versions }, method, { retainInput: false, publicInput: { versions } });
+  if (result.ok) {
+    const read = await api.get('/settings');
+    if (read.ok) { configurationVersions = read.data.versions; configurationGroupKeys = read.data.group_keys; }
+  }
+  return result;
+}
+function mailSettingValues(form) {
+  return Object.fromEntries(Object.entries(form).filter(([key, value]) => key !== 'test_recipient' && !(key === 'smtp_password' && !value))
+    .map(([key, value]) => ['mail.' + key.replace(/^smtp_/, 'smtp.').replace(/^mailpit_/, 'mailpit.'), value]));
+}
+async function deleteDiagnosticLogs(names) {
+  const pending = pendingOperationInput('/settings/logs', 'delete');
+  const input = pending || { files: names, inventory_version: logInventory?.inventory_version };
+  const result = await apiOperation('/settings/logs', input, 'delete');
+  if (!result.ok) showToast(result.error?.message || 'Could not delete logs.', 'error');
+  if (result.ok) logPage = null;
+  return result;
+}
+
 
 function renderSettingsView() {
   // Load settings on render
@@ -46,12 +81,17 @@ async function loadSettings() {
     api.get('/settings/usage'),
     api.get('/files/content?path=' + encodeURIComponent('assets/data/memory.json')),
     api.get('/files/content?path=' + encodeURIComponent('assets/data/design-intelligence.json')),
-    api.get('/settings/logs'),
+    api.get('/settings/logs' + (logPage ? `?offset=${logPage.offset}&inventory_version=${encodeURIComponent(logPage.version)}` : '')),
   ]);
 
+  logInventory = logsRes.ok ? logsRes.data : null;
+  configurationVersions = settingsRes.data?.versions || {};
+  configurationGroupKeys = settingsRes.data?.group_keys || {};
+  faviconVersion = settingsRes.data?.favicon?.version || null;
   const logFiles = logsRes.data?.logs || [];
 
   const s = settingsRes.data?.settings || {};
+  if (settingsRes.ok) store.set('aiConfigured', s.ai_configured === true);
   const sys = systemRes.data?.system || {};
 
   // Detect current favicon — always show the img, use onerror to fall back
@@ -106,7 +146,7 @@ async function loadSettings() {
             : (f.required
               ? '<p class="text-xs text-vs-warning mt-1">No API key set. Add one to enable AI features.</p>'
               : `<p class="text-xs text-vs-text-ghost mt-1">${escapeHtml(f.help_text || 'Optional for local servers')}</p>`)}
-          ${f.help_url ? `<a href="${f.help_url}" target="_blank" rel="noopener" class="text-xs text-vs-accent hover:underline mt-1 inline-block">${escapeHtml(f.help_text || 'Get a key')} →</a>` : ''}
+          ${f.help_url ? `<a href="${f.help_url}" target="_blank" rel="noopener" class="text-xs text-vs-text-secondary underline mt-1 inline-block">${escapeHtml(f.help_text || 'Get a key')} →</a>` : ''}
         </div>`;
     } else if (f.key === 'base_url') {
       configFieldsHtml += `
@@ -161,6 +201,7 @@ async function loadSettings() {
                 ` : ''}
               </div>
               <p class="vs-favicon-hint">.ico format — max 512 KB</p>
+              <p class="vs-favicon-hint">Live change: uploads and removals take effect immediately. Publishing and website restores do not change the favicon.</p>
             </div>
             <input type="file" id="vs-favicon-file" accept=".ico,image/x-icon,image/vnd.microsoft.icon" class="hidden" />
           </div>
@@ -174,9 +215,16 @@ async function loadSettings() {
       </div>
     </div>
 
+    <section id="settings-mcp" class="vs-settings-card" aria-label="AI tool connections">
+      <p class="text-sm text-vs-text-tertiary">Loading connections…</p>
+    </section>
+    <section id="settings-recovery" class="vs-settings-card" aria-label="Interrupted changes">
+      <p class="text-sm text-vs-text-tertiary">Loading interrupted changes…</p>
+    </section>
+
     <!-- Card: AI Engine -->
     <div class="vs-settings-card">
-      <h2 class="vs-settings-card-title">AI Provider</h2>
+      <h2 class="vs-settings-card-title">Built-in AI ${s.ai_configured ? '' : '<span class="text-xs font-normal text-vs-text-tertiary">Unconfigured</span>'}</h2>
       <p class="vs-settings-card-subtitle">Choose the provider and default model for creating and editing your site.</p>
       <div class="flex flex-col gap-4">
         <div>
@@ -497,9 +545,8 @@ async function loadSettings() {
         ${renderSysRow('VoxelSite', sys.version || '1.0.0')}
         ${renderSysRow('PHP', sys.php_version || '?')}
         ${renderSysRow('SQLite', sys.sqlite_version || '?')}
-        ${renderSysRow('Database', formatFileSize(sys.database_size))}
-        ${renderSysRow('Preview Files', formatFileSize(sys.preview_size))}
-        ${renderSysRow('Assets', formatFileSize(sys.assets_size))}
+        ${renderSysRow('Private draft', sys.workspace_ready ? 'Ready' : 'Upgrade required')}
+        ${renderSysRow('Draft version', String(sys.draft_version ?? '?'))}
         ${renderSysRow('Upload Limit', sys.max_upload || '?')}
         ${renderSysRow('Memory Limit', sys.memory_limit || '?')}
       </div>
@@ -526,7 +573,7 @@ async function loadSettings() {
           </div>
           <div class="vs-update-zone-text">
             <span class="vs-update-zone-label">Drop update .zip here or click to browse</span>
-            <span class="vs-update-zone-hint">Only system files are updated — your content stays safe</span>
+            <span class="vs-update-zone-hint">Stage a package, review its exact changes, then approve activation</span>
             <span class="vs-update-zone-hint" style="margin-top: 4px; opacity: 0.6;">Upload limit too low? Upload the .zip to <code>/dist/</code> via FTP and it will appear above.</span>
           </div>
           <input type="file" id="vs-update-file" accept=".zip" class="hidden" />
@@ -549,11 +596,11 @@ async function loadSettings() {
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: ${logFiles.length > 0 ? '16px' : '0'};">
         <div>
           <h3 class="vs-settings-card-title">Server Logs</h3>
-          <p class="vs-settings-card-subtitle" style="margin-bottom: 0;">Download log files for debugging.</p>
+          <p class="vs-settings-card-subtitle" style="margin-bottom: 0;">Download redacted log files for debugging. Showing ${logFiles.length} of ${logInventory?.total || 0}.</p>
         </div>
         ${logFiles.length > 0 ? `<button id="btn-delete-all-logs" class="vs-btn vs-btn-ghost vs-btn-xs" style="color: var(--vs-text-ghost); white-space: nowrap;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          Delete all
+          Delete listed logs
         </button>` : ''}
       </div>
       <div id="log-files-list" style="display: flex; flex-direction: column; gap: 6px;">
@@ -565,8 +612,8 @@ async function loadSettings() {
             return `<div class="vs-log-row" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid var(--vs-border-subtle); border-radius: var(--radius-md);">
               <span style="font-family: var(--font-mono); font-size: 12px; color: var(--vs-text-primary);">${f.name}</span>
               <span style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 11px; color: var(--vs-text-ghost); white-space: nowrap;">${f.lines} lines · ${sizeKB} KB · ${date}</span>
-                <a href="/_studio/api/router.php?_path=%2Fsettings%2Flogs%2Fdownload&file=${encodeURIComponent(f.name)}" download class="vs-btn vs-btn-ghost vs-btn-xs" style="text-decoration: none; padding: 2px 8px;">
+                <span style="font-size: 11px; color: var(--vs-text-ghost); white-space: nowrap;">${sizeKB} KB · ${date}</span>
+                <a href="${studioUrl('api/router.php')}?_path=%2Fsettings%2Flogs%2Fdownload&file=${encodeURIComponent(f.name)}" download class="vs-btn vs-btn-ghost vs-btn-xs" style="text-decoration: none; padding: 2px 8px;">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 </a>
                 <button class="vs-btn vs-btn-ghost vs-btn-xs btn-delete-log" data-file="${f.name}" style="padding: 2px 8px; color: var(--vs-text-ghost);" title="Delete">
@@ -576,6 +623,10 @@ async function loadSettings() {
             </div>`;
           }).join('')}
       </div>
+      ${logInventory?.next_offset !== null || logPage ? `<div class="flex gap-2 mt-3">
+        ${logPage ? '<button id="logs-first-page" class="vs-btn vs-btn-ghost vs-btn-xs">First logs</button>' : ''}
+        ${logInventory?.next_offset != null ? '<button id="logs-next-page" class="vs-btn vs-btn-ghost vs-btn-xs">Next logs</button>' : ''}
+      </div>` : ''}
     </div>
 
     <!-- Card: API Access -->
@@ -585,7 +636,7 @@ async function loadSettings() {
           <h2 class="vs-settings-card-title" style="display: flex; align-items: center; gap: 8px;">API Access <span style="font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; background: color-mix(in srgb, var(--vs-accent) 12%, transparent); color: var(--vs-accent); border: 1px solid color-mix(in srgb, var(--vs-accent) 25%, transparent);">Beta</span></h2>
           <p class="vs-settings-card-subtitle" style="margin-bottom: 0;">Manage Agent API keys for external integrations and automations.</p>
         </div>
-        <a href="/_studio/api/agent/v1/schema" target="_blank" rel="noopener" class="vs-btn vs-btn-ghost vs-btn-xs" style="color: var(--vs-text-ghost); white-space: nowrap; text-decoration: none;">
+        <a href="${studioUrl('api/agent/v1/schema')}" target="_blank" rel="noopener" class="vs-btn vs-btn-ghost vs-btn-xs" style="color: var(--vs-text-ghost); white-space: nowrap; text-decoration: none;">
           ${icons.externalLink} View API schema
         </a>
       </div>
@@ -678,10 +729,19 @@ async function loadSettings() {
 
   // Bind settings events
   bindSettingsEvents(s, providers);
+  bindOwnerRecovery(container.querySelector('#settings-recovery'), { api, user: store.get('user') });
+  bindMcpConnections(container.querySelector('#settings-mcp'), { api, user: store.get('user') }).then(() => {
+    if (window.__vsSettingsSection === 'settings-mcp') {
+      delete window.__vsSettingsSection;
+      const target = container.querySelector('#settings-mcp');
+      target?.scrollIntoView({ block: 'start' });
+      target?.querySelector('button, input, a')?.focus({ preventScroll: true });
+    }
+  });
   bindRouterSettings(container, {
     getRole: () => store.get('user')?.role,
     getModels: () => api.get('/settings/models'),
-    put: (path, body) => api.put(path, body),
+    put: (path, body) => path === '/settings' ? saveConfiguration(body) : api.put(path, body),
     reload: loadSettings,
     demoGuard: () => window.demoGuard?.(),
   });
@@ -718,11 +778,16 @@ async function loadSettings() {
       const file = btn.dataset.file;
       const row = btn.closest('.vs-log-row');
       if (row) row.style.opacity = '0.4';
-      await api.delete('/settings/logs', { file });
+      await deleteDiagnosticLogs([file]);
       loadSettings();
     });
   });
   const deleteAllBtn = document.getElementById('btn-delete-all-logs');
+  document.getElementById('logs-first-page')?.addEventListener('click', () => { logPage = null; loadSettings(); });
+  document.getElementById('logs-next-page')?.addEventListener('click', () => {
+    logPage = { offset: logInventory.next_offset, version: logInventory.inventory_version };
+    loadSettings();
+  });
   if (deleteAllBtn) {
     deleteAllBtn.addEventListener('click', async () => {
       if (window.demoGuard?.()) return;
@@ -733,7 +798,7 @@ async function loadSettings() {
         setTimeout(() => {
           if (deleteAllBtn.dataset.confirm === 'true') {
             deleteAllBtn.dataset.confirm = '';
-            deleteAllBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Delete all`;
+            deleteAllBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Delete listed logs`;
             deleteAllBtn.style.color = '';
           }
         }, 3000);
@@ -741,7 +806,7 @@ async function loadSettings() {
       }
       deleteAllBtn.disabled = true;
       deleteAllBtn.textContent = 'Deleting...';
-      await api.delete('/settings/logs', { file: '*' });
+      await deleteDiagnosticLogs(logFiles.map(file => file.name));
       loadSettings();
     });
   }
@@ -756,17 +821,18 @@ async function loadSettings() {
     designBtn.addEventListener('click', () => openKnowledgeViewer('Design Intelligence', designData, 'design'));
   }
 
-  // Bind update upload
-  bindUpdateUpload();
-
-  // Bind Git update card (renders only when this install is a Git checkout)
-  bindGitUpdate();
+  // Package staging, exact owner review, and bounded update continuation.
+  bindReviewedUpdates();
 
   // Bind favicon upload
   bindFaviconUpload();
 
   // Auto-load models from stored credentials
-  autoLoadModels(currentModel);
+  if (s.ai_configured) autoLoadModels(currentModel);
+  else {
+    const modelSelect = document.getElementById('set-ai-model');
+    if (modelSelect && !currentModel) modelSelect.innerHTML = '<option value="">Configure a provider to choose a model</option>';
+  }
 }
 
 /**
@@ -775,404 +841,6 @@ async function loadSettings() {
  * @param {object} data - The parsed JSON data
  * @param {'memory'|'design'} type - Controls how entries are rendered
  */
-/**
- * Compare two semver strings. Returns -1, 0, or 1.
- */
-function versionCompare(a, b) {
-  const pa = (a || '0').split('.').map(Number);
-  const pb = (b || '0').split('.').map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const na = pa[i] || 0;
-    const nb = pb[i] || 0;
-    if (na > nb) return 1;
-    if (na < nb) return -1;
-  }
-  return 0;
-}
-
-/**
- * Render the Git update card into #vs-git-update-card.
- *
- * Only shows when the install is a Git checkout. Mirrors a status-card UX —
- * "Up to date", "N updates available", "Local changes detected", "Setup needed"
- * — rather than dumping raw git output. The repo details sit in a small footnote.
- */
-async function bindGitUpdate() {
-  const host = document.getElementById('vs-git-update-card');
-  if (!host) return;
-
-  try {
-    const { ok, data } = await api.get('/update/git-status');
-    if (!ok || !data || !data.is_repo) { host.innerHTML = ''; return; } // not a Git checkout → ZIP card is the path
-    renderGitCard(host, data);
-  } catch (_) {
-    host.innerHTML = ''; // non-critical — fall back to the ZIP card silently
-  }
-}
-
-function renderGitCard(host, st) {
-  const canUpdate = st.state === 'update_available';
-  const pill = canUpdate
-    ? '<span class="vs-pill vs-pill-success">' + st.behind + ' available</span>'
-    : st.state === 'up_to_date'
-      ? '<span class="vs-pill vs-pill-subtle">Up to date</span>'
-      : '<span class="vs-pill vs-pill-subtle">Action needed</span>';
-
-  const footnote = [
-    st.branch ? `branch <code>${escapeHtml(st.branch)}</code>` : '',
-    st.short_sha ? `at <code>${escapeHtml(st.short_sha)}</code>` : '',
-    st.upstream ? `tracking <code>${escapeHtml(st.upstream)}</code>` : '',
-  ].filter(Boolean).join(' · ');
-
-  host.innerHTML = `
-    <div class="vs-settings-card" id="vs-git-card">
-      <div class="flex items-center justify-between mb-1">
-        <h2 class="vs-settings-card-title mb-0">Git Updates</h2>
-        ${pill}
-      </div>
-      <p class="vs-settings-card-subtitle">${escapeHtml(st.message || '')}</p>
-      <div id="vs-git-body">
-        ${canUpdate ? `
-          <button id="btn-git-update" class="vs-btn vs-btn-primary vs-btn-sm">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
-            Update now
-          </button>` : ''}
-        ${footnote ? `<p style="font-size: 11px; color: var(--vs-text-ghost); margin: 12px 0 0;">${footnote}</p>` : ''}
-      </div>
-    </div>
-  `;
-
-  const btn = document.getElementById('btn-git-update');
-  if (btn) btn.addEventListener('click', runGitUpdate);
-}
-
-async function runGitUpdate() {
-  if (window.demoGuard?.()) return;
-  const body = document.getElementById('vs-git-body');
-  if (!body) return;
-
-  const confirmOk = confirm(
-    `Pull the latest changes from Git?\n\n` +
-    `The app resets to match the repository (system files only). Your pages, ` +
-    `database, settings, and uploaded files are preserved. A reload is required after.`
-  );
-  if (!confirmOk) return;
-
-  body.innerHTML = `<div style="display: flex; align-items: center; gap: 10px;"><div class="vs-update-spinner"></div><span>Updating…</span></div>`;
-
-  try {
-    const { ok, data, error } = await api.post('/update/git-update', {});
-    if (ok) {
-      const migs = data.migrations?.result?.applied?.length || 0;
-      body.innerHTML = `
-        <div class="vs-update-result-title" style="color: var(--vs-success);">Updated to v${escapeHtml(data.to_version || '')}.</div>
-        <div class="vs-update-result-meta">
-          ${escapeHtml(data.from_sha || '?')} → ${escapeHtml(data.to_sha || '?')}${migs ? ` · ${migs} migration${migs === 1 ? '' : 's'} applied` : ' · no migrations needed'}
-        </div>
-        <button class="vs-btn vs-btn-primary vs-btn-sm mt-3" onclick="location.reload()">Reload Studio</button>
-      `;
-    } else {
-      body.innerHTML = `
-        <div class="vs-update-result-title" style="color: var(--vs-error);">${escapeHtml(error?.message || 'Update failed.')}</div>
-        <button class="vs-btn vs-btn-ghost vs-btn-sm mt-3" onclick="location.reload()">Close</button>
-      `;
-    }
-  } catch (err) {
-    body.innerHTML = `<div class="vs-update-result-title" style="color: var(--vs-error);">${escapeHtml(err.message || 'Network error.')}</div>`;
-  }
-}
-
-/**
- * Bind the update upload zone: click-to-browse, drag-and-drop, and the upload flow.
- * Also checks for update packages in /dist/ and displays them.
- */
-function bindUpdateUpload() {
-  const zone = document.getElementById('vs-update-zone');
-  const idleEl = document.getElementById('vs-update-idle');
-  const progressEl = document.getElementById('vs-update-progress');
-  const resultEl = document.getElementById('vs-update-result');
-  const fileInput = document.getElementById('vs-update-file');
-  const statusEl = document.getElementById('vs-update-status');
-  const distContainer = document.getElementById('vs-dist-packages');
-
-  if (!zone || !fileInput) return;
-
-  // ── Load dist packages ──
-  loadDistPackages();
-
-  async function loadDistPackages() {
-    if (!distContainer) return;
-    try {
-      const { ok, data } = await api.get('/update/dist-packages');
-      if (!ok || !data?.packages?.length) {
-        distContainer.innerHTML = '';
-        return;
-      }
-
-      const currentVersion = data.current_version || '0.0.0';
-      const pkgHtml = data.packages.map(pkg => {
-        const sizeMB = (pkg.size / 1024 / 1024).toFixed(1);
-        const isNewer = versionCompare(pkg.version, currentVersion) > 0;
-        const isSame = pkg.version === currentVersion;
-        const badge = isNewer
-          ? '<span class="vs-pill vs-pill-success" style="font-size: 10px;">newer</span>'
-          : isSame
-            ? '<span class="vs-pill vs-pill-subtle" style="font-size: 10px;">current</span>'
-            : '<span class="vs-pill vs-pill-subtle" style="font-size: 10px;">older</span>';
-
-        return `
-          <div class="vs-dist-pkg">
-            <div class="vs-dist-pkg-info">
-              <div class="vs-dist-pkg-name">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-                <strong>${escapeHtml(pkg.filename)}</strong>
-                ${badge}
-              </div>
-              <div class="vs-dist-pkg-meta">v${escapeHtml(pkg.version)} · ${sizeMB} MB</div>
-            </div>
-            <button class="vs-btn vs-btn-primary vs-btn-sm vs-dist-apply-btn" data-filename="${escapeHtml(pkg.filename)}" data-version="${escapeHtml(pkg.version)}">
-              Apply Update
-            </button>
-          </div>
-        `;
-      }).join('');
-
-      distContainer.innerHTML = `
-        <div class="vs-dist-packages-section">
-          <div class="vs-dist-packages-header">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-            <span>Update packages found in <code>/dist/</code></span>
-          </div>
-          ${pkgHtml}
-        </div>
-      `;
-
-      // Bind apply buttons
-      distContainer.querySelectorAll('.vs-dist-apply-btn').forEach(btn => {
-        btn.addEventListener('click', () => applyDistPackage(btn.dataset.filename, btn.dataset.version));
-      });
-    } catch (_) {
-      // Non-critical — just don't show the section
-    }
-  }
-
-  async function applyDistPackage(filename, version) {
-    if (window.demoGuard?.()) return;
-    const confirmOk = confirm(
-      `Apply update from "${filename}" (v${version})?\n\n` +
-      `This will overwrite system files. Your pages, database, settings, and uploaded files are preserved.\n\n` +
-      `A page reload is required after the update completes.`
-    );
-    if (!confirmOk) return;
-
-    // Show progress
-    idleEl.classList.add('hidden');
-    resultEl.classList.add('hidden');
-    progressEl.classList.remove('hidden');
-    statusEl.textContent = `Applying ${filename}...`;
-    if (distContainer) distContainer.innerHTML = '';
-
-    try {
-      const { ok, data, error } = await api.post('/update/apply-local', { filename });
-
-      progressEl.classList.add('hidden');
-      resultEl.classList.remove('hidden');
-
-      const resultIcon = document.getElementById('vs-update-result-icon');
-      const resultMsg = document.getElementById('vs-update-result-message');
-
-      if (ok) {
-        const d = data;
-        resultIcon.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--vs-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
-        resultMsg.innerHTML = `
-          <div class="vs-update-result-title">${escapeHtml(d.message)}</div>
-          <div class="vs-update-result-meta">
-            ${d.files_updated} files updated · ${d.files_skipped} preserved
-            ${d.migrations_run ? ` · ${d.migrations_run} migration${d.migrations_run === 1 ? '' : 's'}` : ''}
-            ${d.errors?.length ? ` · ${d.errors.length} errors` : ''}
-          </div>
-          <button class="vs-btn vs-btn-primary vs-btn-sm mt-3" onclick="location.reload()">
-            Reload Studio
-          </button>
-        `;
-      } else {
-        showUpdateError('Update Failed', error?.message || 'Unknown error');
-      }
-    } catch (err) {
-      showUpdateError('Update Failed', escapeHtml(err.message || 'Network error.'));
-    }
-  }
-
-  // Click zone → open file picker
-  zone.addEventListener('click', (e) => {
-    if (window.demoGuard?.()) return;
-    if (e.target.closest('#vs-update-result')) return;
-    fileInput.click();
-  });
-
-  // Drag-and-drop
-  zone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    zone.classList.add('is-dragover');
-  });
-  zone.addEventListener('dragleave', () => zone.classList.remove('is-dragover'));
-  zone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    zone.classList.remove('is-dragover');
-    if (window.demoGuard?.()) return;
-    const file = e.dataTransfer?.files?.[0];
-    if (file && file.name.endsWith('.zip')) {
-      handleUpdateFile(file);
-    }
-  });
-
-  fileInput.addEventListener('change', () => {
-    const file = fileInput.files?.[0];
-    if (file) handleUpdateFile(file);
-    fileInput.value = ''; // Reset for re-selection
-  });
-
-  async function handleUpdateFile(file) {
-    // ── Pre-flight: check file size against server upload limit ──
-    const uploadLimitEl = document.querySelector('.vs-sys-grid');
-    if (uploadLimitEl) {
-      // Parse server upload limit from the System Status display
-      const rows = uploadLimitEl.querySelectorAll('.vs-sys-value');
-      let limitText = '';
-      uploadLimitEl.querySelectorAll('.vs-sys-label').forEach((label, i) => {
-        if (label.textContent.trim() === 'Upload Limit') {
-          limitText = rows[i]?.textContent?.trim() || '';
-        }
-      });
-      if (limitText) {
-        const limitBytes = parseUploadLimit(limitText);
-        if (limitBytes > 0 && file.size > limitBytes) {
-          const fileMB = (file.size / 1024 / 1024).toFixed(1);
-          showUpdateError(
-            'File Too Large',
-            `The update file is ${fileMB} MB but your server's upload limit is ${limitText}. ` +
-            `Increase <code>upload_max_filesize</code> and <code>post_max_size</code> in your php.ini to at least ${fileMB} MB, then restart your web server.`
-          );
-          return;
-        }
-      }
-    }
-
-    // Confirm before proceeding
-    const confirmOk = confirm(
-      `Apply update from "${file.name}" (${(file.size / 1024 / 1024).toFixed(1)} MB)?\n\n` +
-      `This will overwrite system files. Your pages, database, settings, and uploaded files are preserved.\n\n` +
-      `A page reload is required after the update completes.`
-    );
-    if (!confirmOk) return;
-
-    // Show progress
-    idleEl.classList.add('hidden');
-    resultEl.classList.add('hidden');
-    progressEl.classList.remove('hidden');
-    statusEl.textContent = `Uploading ${file.name}...`;
-
-    try {
-      const formData = new FormData();
-      formData.append('update_zip', file);
-
-      // We need to use fetch directly because our api helper only sends JSON
-      const token = store.get('sessionToken');
-      const res = await fetch('/_studio/api/router.php?_path=%2Fupdate%2Fupload', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: token ? { 'X-VS-Token': token } : {},
-        body: formData,
-      });
-
-      // Handle non-JSON responses (e.g., PHP errors when post_max_size is exceeded)
-      const contentType = res.headers.get('content-type') || '';
-      let json;
-      if (!contentType.includes('application/json')) {
-        const text = await res.text();
-        // PHP upload limit errors return HTML like: <br /> <b>Warning</b>: POST Content-Length...
-        if (text.includes('POST Content-Length') || text.includes('upload_max_filesize') || text.includes('exceeds')) {
-          showUpdateError(
-            'Server Upload Limit Exceeded',
-            `The file (${(file.size / 1024 / 1024).toFixed(1)} MB) exceeds your server's PHP upload limit. ` +
-            `Increase <code>upload_max_filesize</code> and <code>post_max_size</code> in php.ini, then restart your web server.`
-          );
-          return;
-        }
-        showUpdateError('Upload Failed', 'The server returned an unexpected response. Check your PHP error log for details.');
-        return;
-      }
-
-      json = await res.json();
-
-      progressEl.classList.add('hidden');
-      resultEl.classList.remove('hidden');
-
-      const resultIcon = document.getElementById('vs-update-result-icon');
-      const resultMsg = document.getElementById('vs-update-result-message');
-
-      if (json.ok) {
-        const d = json.data;
-        resultIcon.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--vs-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
-        resultMsg.innerHTML = `
-          <div class="vs-update-result-title">${escapeHtml(d.message)}</div>
-          <div class="vs-update-result-meta">
-            ${d.files_updated} files updated · ${d.files_skipped} preserved
-            ${d.migrations_run ? ` · ${d.migrations_run} migration${d.migrations_run === 1 ? '' : 's'}` : ''}
-            ${d.errors?.length ? ` · ${d.errors.length} errors` : ''}
-          </div>
-          <button class="vs-btn vs-btn-primary vs-btn-sm mt-3" onclick="location.reload()">
-            Reload Studio
-          </button>
-        `;
-      } else {
-        showUpdateError('Update Failed', json.error?.message || 'Unknown error');
-      }
-    } catch (err) {
-      // Network errors or other unexpected failures
-      const msg = err.message || 'Network error. Check your connection.';
-      // Detect JSON parse errors (server returned HTML instead of JSON)
-      if (msg.includes('Unexpected token') || msg.includes('not valid JSON')) {
-        showUpdateError(
-          'Server Upload Limit Exceeded',
-          `The file (${(file.size / 1024 / 1024).toFixed(1)} MB) likely exceeds your server's PHP upload limit. ` +
-          `Increase <code>upload_max_filesize</code> and <code>post_max_size</code> in php.ini, then restart your web server.`
-        );
-      } else {
-        showUpdateError('Upload Failed', escapeHtml(msg));
-      }
-    }
-  }
-
-  /** Show an error in the update zone */
-  function showUpdateError(title, message) {
-    progressEl.classList.add('hidden');
-    resultEl.classList.remove('hidden');
-    const resultIcon = document.getElementById('vs-update-result-icon');
-    const resultMsg = document.getElementById('vs-update-result-message');
-    resultIcon.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--vs-error)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`;
-    resultMsg.innerHTML = `
-      <div class="vs-update-result-title" style="color: var(--vs-error);">${escapeHtml(title)}</div>
-      <div class="vs-update-result-meta">${message}</div>
-      <button class="vs-btn vs-btn-ghost vs-btn-sm mt-3" onclick="document.getElementById('vs-update-result').classList.add('hidden'); document.getElementById('vs-update-idle').classList.remove('hidden');">
-        Try Again
-      </button>
-    `;
-  }
-
-  /** Parse upload limit string (e.g. "2 MB", "128M") into bytes */
-  function parseUploadLimit(text) {
-    const match = text.match(/([\d.]+)\s*(MB|M|GB|G|KB|K)/i);
-    if (!match) return 0;
-    const val = parseFloat(match[1]);
-    const unit = match[2].toUpperCase();
-    if (unit === 'GB' || unit === 'G') return val * 1024 * 1024 * 1024;
-    if (unit === 'MB' || unit === 'M') return val * 1024 * 1024;
-    if (unit === 'KB' || unit === 'K') return val * 1024;
-    return 0;
-  }
-}
-
 /**
  * Bind the favicon upload zone: click-to-browse, drag-and-drop,
  * upload via FormData, and remove.
@@ -1220,7 +888,7 @@ function bindFaviconUpload() {
     removeBtn.disabled = true;
     removeBtn.style.opacity = '0.5';
     try {
-      const res = await api.delete('/settings/favicon');
+      const res = await apiOperation('/settings/favicon', pendingOperationInput('/settings/favicon', 'delete') || { version: faviconVersion }, 'delete');
       if (res.ok) {
         showToast('Favicon removed.', 'success');
         loadSettings();
@@ -1256,18 +924,11 @@ function bindFaviconUpload() {
     }
 
     try {
-      const formData = new FormData();
-      formData.append('favicon', file);
-
-      const token = store.get('sessionToken');
-      const res = await fetch('/_studio/api/router.php?_path=%2Fsettings%2Ffavicon', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: token ? { 'X-VS-Token': token } : {},
-        body: formData,
-      });
-
-      const json = await res.json();
+      const buffer = new Uint8Array(await file.arrayBuffer());
+      let binary = ''; for (const byte of buffer) binary += String.fromCharCode(byte);
+      const pending = pendingOperationInput('/settings/favicon');
+      const json = await apiOperation('/settings/favicon', { version: pending?.version || faviconVersion, content_base64: btoa(binary) }, 'post',
+        { retainInput: false, publicInput: { version: pending?.version || faviconVersion } });
       if (json.ok) {
         showToast('Favicon updated.', 'success');
         loadSettings();
@@ -1391,185 +1052,7 @@ function bindResetInstallEvent() {
  * than the site reset to prevent accidental use.
  */
 function showResetInstallModal() {
-  // Remove any existing modal
-  const existing = document.getElementById('reset-install-modal-overlay');
-  if (existing) existing.remove();
-
-  const overlay = document.createElement('div');
-  overlay.id = 'reset-install-modal-overlay';
-  overlay.className = 'vs-modal-overlay';
-  overlay.innerHTML = `
-    <div class="vs-modal" id="reset-install-modal">
-      <div class="vs-modal-header">
-        <div class="vs-modal-icon vs-modal-icon-danger">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-        </div>
-        <h2 class="vs-modal-title">Reset Installation</h2>
-        <p class="vs-modal-desc">This will erase <strong>everything</strong> — your database, config, account, uploaded files, and all generated content. The installation wizard will appear so you can start completely from scratch.</p>
-      </div>
-
-      <div class="vs-modal-body">
-        <ul class="vs-modal-checklist">
-          <li class="will-delete"><span class="check-icon">✕</span> Database (settings, conversations, revisions)</li>
-          <li class="will-delete"><span class="check-icon">✕</span> Your account, API keys, and config</li>
-          <li class="will-delete"><span class="check-icon">✕</span> All uploaded images, files, and fonts</li>
-          <li class="will-delete"><span class="check-icon">✕</span> All generated pages, styles, and scripts</li>
-          <li class="will-delete"><span class="check-icon">✕</span> Snapshots and backups</li>
-        </ul>
-
-        <label class="vs-modal-confirm-label">
-          Type <code>RESET INSTALLATION</code> to confirm
-        </label>
-        <input
-          type="text"
-          id="reset-install-confirm-input"
-          class="vs-modal-confirm-input"
-          placeholder="Type RESET INSTALLATION here"
-          autocomplete="off"
-          spellcheck="false"
-        />
-      </div>
-
-      <div class="vs-modal-footer">
-        <button id="reset-install-cancel-btn" class="vs-btn vs-btn-secondary vs-btn-sm">Cancel</button>
-        <button id="reset-install-confirm-btn" class="vs-btn vs-btn-confirm-danger vs-btn-sm" style="position: relative; overflow: hidden;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          Erase Everything
-        </button>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(overlay);
-
-  // Animate in
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      overlay.classList.add('is-visible');
-    });
-  });
-
-  // Focus the input after animation
-  setTimeout(() => {
-    document.getElementById('reset-install-confirm-input')?.focus();
-  }, 350);
-
-  // ── Bind modal events ──
-  const confirmInput = document.getElementById('reset-install-confirm-input');
-  const confirmBtn = document.getElementById('reset-install-confirm-btn');
-  const cancelBtn = document.getElementById('reset-install-cancel-btn');
-  const modal = document.getElementById('reset-install-modal');
-
-  const CONFIRM_TEXT = 'RESET INSTALLATION';
-
-  // Real-time input validation
-  confirmInput?.addEventListener('input', () => {
-    const isMatch = confirmInput.value.trim() === CONFIRM_TEXT;
-    confirmBtn?.classList.toggle('is-enabled', isMatch);
-    confirmInput.classList.toggle('is-matched', isMatch);
-  });
-
-  // Enter key to submit
-  confirmInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      if (confirmInput.value.trim() === CONFIRM_TEXT) {
-        executeResetInstall(overlay);
-      } else {
-        modal?.classList.add('shake');
-        setTimeout(() => modal?.classList.remove('shake'), 400);
-      }
-    }
-  });
-
-  // Confirm button click
-  confirmBtn?.addEventListener('click', () => {
-    if (confirmInput?.value.trim() === CONFIRM_TEXT) {
-      executeResetInstall(overlay);
-    } else {
-      modal?.classList.add('shake');
-      setTimeout(() => modal?.classList.remove('shake'), 400);
-    }
-  });
-
-  // Cancel button
-  cancelBtn?.addEventListener('click', () => closeModal(overlay));
-
-  // Click outside to close
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) closeModal(overlay);
-  });
-
-  // Escape key to close
-  const escHandler = (e) => {
-    if (e.key === 'Escape') {
-      closeModal(overlay);
-      document.removeEventListener('keydown', escHandler);
-    }
-  };
-  document.addEventListener('keydown', escHandler);
-}
-
-/**
- * Execute the factory reset — delete everything and redirect to installer.
- */
-async function executeResetInstall(overlay) {
-  const confirmBtn = document.getElementById('reset-install-confirm-btn');
-  const confirmInput = document.getElementById('reset-install-confirm-input');
-
-  if (!confirmBtn) return;
-
-  // Loading state
-  confirmBtn.classList.add('is-loading');
-  confirmBtn.classList.remove('is-enabled');
-  confirmBtn.innerHTML = `
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-    Erasing…
-  `;
-  if (confirmInput) confirmInput.disabled = true;
-
-  try {
-    const { ok, data, error } = await api.post('/site/reset-install', { confirm: 'RESET INSTALLATION' });
-
-    if (ok) {
-      // Success — show confirmation then redirect to installer
-      confirmBtn.innerHTML = `
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-        Done!
-      `;
-      confirmBtn.style.background = 'var(--vs-success)';
-      confirmBtn.style.opacity = '1';
-
-      // Full page redirect to the installer
-      setTimeout(() => {
-        window.location.href = data?.redirect || '/_studio/install.php';
-      }, 800);
-    } else {
-      // Error — restore button
-      confirmBtn.classList.remove('is-loading');
-      confirmBtn.classList.add('is-enabled');
-      confirmBtn.innerHTML = `
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-        Erase Everything
-      `;
-      if (confirmInput) confirmInput.disabled = false;
-
-      const desc = overlay.querySelector('.vs-modal-desc');
-      if (desc) {
-        const originalHTML = desc.innerHTML;
-        desc.textContent = error?.message || 'Reset failed. Please try again.';
-        desc.style.color = 'var(--vs-error)';
-        setTimeout(() => {
-          desc.innerHTML = originalHTML;
-          desc.style.color = '';
-        }, 4000);
-      }
-    }
-  } catch (err) {
-    confirmBtn.classList.remove('is-loading');
-    confirmBtn.classList.add('is-enabled');
-    confirmBtn.textContent = 'Erase Everything';
-    if (confirmInput) confirmInput.disabled = false;
-  }
+  return showFactoryResetReview({ api, completionUrl: studioUrl('factory-reset.php') });
 }
 
 /**
@@ -1633,6 +1116,28 @@ function confirmUnsavedChanges() {
 /**
  * Show the reset confirmation modal with type-to-confirm UX.
  */
+async function prepareResetReview(overlay) {
+  const account = store.get('user')?.id;
+  const target = overlay.querySelector('#reset-exact-review');
+  const response = await prepareReviewedReset(account, api, sessionStorage, () => store.get('user')?.id);
+  if (!overlay.isConnected || store.get('user')?.id !== account) return;
+  if (!response.ok) { target.textContent = response.error?.message || 'Could not prepare the reset review.'; return; }
+  const review = response.data;
+  if (['cancelled', 'succeeded'].includes(review.status) || (review.status !== 'authorized' && review.expires_at * 1000 <= Date.now())) {
+    sessionStorage.removeItem(`vs_reset_review:${account}`);
+    target.textContent = 'This review has ended. Close and open Reset Website to prepare a fresh review.';
+    return;
+  }
+  overlay.resetReview = review;
+  target.innerHTML = `<ul class="list-disc pl-5">${review.review.effects.map(effect => `<li>${escapeHtml(effect)}</li>`).join('')}</ul>
+    <details class="mt-3"><summary class="cursor-pointer">Exact files (${(review.review.files || []).length})</summary>
+      <ul class="max-h-48 overflow-auto mt-2">${(review.review.files || []).map(file => `<li class="break-all">${escapeHtml(file.effect)} · ${escapeHtml(file.path)}</li>`).join('')}</ul></details>
+    <p class="mt-3">Records to clear: ${(review.review.tables || []).map(table => `${escapeHtml(table.name)} (${Number(table.rows)})`).join(', ')}.</p>
+    <p class="mt-3">Preserved: ${review.review.preserved.map(escapeHtml).join(', ')}.</p>`;
+  const input = overlay.querySelector('#reset-confirm-input'), button = overlay.querySelector('#reset-confirm-btn');
+  button.disabled = input.value.trim() !== 'RESET';
+}
+
 function showResetModal() {
   // Remove any existing modal
   const existing = document.getElementById('reset-modal-overlay');
@@ -1643,26 +1148,19 @@ function showResetModal() {
   overlay.id = 'reset-modal-overlay';
   overlay.className = 'vs-modal-overlay';
   overlay.innerHTML = `
-    <div class="vs-modal" id="reset-modal">
+    <div class="vs-modal" id="reset-modal" role="dialog" aria-modal="true" aria-labelledby="reset-modal-title">
       <div class="vs-modal-header">
         <div class="vs-modal-icon vs-modal-icon-danger">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         </div>
-        <h2 class="vs-modal-title">Reset Website</h2>
-        <p class="vs-modal-desc">This will permanently remove your generated website and all associated data. This action cannot be undone.</p>
+        <h2 class="vs-modal-title" id="reset-modal-title">Reset Website</h2>
+        <p class="vs-modal-desc">Review the exact files and records below before approving this reset.</p>
       </div>
 
       <div class="vs-modal-body">
-        <ul class="vs-modal-checklist">
-          <li class="will-delete"><span class="check-icon">✕</span> All generated pages and partials</li>
-          <li class="will-delete"><span class="check-icon">✕</span> CSS styles, Tailwind output, and JavaScript</li>
-          <li class="will-delete"><span class="check-icon">✕</span> Conversation history and AI logs</li>
-          <li class="will-delete"><span class="check-icon">✕</span> All revisions (undo history)</li>
-          <li class="will-keep"><span class="check-icon">✓</span> Settings, API keys, and account</li>
-          <li class="will-keep"><span class="check-icon">✓</span> Uploaded images and files</li>
-        </ul>
+        <div id="reset-exact-review" class="text-sm text-vs-text-secondary mb-4" aria-live="polite">Preparing the exact reset review…</div>
 
-        <label class="vs-modal-confirm-label">
+        <label class="vs-modal-confirm-label" for="reset-confirm-input">
           Type <code>RESET</code> to confirm
         </label>
         <input
@@ -1677,15 +1175,16 @@ function showResetModal() {
 
       <div class="vs-modal-footer">
         <button id="reset-cancel-btn" class="vs-btn vs-btn-secondary vs-btn-sm">Cancel</button>
-        <button id="reset-confirm-btn" class="vs-btn vs-btn-confirm-danger vs-btn-sm" style="position: relative; overflow: hidden;">
+        <button id="reset-confirm-btn" disabled class="vs-btn vs-btn-confirm-danger vs-btn-sm" style="position: relative; overflow: hidden;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-          Reset Everything
+          Approve and reset website
         </button>
       </div>
     </div>
   `;
 
   document.body.appendChild(overlay);
+  prepareResetReview(overlay);
 
   // Animate in
   requestAnimationFrame(() => {
@@ -1707,7 +1206,8 @@ function showResetModal() {
 
   // Real-time input validation
   confirmInput?.addEventListener('input', () => {
-    const isMatch = confirmInput.value.trim() === 'RESET';
+    const isMatch = confirmInput.value.trim() === 'RESET' && !!overlay.resetReview;
+    confirmBtn.disabled = !isMatch;
     confirmBtn?.classList.toggle('is-enabled', isMatch);
     confirmInput.classList.toggle('is-matched', isMatch);
   });
@@ -1715,7 +1215,7 @@ function showResetModal() {
   // Enter key to submit
   confirmInput?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
-      if (confirmInput.value.trim() === 'RESET') {
+      if (confirmInput.value.trim() === 'RESET' && overlay.resetReview) {
         executeReset(overlay);
       } else {
         // Shake the modal to indicate wrong input
@@ -1727,7 +1227,7 @@ function showResetModal() {
 
   // Confirm button click
   confirmBtn?.addEventListener('click', () => {
-    if (confirmInput?.value.trim() === 'RESET') {
+    if (confirmInput?.value.trim() === 'RESET' && overlay.resetReview) {
       executeReset(overlay);
     } else {
       modal?.classList.add('shake');
@@ -1757,7 +1257,8 @@ async function executeReset(overlay) {
   const confirmBtn = document.getElementById('reset-confirm-btn');
   const confirmInput = document.getElementById('reset-confirm-input');
 
-  if (!confirmBtn) return;
+  if (!confirmBtn || !overlay.resetReview || overlay.resetRunning) return;
+  overlay.resetRunning = true;
 
   // Loading state
   confirmBtn.classList.add('is-loading');
@@ -1769,9 +1270,11 @@ async function executeReset(overlay) {
   if (confirmInput) confirmInput.disabled = true;
 
   try {
-    const { ok, data, error } = await api.post('/site/reset', { confirm: 'RESET' });
+    const { ok, data, error } = await executeReviewedReset(overlay.resetReview, api.post, api.get);
+    overlay.resetRunning = false;
 
     if (ok) {
+      try { sessionStorage.removeItem(`vs_reset_review:${store.get('user')?.id}`); } catch {}
       // Clear in-memory state so the chat shows "no site" empty state
       store.set('pages', []);
       store.set('hasFormSchemas', false);
@@ -1809,6 +1312,12 @@ async function executeReset(overlay) {
         }
       }, 800);
     } else {
+      if (['failed_restored', 'expired', 'cancelled'].includes(data?.status)
+          || ['content_conflict', 'review_expired', 'approval_expired'].includes(error?.code)) {
+        try { sessionStorage.removeItem(`vs_reset_review:${store.get('user')?.id}`); } catch {}
+        overlay.resetReview = null;
+        confirmBtn.disabled = true;
+      }
       // Error — restore button
       confirmBtn.classList.remove('is-loading');
       confirmBtn.classList.add('is-enabled');
@@ -1831,6 +1340,7 @@ async function executeReset(overlay) {
       }
     }
   } catch (err) {
+    overlay.resetRunning = false;
     confirmBtn.classList.remove('is-loading');
     confirmBtn.classList.add('is-enabled');
     confirmBtn.textContent = 'Reset Everything';
@@ -1891,7 +1401,7 @@ function bindSettingsEvents(currentSettings, providers) {
       modelDiscoveryRequest++;
       selectedProvider = e.target.value;
       // Save the provider change immediately, then reload settings
-      await api.put('/settings', { ai_provider: selectedProvider });
+      await saveConfiguration( { ai_provider: selectedProvider });
       loadSettings();
     });
   }
@@ -1960,7 +1470,7 @@ function bindSettingsEvents(currentSettings, providers) {
         site_tagline: document.getElementById('set-site-tagline')?.value?.trim() || '',
       };
 
-      const { ok, error } = await api.put('/settings', updates);
+      const { ok, error } = await saveConfiguration( updates);
 
       identityBtn.textContent = 'Save Identity';
       identityBtn.disabled = false;
@@ -2002,8 +1512,8 @@ function bindSettingsEvents(currentSettings, providers) {
         ai_provider: selectedProvider,
         [`ai_${selectedProvider}_model`]: document.getElementById('set-ai-model')?.value || '',
         ai_max_tokens: parseInt(document.getElementById('set-max-tokens')?.value || '32000', 10),
-        evaluator_enabled: document.getElementById('set-evaluator-enabled')?.checked ? 1 : 0,
-        design_review_enabled: document.getElementById('set-design-review-enabled')?.checked ? 1 : 0,
+        evaluator_enabled: document.getElementById('set-evaluator-enabled')?.checked === true,
+        design_review_enabled: document.getElementById('set-design-review-enabled')?.checked === true,
       };
 
       // Base URL for OpenAI Compatible
@@ -2019,10 +1529,14 @@ function bindSettingsEvents(currentSettings, providers) {
         updates[`ai_${selectedProvider}_api_key`] = apiKey;
       }
 
-      const { ok, error } = await api.put('/settings', updates);
+      const { ok, error } = await saveConfiguration( updates);
 
       saveBtn.textContent = 'Save Settings';
       saveBtn.disabled = false;
+      if (ok) {
+        const refreshed = await api.get('/auth/session');
+        if (refreshed.ok) store.set('aiConfigured', refreshed.data?.ai_configured === true);
+      }
 
       if (saveStatus) {
         saveStatus.classList.remove('hidden');
@@ -2135,15 +1649,15 @@ function bindEmailSettingsEvents(mailConfig, presets) {
       testBtn.disabled = true;
 
       const formData = collectMailFormData();
-      formData.test_recipient = recipient;
-
-      const { ok, data, error } = await api.post('/settings/mail/test', formData);
+      const saved = await saveConfiguration(mailSettingValues(formData), '/settings/mail', 'post');
+      const input = pendingOperationInput('/settings/mail/test') || { recipient, configuration_version: configurationVersions.mail };
+      const { ok, data, error } = saved.ok ? await apiOperation('/settings/mail/test', input) : saved;
 
       testBtn.textContent = 'Send Test';
       testBtn.disabled = false;
 
       if (ok) {
-        showMailTestStatus('✓ ' + (data?.message || 'Test email sent successfully!'), 'success');
+        showMailTestStatus(data?.message || 'Mail test finished.', data?.delivery_status === 'accepted' ? 'success' : 'warning');
       } else {
         showMailTestStatus('✗ ' + (error?.message || 'Test failed.'), 'error');
       }
@@ -2162,7 +1676,7 @@ function bindEmailSettingsEvents(mailConfig, presets) {
 
       const formData = collectMailFormData();
 
-      const { ok, error } = await api.post('/settings/mail', formData);
+      const { ok, error } = await saveConfiguration(mailSettingValues(formData), '/settings/mail', 'post');
 
       saveMailBtn.textContent = 'Save Email Settings';
       saveMailBtn.disabled = false;
@@ -2261,7 +1775,7 @@ function bindApiAccessEvents(s) {
         agent_api_allowed_origins: document.getElementById('set-api-origins')?.value?.trim() || '*',
       };
 
-      const res = await api.put('/settings', payload);
+      const res = await saveConfiguration( payload);
       saveBtn.disabled = false;
       saveBtn.textContent = 'Save API Settings';
 
@@ -2305,17 +1819,20 @@ const AgentAuth_ROLE_DEFAULTS = {
 // prompt:execute because the PromptEngine has full workspace write access.
 const AgentAuth_OPT_IN_ELIGIBLE = {
   'prompt:execute': ['owner', 'editor', 'agent'],
+  'mail:send': ['owner'],
 };
 
-async function loadApiKeys() {
+async function loadApiKeys(page = {}) {
   const container = document.getElementById('api-keys-list');
   if (!container) return;
 
   try {
-    const res = await api.get('/settings/api-keys');
+    const query = new URLSearchParams(page).toString();
+    const res = await api.get(`/settings/api-keys${query ? `?${query}` : ''}`);
+    if (!res.ok) { showToast(res.error?.message || 'API keys could not be loaded.', 'error'); return; }
     const keys = res.data?.keys || [];
 
-    if (keys.length === 0) {
+    if (keys.length === 0 && !(res.data.pending_secrets || []).length && !Number(page.offset)) {
       container.innerHTML = `
         <div style="text-align: center; padding: 24px 16px; color: var(--vs-text-ghost);">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto 8px; opacity: 0.35;">
@@ -2364,6 +1881,28 @@ async function loadApiKeys() {
             </div>`;
         }).join('')}
       </div>`;
+    const pending = res.data.pending_secrets || [];
+    if (pending.length) container.insertAdjacentHTML('beforeend', `<div class="mt-4">
+      <p class="text-xs text-vs-text-tertiary">Claim each new key once within 15 minutes. If a claim response is lost, revoke the key and create a replacement.</p>
+      ${pending.map(item => `<div class="flex items-center justify-between gap-3 mt-3">
+        <span class="text-sm text-vs-text-secondary">${escapeHtml(item.label)}</span>
+        <button type="button" class="vs-btn vs-btn-secondary vs-btn-sm" data-rest-claim="${escapeHtml(item.plan_id)}">Claim credential</button>
+      </div>`).join('')}</div>`);
+    container.querySelectorAll('[data-rest-claim]').forEach(button => button.addEventListener('click', async () => {
+      button.disabled = true;
+      const claimed = await api.post(`/settings/mcp/approvals/${button.dataset.restClaim}/reveal`, {});
+      if (!claimed.ok) { showToast(claimed.error?.message || 'This key could not be claimed. Reload the list to check it.', 'error'); return; }
+      showKeyRevealDialog(claimed.data.key, pending.find(item => item.plan_id === button.dataset.restClaim)?.label || 'API key');
+      loadApiKeys();
+    }));
+    if (Number(page.offset) || res.data.next_offset !== null) {
+      container.insertAdjacentHTML('beforeend', `<div class="flex gap-3 items-center mt-4">
+        <span class="text-xs text-vs-text-tertiary">${res.data.total} API keys</span>
+        ${Number(page.offset) ? `<button type="button" class="vs-btn vs-btn-secondary vs-btn-sm" data-key-page="${Math.max(0, Number(page.offset) - 50)}">Previous</button>` : ''}
+        ${res.data.next_offset !== null ? `<button type="button" class="vs-btn vs-btn-secondary vs-btn-sm" data-key-page="${res.data.next_offset}">Next</button>` : ''}</div>`);
+      container.querySelectorAll('[data-key-page]').forEach(button => button.addEventListener('click', () =>
+        loadApiKeys({ offset: button.dataset.keyPage, inventory_version: res.data.inventory_version })));
+    }
 
     // Bind revoke buttons
     container.querySelectorAll('.btn-revoke-key').forEach(btn => {
@@ -2383,7 +1922,14 @@ async function loadApiKeys() {
         }
         const row = btn.closest('.vs-api-key-row');
         if (row) row.style.opacity = '0.4';
-        await api.delete(`/settings/api-keys/${keyId}`);
+        const endpoint = `/settings/api-keys/${keyId}`;
+        const result = await apiOperation(endpoint, pendingOperationInput(endpoint, 'delete') || {
+          version: keys.find(key => String(key.id) === keyId)?.version,
+        }, 'delete');
+        if (!result.ok) {
+          if (row) row.style.opacity = '';
+          showToast(result.error?.message || 'The key could not be revoked.', 'error'); return;
+        }
         showToast('API key revoked', 'success');
         loadApiKeys();
       });
@@ -2418,6 +1964,7 @@ function showGenerateKeyModal() {
               <option value="agent" selected>Agent — full access (pages, assets, publish, tools)</option>
               <option value="editor">Editor — pages, assets, & tools (no publish or settings)</option>
               <option value="viewer">Viewer — read-only access</option>
+              <option value="owner">Owner — all API settings and optional email access</option>
             </select>
           </div>
           <div style="border-top: 1px solid var(--vs-border-subtle); padding-top: 14px; margin-top: 2px;">
@@ -2429,6 +1976,11 @@ function showGenerateKeyModal() {
                 <span style="font-size: 13px; font-weight: 500; color: var(--vs-text-primary);">AI Prompt Execution</span>
                 <span style="font-size: 11px; color: var(--vs-text-ghost); line-height: 1.4;">Allow this key to run AI prompts that can create pages, edit content, and modify your site. Requires exec() on the server.</span>
               </div>
+            </label>
+            <label id="gen-key-mail-toggle" class="vs-checkbox-label" style="display: flex; align-items: flex-start; gap: 10px; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--vs-border-subtle); border-radius: var(--radius-md);">
+              <input type="checkbox" id="gen-key-mail-send" class="vs-checkbox" />
+              <span class="vs-checkbox-box" style="margin-top: 1px;"></span>
+              <span><span style="display: block; font-size: 13px; font-weight: 500;">Send form and Action notifications</span><span style="display: block; font-size: 11px; color: var(--vs-text-ghost);">Owner access required. Real submissions may send the notifications configured for that form or Action.</span></span>
             </label>
           </div>
         </div>
@@ -2479,6 +2031,13 @@ function showGenerateKeyModal() {
 
   // Disable prompt:execute for roles that aren't eligible (e.g. viewer)
   const updatePromptEligibility = (role) => {
+    const mail = backdrop.querySelector('#gen-key-mail-send');
+    const mailLabel = backdrop.querySelector('#gen-key-mail-toggle');
+    if (mail) {
+      mail.disabled = !AgentAuth_OPT_IN_ELIGIBLE['mail:send'].includes(role);
+      if (mail.disabled) mail.checked = false;
+      mailLabel.style.opacity = mail.disabled ? '0.45' : '1';
+    }
     const eligible = (AgentAuth_OPT_IN_ELIGIBLE['prompt:execute'] || []).includes(role);
     if (!eligible) {
       promptCheckbox.checked = false;
@@ -2516,6 +2075,7 @@ function showGenerateKeyModal() {
     const label = document.getElementById('gen-key-label')?.value?.trim();
     const role = document.getElementById('gen-key-role')?.value || 'agent';
     const wantsPrompt = document.getElementById('gen-key-prompt-execute')?.checked;
+    const wantsMail = document.getElementById('gen-key-mail-send')?.checked;
 
     if (!label) {
       showToast('Please enter a label for the key', 'error');
@@ -2527,16 +2087,17 @@ function showGenerateKeyModal() {
     btn.textContent = 'Generating…';
 
     // Build the request body — only include scopes if the user opted in
-    const body = { label, role };
+    const body = { label, role, scopes: [...(AgentAuth_ROLE_DEFAULTS[role] || AgentAuth_ROLE_DEFAULTS.agent)] };
     if (wantsPrompt) {
       body.scopes = [...(AgentAuth_ROLE_DEFAULTS[role] || AgentAuth_ROLE_DEFAULTS.agent), 'prompt:execute'];
     }
+    if (wantsMail && role === 'owner') body.scopes.push('mail:send');
 
-    const res = await api.post('/settings/api-keys', body);
+    const res = await apiOperation('/settings/api-keys', pendingOperationInput('/settings/api-keys') || body);
 
-    if (res.ok && res.data?.key) {
+    if (res.ok && res.data?.plan_id) {
       close();
-      showKeyRevealDialog(res.data.key, label);
+      showToast('API key created. Claim it from the list to save it once.', 'success');
       loadApiKeys();
     } else {
       btn.disabled = false;
@@ -2568,7 +2129,7 @@ function showKeyRevealDialog(plaintextKey, label) {
       </div>
       <div class="vs-modal-body">
         <div style="position: relative; margin-bottom: 16px;">
-          <input type="text" readonly value="${escapeHtml(plaintextKey)}" id="revealed-key-input" class="vs-input" style="width: 100%; font-family: var(--font-mono); font-size: 12.5px; padding-right: 44px; letter-spacing: 0.01em; color: var(--vs-text-primary);" />
+          <input type="password" readonly id="revealed-key-input" class="vs-input" autocomplete="off" style="width: 100%; font-family: var(--font-mono); font-size: 12.5px; padding-right: 44px; letter-spacing: 0.01em; color: var(--vs-text-primary);" />
           <button id="copy-api-key" type="button" title="Copy" style="position: absolute; right: 1px; top: 1px; bottom: 1px; width: 40px; display: flex; align-items: center; justify-content: center; background: var(--vs-bg-surface); border: none; border-left: 1px solid var(--vs-border-subtle); border-radius: 0 var(--radius-md) var(--radius-md) 0; cursor: pointer; color: var(--vs-text-ghost); transition: color 0.15s ease;">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           </button>
@@ -2589,7 +2150,12 @@ function showKeyRevealDialog(plaintextKey, label) {
   document.body.appendChild(backdrop);
   requestAnimationFrame(() => backdrop.classList.add('is-visible'));
 
-  const close = () => closeModal(backdrop);
+  const close = () => {
+    plaintextKey = '';
+    const input = backdrop.querySelector('#revealed-key-input');
+    if (input) { input.value = ''; input.removeAttribute('value'); }
+    closeModal(backdrop);
+  };
 
   // Escape key to dismiss
   const onKeydown = (e) => {
@@ -2609,6 +2175,8 @@ function showKeyRevealDialog(plaintextKey, label) {
 
   // Select key text on focus for easy manual copy
   const keyInput = backdrop.querySelector('#revealed-key-input');
+  keyInput.value = plaintextKey;
+  keyInput.focus();
   keyInput?.addEventListener('focus', () => keyInput.select());
 
   backdrop.querySelector('#copy-api-key').addEventListener('click', async () => {

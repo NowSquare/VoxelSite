@@ -1,3 +1,4 @@
+import { readAuthoringFile, saveAuthoringFile } from './src/authoring-workspace.js';
 /**
  * VoxelSite Visual Editor
  *
@@ -1262,7 +1263,7 @@ async function openInlineSourceEditor(data) {
 
   if (nodeKey) {
     try {
-      const readResult = await api.get(`/files/content?path=${encodeURIComponent(sourceFile)}`);
+      const readResult = await readAuthoringFile(sourceFile);
       if (readResult.ok && readResult.data?.content) {
         sourceText = extractSourceElementByNodeKey(readResult.data.content, nodeKey, tagName);
       }
@@ -2785,6 +2786,7 @@ function closeAIEditPanel() {
 }
 
 function openAIEditPanel(elementData) {
+  if (window.builtInAiGuard?.()) return;
   dismissToolbar();
   closeStylePanel();
   closeAIEditPanel();
@@ -3010,6 +3012,7 @@ const SECTION_TYPES = [
 ];
 
 function openSectionPicker(requestData) {
+  if (window.builtInAiGuard?.()) return;
   dismissToolbar();
   closeStylePanel();
   closeAIEditPanel();
@@ -3168,6 +3171,7 @@ function openSectionPicker(requestData) {
 
 /** AI-generate a section and insert it at the specified position. */
 async function generateSection(requestData, sectionType, sectionDescription, userInstruction = '') {
+  if (window.builtInAiGuard?.()) return;
   // Show the same app-wide generating overlay as the Monaco editor
   showVEAIOverlay(`Adding ${sectionType}…`);
 
@@ -3574,7 +3578,7 @@ async function saveLinkToSource(filePath, linkData, ops) {
 
   try {
     // --- Strategy 1: Try the main file ---
-    const readResult = await api.get(`/files/content?path=${encodeURIComponent(fp)}`);
+    const readResult = await readAuthoringFile(fp);
     if (!readResult.ok) {
       if (ops) ops.forEach(op => logOp(op, 'failed', { reason: 'cannot read file' }));
       showSaveIndicator('Cannot read source file', true);
@@ -3592,7 +3596,7 @@ async function saveLinkToSource(filePath, linkData, ops) {
     }
 
     if (modified !== null) {
-      const saveResult = await api.put('/files/content', { path: fp, content: modified });
+      const saveResult = await saveAuthoringFile({ path: fp, content: modified }, readResult.data);
       if (saveResult.ok) {
         if (ops) ops.forEach(op => logOp(op, 'persisted', { strategy: 'contentMatch' }));
         showSaveIndicator(`Saved → ${fp.split('/').pop()}`);
@@ -3611,7 +3615,7 @@ async function saveLinkToSource(filePath, linkData, ops) {
         .filter(f => f.path.endsWith('.php') && f.path !== fp);
 
       for (const file of candidates) {
-        const partialRead = await api.get(`/files/content?path=${encodeURIComponent(file.path)}`);
+        const partialRead = await readAuthoringFile(file.path);
         if (!partialRead.ok || !partialRead.data?.content) continue;
 
         const partialModified = tryLinkReplaceInContent(partialRead.data.content, linkData);
@@ -3624,7 +3628,7 @@ async function saveLinkToSource(filePath, linkData, ops) {
         }
 
         if (partialModified !== null) {
-          const saveResult = await api.put('/files/content', { path: file.path, content: partialModified });
+          const saveResult = await saveAuthoringFile({ path: file.path, content: partialModified }, partialRead.data);
           if (saveResult.ok) {
             if (ops) ops.forEach(op => logOp(op, 'persisted', { strategy: 'partialSearch' }));
             showSaveIndicator(`Saved → ${file.path.split('/').pop()}`);
@@ -3674,7 +3678,7 @@ async function saveImageChange(data) {
   logOp(op, 'created');
 
   try {
-    const readResult = await api.get(`/files/content?path=${encodeURIComponent(fp)}`);
+    const readResult = await readAuthoringFile(fp);
     if (!readResult.ok) {
       console.warn('[VX] Cannot read file for image save:', fp);
       logOp(op, 'failed', { reason: 'cannot read file' });
@@ -3730,7 +3734,7 @@ async function saveImageChange(data) {
 
     // Save main file if modified
     if (modified) {
-      const saveResult = await api.put('/files/content', { path: fp, content });
+      const saveResult = await saveAuthoringFile({ path: fp, content }, readResult.data);
       if (saveResult.ok) {
         logOp(op, 'persisted', { strategy: 'contentMatch' });
         showSaveIndicator(`Saved → ${fp.split('/').pop()}`);
@@ -3749,7 +3753,7 @@ async function saveImageChange(data) {
         .filter(f => f.path.endsWith('.php') && f.path !== fp);
 
       for (const file of otherFiles) {
-        const partialRead = await api.get(`/files/content?path=${encodeURIComponent(file.path)}`);
+        const partialRead = await readAuthoringFile(file.path);
         if (!partialRead.ok || !partialRead.data.content) continue;
         let partialContent = partialRead.data.content;
 
@@ -3762,7 +3766,7 @@ async function saveImageChange(data) {
         }
         if (partialLiteralCount === 1) {
           partialContent = partialContent.replace(literal, `src="${newSrc}"`);
-          const saveResult = await api.put('/files/content', { path: file.path, content: partialContent });
+          const saveResult = await saveAuthoringFile({ path: file.path, content: partialContent }, partialRead.data);
           if (saveResult.ok) { logOp(op, 'persisted', { strategy: 'partialSearch' }); showSaveIndicator(`Saved → ${file.path.split('/').pop()}`); return true; }
           // Write failed — terminal
           logOp(op, 'failed', { reason: 'API write failed in partial', file: file.path });
@@ -3779,7 +3783,7 @@ async function saveImageChange(data) {
             return false;
           }
           partialContent = partialContent.replace(oldSrc, newSrc);
-          const saveResult = await api.put('/files/content', { path: file.path, content: partialContent });
+          const saveResult = await saveAuthoringFile({ path: file.path, content: partialContent }, partialRead.data);
           if (saveResult.ok) { logOp(op, 'persisted', { strategy: 'partialSearch' }); showSaveIndicator(`Saved → ${file.path.split('/').pop()}`); return true; }
           // Write failed — terminal
           logOp(op, 'failed', { reason: 'API write failed in partial', file: file.path });
@@ -3795,7 +3799,7 @@ async function saveImageChange(data) {
             return false;
           }
           if (altResult !== false) {
-            const saveResult = await api.put('/files/content', { path: file.path, content: altResult });
+            const saveResult = await saveAuthoringFile({ path: file.path, content: altResult }, partialRead.data);
             if (saveResult.ok) { logOp(op, 'persisted', { strategy: 'altAnchor' }); showSaveIndicator(`Saved → ${file.path.split('/').pop()}`); return true; }
             // Write failed — terminal
             logOp(op, 'failed', { reason: 'API write failed in partial', file: file.path });
@@ -3905,7 +3909,7 @@ async function saveSourceEdit(data) {
 
   try {
     // ── Try main file first ──
-    const readResult = await api.get(`/files/content?path=${encodeURIComponent(fp)}`);
+    const readResult = await readAuthoringFile(fp);
     if (!readResult.ok) {
       showSaveIndicator('Cannot read source file', true);
       return false;
@@ -3927,7 +3931,7 @@ async function saveSourceEdit(data) {
       .filter(f => f.path.endsWith('.php') && f.path !== fp);
 
     for (const file of candidates) {
-      const partialRead = await api.get(`/files/content?path=${encodeURIComponent(file.path)}`);
+      const partialRead = await readAuthoringFile(file.path);
       if (!partialRead.ok || !partialRead.data.content) continue;
 
       const partialStatus = await attemptExactReplace(file.path, partialRead.data.content, needle, newHTML);
@@ -3977,7 +3981,7 @@ async function attemptExactReplace(filePath, content, needle, replacement) {
 
   // Exactly one match — safe to replace
   const newContent = content.replace(needle, replacement);
-  const saveResult = await api.put('/files/content', { path: filePath, content: newContent });
+  const saveResult = await saveAuthoringFile({ path: filePath, content: newContent }, content);
 
   if (saveResult.ok) {
     const fileName = filePath.split('/').pop();
@@ -4096,7 +4100,7 @@ async function saveAllPending() {
 
     for (const [filePath, fileChanges] of Object.entries(byFile)) {
       try {
-        const readResult = await api.get(`/files/content?path=${encodeURIComponent(filePath)}`);
+        const readResult = await readAuthoringFile(filePath);
         if (!readResult.ok) { console.error('[VX] Cannot read:', filePath); continue; }
 
         let content = readResult.data.content;
@@ -4134,7 +4138,7 @@ async function saveAllPending() {
             let saContent = content;
             if (saFile !== filePath) {
               try {
-                const saRead = await api.get(`/files/content?path=${encodeURIComponent(saFile)}`);
+                const saRead = await readAuthoringFile(saFile);
                 if (saRead.ok && saRead.data?.content) saContent = saRead.data.content;
               } catch {}
             }
@@ -4156,7 +4160,7 @@ async function saveAllPending() {
                       if (saFile !== filePath) {
                         // Cross-file: immediate write — log at point of completion
                         const newFileContent = saContent.replace(sourceElement, newElement);
-                        const saResult = await api.put('/files/content', { path: saFile, content: newFileContent });
+                        const saResult = await saveAuthoringFile({ path: saFile, content: newFileContent }, saContent);
                         if (saResult.ok) {
                           showSaveIndicator(`Saved → ${saFile.split('/').pop()}`);
                           if (saResult.data?.tailwindCompiled) anyTailwind = true;
@@ -4250,7 +4254,7 @@ async function saveAllPending() {
         }
 
         if (modified) {
-          const saveResult = await api.put('/files/content', { path: filePath, content });
+          const saveResult = await saveAuthoringFile({ path: filePath, content }, readResult.data);
           if (saveResult.ok) {
             showSaveIndicator(`Saved → ${filePath.split('/').pop()}`);
             if (saveResult.data?.tailwindCompiled) anyTailwind = true;
@@ -4321,7 +4325,7 @@ async function findAndReplaceInPartials(mainFile, change, cacheParam = null) {
     for (const file of phpFiles) {
       let fileContent = cache.contentByPath.get(file.path);
       if (fileContent == null) {
-        const readResult = await api.get(`/files/content?path=${encodeURIComponent(file.path)}`);
+        const readResult = await readAuthoringFile(file.path);
         if (!readResult.ok || !readResult.data.content) continue;
         fileContent = readResult.data.content;
         cache.contentByPath.set(file.path, fileContent);
@@ -4332,7 +4336,7 @@ async function findAndReplaceInPartials(mainFile, change, cacheParam = null) {
           ? fileContent.replace(needle, '')
           : fileContent.replace(needle, change.newHTML);
 
-        const saveResult = await api.put('/files/content', { path: file.path, content: newContent });
+        const saveResult = await saveAuthoringFile({ path: file.path, content: newContent }, fileContent);
         if (saveResult.ok) {
           cache.contentByPath.set(file.path, newContent);
           showSaveIndicator(`Saved → ${file.path.split('/').pop()}`);
@@ -4368,7 +4372,7 @@ async function persistSectionMove(data) {
   const file = filePath || getCurrentPreviewPath();
 
   try {
-    const readResult = await api.get(`/files/content?path=${encodeURIComponent(file)}`);
+    const readResult = await readAuthoringFile(file);
     if (!readResult.ok) {
       showSaveIndicator('Could not read file', true);
       return;
@@ -4388,7 +4392,7 @@ async function persistSectionMove(data) {
       return;
     }
 
-    const saveResult = await api.put('/files/content', { path: file, content: swapped });
+    const saveResult = await saveAuthoringFile({ path: file, content: swapped }, readResult.data);
     if (saveResult.ok) {
       showSaveIndicator('Section moved');
       if (saveResult.data?.tailwindCompiled) {
@@ -4692,7 +4696,7 @@ async function handleUndo() {
   }
 
   try {
-    const readResult = await api.get(`/files/content?path=${encodeURIComponent(fp)}`);
+    const readResult = await readAuthoringFile(fp);
     if (!readResult.ok) {
       showSaveIndicator('Undo failed — cannot read file', true);
       return;
@@ -4705,7 +4709,7 @@ async function handleUndo() {
       return;
     }
 
-    const saveResult = await api.put('/files/content', { path: fp, content: result.content });
+    const saveResult = await saveAuthoringFile({ path: fp, content: result.content }, readResult.data);
     if (!saveResult.ok) {
       showSaveIndicator('Undo failed — save error', true);
       return;
@@ -4754,7 +4758,7 @@ async function handleRedo() {
   }
 
   try {
-    const readResult = await api.get(`/files/content?path=${encodeURIComponent(fp)}`);
+    const readResult = await readAuthoringFile(fp);
     if (!readResult.ok) {
       showSaveIndicator('Redo failed — cannot read file', true);
       return;
@@ -4767,7 +4771,7 @@ async function handleRedo() {
       return;
     }
 
-    const saveResult = await api.put('/files/content', { path: fp, content: result.content });
+    const saveResult = await saveAuthoringFile({ path: fp, content: result.content }, readResult.data);
     if (!saveResult.ok) {
       showSaveIndicator('Redo failed — save error', true);
       return;

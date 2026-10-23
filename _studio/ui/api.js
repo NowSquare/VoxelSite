@@ -29,11 +29,13 @@
  */
 
 import { store } from './state.js';
+import { studioUrl, studioStorageKey } from './installation-url.js';
+export { studioUrl };
 
 // Call router.php directly with a _path parameter.
 // This bypasses URL rewriting, so the Studio works on any server
 // (Apache, Nginx, Herd) without needing rewrite rules.
-const BASE = '/_studio/api/router.php';
+const BASE = studioUrl('api/router.php');
 
 // ═══════════════════════════════════════════
 //  Global Status — Flight Counter
@@ -166,7 +168,7 @@ async function request(method, endpoint, body = null, options = {}) {
       } else {
         notifyRequestEnd(method, false, silent);
       }
-      return { ok: false, error: json.error };
+      return { ok: false, error: json.error, ...(json.data?.operation ? { data: json.data } : {}) };
     }
 
     notifyRequestEnd(method, true, silent);
@@ -197,6 +199,100 @@ export const api = {
   put:    (endpoint, body, opts) => request('PUT',    endpoint, body, opts),
   delete: (endpoint, body, opts) => request('DELETE', endpoint, body, opts),
 };
+
+const websiteOperationRequests = new Map();
+const pendingWebsiteOperations = new Map();
+const operationAccount = () => store.get('user')?.id ?? 'anonymous';
+const operationKey = (endpoint, method) => studioStorageKey(`vs_pending_website:${operationAccount()}:${method}:${endpoint}`);
+
+export function pendingOperationInput(endpoint, method = 'post') {
+  const key = operationKey(endpoint, method);
+  let pending = pendingWebsiteOperations.get(key);
+  if (!pending) { try { pending = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch {} }
+  return pending?.body ? { ...pending.body } : null;
+}
+
+/** Find this account's retained requests even after their source row was removed. */
+export function pendingOperationEntries(endpointPrefix, method = 'post') {
+  const prefix = operationKey(endpointPrefix, method);
+  const keys = new Set(pendingWebsiteOperations.keys());
+  try { for (let i = 0; i < sessionStorage.length; i++) keys.add(sessionStorage.key(i)); } catch {}
+  const entries = [];
+  for (const key of keys) {
+    if (typeof key !== 'string' || !key.startsWith(prefix)) continue;
+    const endpoint = endpointPrefix + key.slice(prefix.length);
+    const body = pendingOperationInput(endpoint, method);
+    if (body) entries.push({ endpoint, body });
+  }
+  return entries;
+}
+
+/** Retain an action identity through lost responses; only explicit checkpoints advance it. */
+export function apiOperation(endpoint, body = {}, method = 'post', options = {}) {
+  const key = operationKey(endpoint, method);
+  const fingerprint = JSON.stringify(Object.fromEntries(Object.entries(body).sort(([a], [b]) => a.localeCompare(b))));
+  const active = websiteOperationRequests.get(key);
+  if (active) {
+    return active.fingerprint === fingerprint ? active.promise : Promise.resolve({
+      ok: false, error: { code: 'operation_pending', message: 'This action is still running. Wait for its result before changing the request.' },
+    });
+  }
+  const promise = runWebsiteOperation(key, endpoint, body, fingerprint, method, options)
+    .finally(() => websiteOperationRequests.delete(key));
+  websiteOperationRequests.set(key, { fingerprint, promise });
+  return promise;
+}
+
+async function runWebsiteOperation(key, endpoint, body, fingerprint, method, options) {
+  const account = operationAccount();
+  if (!['post', 'put', 'delete'].includes(method)) throw new Error('Unsupported website mutation method.');
+  let pending = pendingWebsiteOperations.get(key);
+  if (!pending) {
+    try { pending = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch {}
+  }
+  if (pending?.fingerprint && pending.fingerprint !== fingerprint) return {
+    ok: false, error: { code: 'operation_pending', message: 'An earlier request for this action still needs attention. Retry that request before starting another.' },
+  };
+  if (!pending) {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    pending = { id: `website_${Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('')}`, fingerprint, body };
+  }
+  // Retain identity and reviewed public versions across reloads without placing
+  // write-only passwords or API keys in browser storage. The server binds the
+  // complete secret request with a keyed digest on every replay.
+  pending = { ...pending, fingerprint, body };
+  pendingWebsiteOperations.set(key, pending);
+  const persisted = options.retainInput === false ? { id: pending.id, body: options.publicInput || {}, sensitive: true } : pending;
+  try { sessionStorage.setItem(key, JSON.stringify(persisted)); } catch {}
+  const input = { ...body, operation_id: pending.id };
+  let response = await api[method](endpoint, input);
+  let steps = 0;
+  while (response.ok && response.data?.operation?.status === 'applying' && steps++ < 100) {
+    if (operationAccount() !== account) return { ok: false, error: {
+      code: 'permission_denied', message: 'The signed-in account changed. Reopen this view before continuing.',
+    } };
+    response = await api[method](endpoint, { ...input, checkpoint: response.data.operation.checkpoint });
+  }
+  if (operationAccount() !== account) return { ok: false, error: {
+    code: 'permission_denied', message: 'The signed-in account changed. Reopen this view to inspect the result.',
+  } };
+  const operation = response.data?.operation;
+  if (['succeeded', 'failed_restored', 'expired', 'cancelled'].includes(operation?.status)
+      || (!operation && ['invalid_schema', 'content_conflict', 'review_expired'].includes(response.error?.code))) {
+    pendingWebsiteOperations.delete(key);
+    try { sessionStorage.removeItem(key); } catch {}
+  }
+  if (operation?.status === 'succeeded') return response;
+  if (operation) return {
+    ...response, ok: false, error: operation.result?.error || {
+      code: operation.status,
+      message: operation.status === 'recovery_required'
+        ? 'This change needs recovery. Its operation and backup are retained; do not start another website change.'
+        : 'This change is still pending. Retry the same action to continue its retained operation.',
+    },
+  };
+  return response;
+}
 
 // ═══════════════════════════════════════════
 //  SSE Streaming

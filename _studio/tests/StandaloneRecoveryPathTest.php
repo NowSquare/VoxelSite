@@ -72,7 +72,8 @@ new VoxelSiteFactoryResetRuntime('C:\\site\\_studio', 'C:\\site');
 check(Filesystem::$probes < 500, 'Drive and UNC ancestor traversal terminates');
 
 // Evaluate only the bridge prelude, before any HTTP/database work.
-$bridge = file_get_contents($studio . '/update-runtime.php');
+$bridge = str_replace("\r\n", "\n", file_get_contents($studio . '/update-runtime.php'));
+if (!str_contains($bridge, "try{\n")) throw new RuntimeException('Update bridge prelude boundary is missing.');
 $bridge = substr($bridge, 5, strpos($bridge, "try{\n") - 5);
 $bridge = str_replace('declare(strict_types=1);', 'declare(strict_types=1); namespace ' . __NAMESPACE__ . '; use RuntimeException; use PDO; use stdClass;', $bridge);
 eval($bridge);

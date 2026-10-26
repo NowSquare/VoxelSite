@@ -27,13 +27,15 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up PHP
-        uses: shivammathur/setup-php@bf6b4fbd49ca58e4608c9c89fba0b8d90bd2a39f # 2.35.5
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: '8.2'
           extensions: pdo_sqlite, sqlite3, curl, mbstring, zip, fileinfo, gd, openssl
           coverage: none
           tools: none
           ini-values: memory_limit=256M, max_execution_time=120
+        env:
+          verbose: 'true'
       - name: Path boundaries
         run: |
           php _studio/tests/FilesystemPathTest.php
@@ -48,3 +50,4 @@ jobs:
           php _studio/tests/StandaloneRecoveryNativeTest.php
       - name: Native installation and website lifecycle
         run: php _studio/tests/WindowsFilesystemWorkflowTest.php
+

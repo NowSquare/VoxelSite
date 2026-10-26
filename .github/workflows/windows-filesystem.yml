@@ -1,0 +1,50 @@
+name: Native filesystem workflows
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  filesystem:
+    name: PHP 8.2 / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04, macos-14]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up PHP
+        uses: shivammathur/setup-php@bf6b4fbd49ca58e4608c9c89fba0b8d90bd2a39f # 2.35.5
+        with:
+          php-version: '8.2'
+          extensions: pdo_sqlite, sqlite3, curl, mbstring, zip, fileinfo, gd, openssl
+          coverage: none
+          tools: none
+          ini-values: memory_limit=256M, max_execution_time=120
+      - name: Path boundaries
+        run: |
+          php _studio/tests/FilesystemPathTest.php
+          php _studio/tests/FilesystemPathTest.php --windows-fixture
+          php _studio/tests/SiteWorkspacePathTest.php
+          php _studio/tests/SiteWorkspacePathTest.php --windows-fixture
+          php _studio/tests/AgentWindowsPathPolicyTest.php
+          php _studio/tests/AgentWindowsPathPolicyTest.php --windows-fixture
+      - name: Standalone recovery boundaries
+        run: |
+          php _studio/tests/StandaloneRecoveryPathTest.php
+          php _studio/tests/StandaloneRecoveryNativeTest.php
+      - name: Native installation and website lifecycle
+        run: php _studio/tests/WindowsFilesystemWorkflowTest.php

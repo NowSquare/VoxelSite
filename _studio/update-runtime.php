@@ -8,9 +8,23 @@ $rpcId=null;$rpc=false;$httpStatus=409;$rpcCode=-32600;
 $fail=static function(string $message,int $status=400,int $code=-32600)use(&$httpStatus,&$rpcCode):never{$httpStatus=$status;$rpcCode=$code;throw new RuntimeException($message);};
 $exact=static function(stdClass $value,array $keys)use($fail):void{if(array_diff(array_keys((array)$value),$keys)||array_diff($keys,array_keys((array)$value)))$fail('Unexpected update request fields.');};
 $one=static function(PDO $pdo,string $sql,array $args=[]):?array{$statement=$pdo->prepare($sql);$statement->execute($args);return $statement->fetch()?:null;};
+$nativePath=static fn(string $path):string=>DIRECTORY_SEPARATOR==='\\'?str_replace('\\','/',$path):$path;
+// Keep this bridge independent of every mutable application/runtime file.
+$checkedPath=static function(string $path)use($nativePath):string{
+    $path=$nativePath($path);$ancestor=$path;
+    for($depth=0;$depth<256;$depth++){
+        clearstatcache(true,$ancestor);
+        if(is_link($ancestor))throw new RuntimeException('Update recovery paths cannot follow symlinks.');
+        $parent=$nativePath(dirname($ancestor));
+        if($parent===$ancestor||$ancestor==='/'||$ancestor==='.')break;
+        $ancestor=$parent;
+    }
+    if($depth===256||($real=realpath($path))===false||$nativePath($real)!==$path)throw new RuntimeException('Update recovery storage is unavailable.');
+    return $path;
+};
 try{
-    $root=realpath(dirname(__DIR__));$storage=$root.'/_studio/data/updates';$database=$root.'/_studio/data/studio.db';
-    foreach([$storage,$database] as $target)if(is_link($target)||realpath($target)!==$target)throw new RuntimeException('Update recovery storage is unavailable.');
+    $root=$checkedPath(dirname(__DIR__));$storage=$root.'/_studio/data/updates';$database=$root.'/_studio/data/studio.db';
+    foreach([$storage,$database] as $target)$checkedPath($target);
     $pdo=new PDO('sqlite:'.$database,null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);$pdo->exec('PRAGMA busy_timeout=2000');
     $method=$_SERVER['REQUEST_METHOD']??'GET';
     $navigation=$method==='GET'&&str_contains(strtolower($_SERVER['HTTP_ACCEPT']??''),'text/html');
@@ -66,7 +80,7 @@ try{
     $manifest=json_decode($job['manifest_json'],true,64,JSON_THROW_ON_ERROR);
     if(($manifest['root']??null)!==$root||($manifest['storage']??null)!==$storage||($manifest['database']??null)!==$database)throw new RuntimeException('The retained update belongs to another installation.');
     $runtimeDir=$storage.'/'.$job['package_id'].'/runtime';
-    foreach([$storage.'/'.$job['package_id'],$runtimeDir] as $directory)if(is_link($directory)||realpath($directory)!==$directory)throw new RuntimeException('The update runtime path is invalid.');
+    foreach([$storage.'/'.$job['package_id'],$runtimeDir] as $directory)$checkedPath($directory);
     $hashes=$manifest['runtime_files']??[];
     if(array_keys($hashes)!==['ProviderCallForbidden.php','ProviderCallPolicy.php','core.php','profile.php'])throw new RuntimeException('The update runtime file set is invalid.');
     $canonical=json_encode($hashes,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);

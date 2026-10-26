@@ -258,11 +258,11 @@ final class ActionService
     private function writeEntry(array $entry,string $bytes):void {
         if($entry['root']!==$this->workspace->publishedRoot()){WorkspaceFiles::write($entry['root'],$entry['path'],$bytes);return;}
         $path=SiteWorkspace::resolveWithin($entry['root'],$entry['path']);
-        $parent=realpath(dirname($path));
+        $parent=\VoxelSite\FilesystemPath::realpath(dirname($path));
         if($parent===false||$parent!==dirname($path)||!is_writable($parent))throw new OperationException('write_failed','Cannot stage the Action manifest in its destination directory.');
         $temporary=tempnam($parent,'.action-');
         if($temporary===false)throw new OperationException('write_failed','Could not stage the public Action manifest.');
-        try{if(realpath(dirname($temporary))!==$parent||is_link($temporary))throw new OperationException('write_failed','Action staging must remain in the destination directory.');
+        try{if(\VoxelSite\FilesystemPath::realpath(dirname($temporary))!==$parent||is_link($temporary))throw new OperationException('write_failed','Action staging must remain in the destination directory.');
             if(file_put_contents($temporary,$bytes)!==strlen($bytes)||!chmod($temporary,0644)||!rename($temporary,$path))throw new OperationException('write_failed','Could not replace the public Action manifest.');}
         finally{if(is_file($temporary))unlink($temporary);}
     }

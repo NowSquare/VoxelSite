@@ -300,10 +300,10 @@ CSS;
             throw new RuntimeException('Cannot create website directory.');
         }
         $this->resolvePath($relativePath, true);
-        $realBase = realpath($base);
-        $realParent = realpath(dirname($path));
+        $realBase = FilesystemPath::realpath($base);
+        $realParent = FilesystemPath::realpath(dirname($path));
         if ($realBase === false || $realParent === false || is_link($path)
-            || ($realParent !== $realBase && !str_starts_with($realParent, $realBase . '/'))) {
+            || !FilesystemPath::contains($realParent, $realBase)) {
             throw new RuntimeException('Exact write target is outside the website or does not exist.');
         }
         clearstatcache(true, $realParent);
@@ -315,7 +315,7 @@ CSS;
         $temporary = tempnam($realParent, '.site-');
         if ($temporary === false) { throw new RuntimeException('Cannot stage website file.'); }
         try {
-            if (realpath(dirname($temporary)) !== $realParent || is_link($temporary)) {
+            if (FilesystemPath::realpath(dirname($temporary)) !== $realParent || is_link($temporary)) {
                 throw new RuntimeException('Website staging file must remain in its destination directory.');
             }
             if ($originalStat && ((fileowner($temporary) !== $originalStat['uid'] && !@chown($temporary, $originalStat['uid']))
@@ -1139,7 +1139,7 @@ SAFETY;
         }
 
         if ($changed) {
-            $this->writeResolvedFile(substr($filePath, strlen($this->previewPath) + 1), $content);
+            $this->writeResolvedFile(FilesystemPath::relative($filePath, $this->previewPath), $content);
         }
     }
 
@@ -1879,8 +1879,8 @@ $targetDir = $this->resolvePath($relativeDir);
             return ['directories' => [], 'files' => []];
         }
 
-        $realTarget = realpath($targetDir) ?: $targetDir;
-        $realPreview = realpath($this->previewPath) ?: $this->previewPath;
+        $realTarget = FilesystemPath::realpath($targetDir) ?: $targetDir;
+        $realPreview = FilesystemPath::realpath($this->previewPath) ?: $this->previewPath;
         if (!$this->pathWithinBase($realTarget, $realPreview)) {
             return ['directories' => [], 'files' => []];
         }
@@ -2454,7 +2454,7 @@ $targetDir = $this->resolvePath($relativeDir);
     /** Explicit publish/action paths are server-owned roots, never user paths. */
     private function resolveDeploymentPath(string $root, string $relative): string
     {
-        $canonical = realpath($root);
+        $canonical = FilesystemPath::realpath($root);
         if ($canonical === $this->workspace->draftRoot()) return $this->workspace->resolveDraft($relative, true);
         if ($canonical === $this->workspace->publishedRoot()) return $this->workspace->resolvePublished($relative, true);
         throw new RuntimeException('Deployment target is outside the configured workspace.');
@@ -2526,11 +2526,7 @@ $targetDir = $this->resolvePath($relativeDir);
 
     private function pathWithinBase(string $path, string $base): bool
     {
-        $normalizedPath = rtrim(str_replace('\\', '/', $path), '/');
-        $normalizedBase = rtrim(str_replace('\\', '/', $base), '/');
-
-        return $normalizedPath === $normalizedBase
-            || str_starts_with($normalizedPath, $normalizedBase . '/');
+        return FilesystemPath::contains($path, $base);
     }
 
     /**

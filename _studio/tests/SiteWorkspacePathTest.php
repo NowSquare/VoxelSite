@@ -26,14 +26,14 @@ $db = (new ReflectionClass(Database::class))->newInstanceWithoutConstructor();
 $trusted = new ReflectionMethod(SiteWorkspace::class, 'trustedRoot');
 $windows = $simulated || DIRECTORY_SEPARATOR === '\\';
 $root = $simulated ? 'C:\\xampp\\htdocs\\site' : realpath(sys_get_temp_dir());
-$native = static fn(string $path): string => $windows ? str_replace('/', '\\', $path) : $path;
+$native = static fn(string $path): string => $windows ? str_replace('\\', '/', $path) : $path;
 $variants = [$root];
 if ($windows) $variants[] = str_replace('\\', '/', $root);
 foreach ($variants as $variant) {
     try {
         $workspace = new SiteWorkspace($db, $variant . '/_studio/preview', $variant,
             $variant . '/_studio/data/workspace-migration');
-        pathCheck($workspace->publishedRoot() === $root, 'Existing root remains native and canonical');
+        pathCheck($workspace->publishedRoot() === $native($root), 'Existing root uses canonical forward slashes');
         pathCheck($workspace->migrationRoot() === $native($root . '/_studio/data/workspace-migration'),
             'Missing directories retain an absolute canonical parent');
         $workspace->assertRootIntegrity();
@@ -56,6 +56,16 @@ foreach (['../index.php', '/index.php', 'C:/index.php', 'C:\\index.php',
     pathRefuses(fn() => SiteWorkspace::normalizeRelative($path), 'Keep relative-path protection: ' . json_encode($path));
 }
 
+if ($windows) {
+    pathRefuses(fn() => new SiteWorkspace($db, $root . '/_studio/preview', $root . '/_studio/PREVIEW'), 'Reject case alias for shared roots');
+    foreach (['assets/file.', 'assets/file ', 'assets/NUL.txt', 'assets/con', 'assets/COM1', 'assets/file?.png'] as $path) {
+        pathRefuses(fn() => SiteWorkspace::normalizeRelative($path), 'Reject Windows filename alias: ' . $path);
+    }
+    foreach (['_STUDIO/engine/file.php', '_DATA/secrets', 'nested/.HTACCESS', '.ENV'] as $path) {
+        pathRefuses(fn() => $workspace->resolvePublished($path, true), 'Reject protected name alias: ' . $path);
+    }
+    pathRefuses(fn() => $workspace->resolvePublished('ASSETS/LIBRARY/image.jpg', true), 'Reject immutable asset alias');
+}
 if ($simulated) {
     foreach (['C:/', 'C:\\', '//server/share', '\\\\server\\share', '\\\\server\\share\\site'] as $path) {
         try {
@@ -63,7 +73,7 @@ if ($simulated) {
         } catch (Throwable $error) { $errors[] = $path . ': ' . $error->getMessage(); }
     }
     try {
-        pathCheck($trusted->invoke(null, 'C://') === 'C:\\', 'Repeated separators retain the drive root');
+        pathCheck($trusted->invoke(null, 'C://') === 'C:/', 'Repeated separators retain the drive root');
     } catch (Throwable $error) { $errors[] = 'Repeated drive-root separators: ' . $error->getMessage(); }
     foreach (['//server', '\\\\server', '//?/C:/site', '//./C:/site'] as $path) {
         pathRefuses(fn() => $trusted->invoke(null, $path), 'Reject incomplete or device namespace: ' . $path,

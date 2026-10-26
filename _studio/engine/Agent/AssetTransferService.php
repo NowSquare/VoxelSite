@@ -20,14 +20,19 @@ class AssetTransferService
     public function __construct(private Database $db, private ActorPolicy $policy,
         private SiteWorkspace $workspace, string $root, int $installationLimitBytes = 10485760)
     {
-        if ($installationLimitBytes < 1 || !str_starts_with($root,'/') || is_link($root)) {
+        $root = \VoxelSite\FilesystemPath::normalize($root);
+        if ($installationLimitBytes < 1 || !\VoxelSite\FilesystemPath::isAbsolute($root) || is_link($root)) {
             throw new \InvalidArgumentException('A private absolute upload root and positive size limit are required.');
         }
         $parent = $root; $suffix = [];
-        while (!file_exists($parent)) { array_unshift($suffix,basename($parent)); $parent = dirname($parent); }
-        if (is_link($parent) || !is_dir($parent) || realpath($parent) === false) throw new \InvalidArgumentException('Upload storage is unavailable.');
+        while (!file_exists($parent)) {
+            if (is_link($parent) || dirname($parent) === $parent) throw new \InvalidArgumentException('Upload storage is unavailable.');
+            array_unshift($suffix,basename($parent)); $parent = dirname($parent);
+        }
+        $resolved = \VoxelSite\FilesystemPath::realpath($parent);
+        if (is_link($parent) || !is_dir($parent) || $resolved === false) throw new \InvalidArgumentException('Upload storage is unavailable.');
         foreach ($suffix as $part) if ($part === '.' || $part === '..' || !preg_match('/^[A-Za-z0-9_.-]+$/D',$part)) throw new \InvalidArgumentException('Invalid private upload root.');
-        $this->root = realpath($parent) . ($suffix ? '/' . implode('/',$suffix):'');
+        $this->root = $suffix ? rtrim($resolved,'/') . '/' . implode('/',$suffix) : $resolved;
         $this->limit = min($installationLimitBytes,self::iniBytes((string) ini_get('upload_max_filesize')),
             self::iniBytes((string) ini_get('post_max_size')),self::MAX_STAGED_BYTES);
         $this->chunkLimit = min(self::CHUNK_BYTES,max(0,(int) floor((self::iniBytes((string) ini_get('post_max_size'))-8192)*3/4)));

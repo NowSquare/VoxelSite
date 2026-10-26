@@ -20,8 +20,8 @@ final class FactoryResetInventory
     {
         $rows=$this->db->query('PRAGMA database_list');
         foreach($rows as $row)if($row['name']==='main') {
-            $file=$row['file'];$expected=$this->roots()['studio'].'/data/';
-            if(!str_starts_with($file,$expected)||str_contains(substr($file,strlen($expected)),'/'))
+            $file=\VoxelSite\FilesystemPath::normalize($row['file']);$expected=$this->roots()['studio'].'/data';
+            if(!\VoxelSite\FilesystemPath::contains($file,$expected,false)||str_contains(\VoxelSite\FilesystemPath::relative($file,$expected),'/'))
                 throw new OperationException('host_capability_unavailable','The Studio database must be inside its private data directory.');
             return $file;
         }

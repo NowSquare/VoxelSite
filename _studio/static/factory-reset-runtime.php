@@ -13,19 +13,35 @@ final class VoxelSiteFactoryResetRuntime
     public function __construct(private string $studio,private string $published,private int $budget=20,private ?Closure $hook=null)
     {
         if($budget<1||$budget>100)throw new InvalidArgumentException('Invalid cleanup budget.');
-        foreach([$studio,$published] as $path)if(realpath($path)!==$path||is_link($path))self::fail('invalid_path','Canonical installation roots are required.');
+        $this->studio=$studio=self::nativePath($studio);$this->published=$published=self::nativePath($published);
+        foreach([$studio,$published] as $path){self::assertAncestors($path);if(($real=realpath($path))===false||self::nativePath($real)!==$path)self::fail('invalid_path','Canonical installation roots are required.');}
         $this->root=self::path($studio,'data/factory-resets');
     }
     public static function fail(string $code,string $message):never {throw new VoxelSiteFactoryResetFailure($code,$message);}
+    private static function nativePath(string $path):string
+    {return DIRECTORY_SEPARATOR==='\\'?str_replace('\\','/',$path):$path;}
+    private static function assertAncestors(string $path):void
+    {
+        for($depth=0;$depth<256;$depth++){
+            clearstatcache(true,$path);
+            if(is_link($path))self::fail('invalid_path','Cleanup never follows symlinks.');
+            $parent=self::nativePath(dirname($path));
+            if($parent===$path||$path==='/'||$path==='.')return;
+            $path=$parent;
+        }
+        self::fail('invalid_path','Cleanup path depth exceeds its boundary.');
+    }
     public static function path(string $root,string $relative):string
     {
-        if($relative===''||str_contains($relative,"\0")||str_contains($relative,'\\')||str_starts_with($relative,'/')
+        $root=self::nativePath($root);
+        $absolute=DIRECTORY_SEPARATOR==='\\'?preg_match('~\A(?:[A-Za-z]:/|//(?![?.](?:/|$))[^/]+/[^/]+(?:/|$))~',$root)===1:str_starts_with($root,'/');
+        if(!$absolute||preg_match('/[\x00-\x1f\x7f]/',$root)||$relative===''||preg_match('/[\x00-\x1f\x7f]/',$relative)||str_contains($relative,':')||str_contains($relative,'\\')||str_starts_with($relative,'/')
             ||preg_match('~(?:^|/)\.{1,2}(?:/|$)~',$relative)||str_contains($relative,'//'))self::fail('invalid_path','Cleanup path is invalid.');
         $current=rtrim($root,'/');
         // Validate root ancestors as well as descendants; realpath alone would follow a symlink.
-        $parts=explode('/',ltrim($current,'/'));$checked='';
-        foreach($parts as $part){$checked.='/'.$part;if(is_link($checked))self::fail('invalid_path','Cleanup never follows symlinks.');}
+        self::assertAncestors($root);
         foreach(explode('/',$relative) as $part){
+            if($part===''||(DIRECTORY_SEPARATOR==='\\'&&(preg_match('/[. ]$/D',$part)||preg_match('/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iD',$part))))self::fail('invalid_path','Cleanup path component is invalid.');
             $current.='/'.$part;clearstatcache(true,$current);
             if(is_link($current))self::fail('invalid_path','Cleanup never follows symlinks.');
         }

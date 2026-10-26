@@ -13,16 +13,12 @@ final class GovernedFilePath
     {
         // Trusted roots are canonical at construction. Never follow a root
         // or ancestor replaced with a symlink before this governed read.
-        for ($root = rtrim($previewRoot, '/'); $root !== '' && $root !== '.' && $root !== '/'; $root = dirname($root)) {
-            clearstatcache(true, $root);
-            if (is_link($root)) {
-                throw new RuntimeException('invalid_target');
-            }
-        }
-        $base = realpath($previewRoot);
+        FilesystemPath::assertNoSymlinkAncestors($previewRoot, 'invalid_target');
+        $base = FilesystemPath::realpath($previewRoot);
         if ($base === false || !is_dir($base) || !str_ends_with($relativePath, '.php')) {
             throw new RuntimeException('invalid_target');
         }
+        SiteWorkspace::normalizeRelative($relativePath);
         $path = $base;
         foreach (explode('/', $relativePath) as $segment) {
             if (!preg_match('/\A[a-zA-Z0-9_-][a-zA-Z0-9_.-]*\z/D', $segment)) {
@@ -34,8 +30,8 @@ final class GovernedFilePath
                 throw new RuntimeException('invalid_target');
             }
         }
-        $real = realpath($path);
-        if ($real === false || !str_starts_with($real, rtrim($base, '/') . '/') || !is_file($real)) {
+        $real = FilesystemPath::realpath($path);
+        if ($real === false || !FilesystemPath::contains($real, $base, false) || !is_file($real)) {
             throw new RuntimeException('invalid_target');
         }
         return $real;

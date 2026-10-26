@@ -46,8 +46,8 @@ $schema = [
         ],
         'x-capabilities' => [
             'prompt_execution' => [
-                'available'   => function_exists('exec'),
-                'description' => 'AI prompt execution via background CLI worker. Requires exec() and a usable PHP CLI executable on the server.',
+                'available'   => PHP_OS_FAMILY !== 'Windows' && function_exists('exec'),
+                'description' => 'AI prompt execution via background CLI worker. Requires a Unix-like host, exec() and a usable PHP CLI executable on the server.',
                 'scope'       => 'prompt:execute',
                 'note'        => 'This scope is opt-in — not included in any role defaults.',
             ],
@@ -635,7 +635,7 @@ function schema_buildPaths(): array
                     ],
                 ]),
                 '422' => schema_errorRef('Validation error'),
-                '503' => schema_errorRef('exec() unavailable (exec_unavailable) or no usable PHP CLI executable (php_cli_unavailable)'),
+                '503' => schema_errorRef('Windows background workers unavailable (worker_platform_unavailable), exec() unavailable (exec_unavailable), or no usable PHP CLI executable (php_cli_unavailable); no conversation or job is allocated'),
             ],
         ],
     ];

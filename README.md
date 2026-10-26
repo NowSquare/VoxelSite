@@ -106,7 +106,7 @@ The websites VoxelSite generates are standard HTML, CSS, PHP, and vanilla JavaSc
 
 Most shared hosts include all of these. The installer's system check confirms every requirement before you continue.
 
-Background prompts through the Agent API also require `exec()` and a working PHP CLI. The API checks both before accepting a job.
+Background prompts through the Agent API require a Unix-like host, `exec()`, and a working PHP CLI. The API checks these before accepting a job. On Windows, use Studio for generation and editing.
 
 ---
 

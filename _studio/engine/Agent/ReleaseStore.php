@@ -12,7 +12,8 @@ final class ReleaseStore
 
     public function __construct(private Database $db, private ActorPolicy $policy, private string $root)
     {
-        if (!str_starts_with($root,'/') || is_link($root)) throw new \InvalidArgumentException('A trusted private release root is required.');
+        $this->root = \VoxelSite\FilesystemPath::normalize($root);
+        if (!\VoxelSite\FilesystemPath::isAbsolute($this->root) || is_link($this->root)) throw new \InvalidArgumentException('A trusted private release root is required.');
     }
 
     public function reserve(OperationActor $actor, array $request): array
@@ -97,7 +98,7 @@ final class ReleaseStore
             foreach (new \DirectoryIterator($directory) as $item) {
                 if ($item->isDot()) continue;
                 if (++$entries>5000) throw new OperationException('recovery_required','Incomplete release staging exceeds its cleanup budget.');
-                $safe=SiteWorkspace::resolveWithin($path,substr($item->getPathname(),strlen($path)+1));
+                $safe=SiteWorkspace::resolveWithin($path,\VoxelSite\FilesystemPath::relative($item->getPathname(),$path));
                 if (is_dir($safe)) $remove($safe);
                 elseif (!is_file($safe) || !unlink($safe)) throw new OperationException('recovery_required','Incomplete release staging could not be removed.');
             }

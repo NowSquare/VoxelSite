@@ -18,9 +18,12 @@ final class SnapshotService
         private ReleaseStore $releases, private OperationStore $operations, private string $root,
         private string $legacyRoot, private string $actionsRoot, private int $filesPerStep = 20)
     {
-        if (!str_starts_with($root, '/') || is_link($root) || $filesPerStep < 1 || $filesPerStep > 100) {
+        if (!FilesystemPath::isAbsolute($root) || is_link($root) || $filesPerStep < 1 || $filesPerStep > 100) {
             throw new \InvalidArgumentException('Trusted private snapshot storage and a bounded copy budget are required.');
         }
+        $this->root = FilesystemPath::normalize($root);
+        $this->legacyRoot = FilesystemPath::normalize($legacyRoot);
+        $this->actionsRoot = FilesystemPath::normalize($actionsRoot);
         // Capture preserves the current bytes without changing the website.
         // It remains available during legacy recovery, but the common lock
         // and another retained operation's reservation still prevent races.

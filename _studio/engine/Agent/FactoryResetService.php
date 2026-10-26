@@ -66,7 +66,7 @@ final class FactoryResetService
             }
             $manifest=$this->inventory->capture($stage);
             $manifest+=['id'=>$id,'operation_id'=>$input->operation_id,'requested_by'=>$actor->attribution(),
-                'expires_at'=>$time+900,'database_relative'=>substr($this->inventory->databasePath(),strlen($manifest['roots']['studio'])+1),
+                'expires_at'=>$time+900,'database_relative'=>\VoxelSite\FilesystemPath::relative($this->inventory->databasePath(),$manifest['roots']['studio']),
                 'scan_trees'=>['studio'=>FactoryResetInventory::PRIVATE_TREES,'published'=>['assets/images','assets/files','assets/fonts']]];
             $json=\VoxelSiteFactoryResetRuntime::canonical($manifest);
             if(strlen($json)>2097152)throw new OperationException('size_limit','Installation review exceeds its metadata budget.');

@@ -11,7 +11,8 @@ final class UpdatePackageStore
     private string $root;
     public function __construct(private Database $db,private ActorPolicy $policy,private SiteWorkspace $workspace,string $root)
     {
-        $parent=realpath(dirname($root));if(!$parent||is_link(dirname($root)))throw new \InvalidArgumentException('Update storage needs an existing private parent.');
+        $root=\VoxelSite\FilesystemPath::normalize($root);
+        $parent=\VoxelSite\FilesystemPath::realpath(dirname($root));if(!$parent||is_link(dirname($root)))throw new \InvalidArgumentException('Update storage needs an existing private parent.');
         $this->root=SiteWorkspace::resolveWithin($parent,basename($root));
     }
     public static function inputSchema(string $method):array
@@ -55,7 +56,8 @@ final class UpdatePackageStore
     {
         $this->authorize($actor);
         if(!in_array($sourceKind,['local','git','upload'],true))throw new \InvalidArgumentException('Unsupported trusted update source.');
-        $parent=realpath(dirname($path));if(!$parent)throw new OperationException('not_found','The update archive is unavailable.');
+        $path=\VoxelSite\FilesystemPath::normalize($path);
+        $parent=\VoxelSite\FilesystemPath::realpath(dirname($path));if(!$parent)throw new OperationException('not_found','The update archive is unavailable.');
         $path=SiteWorkspace::resolveWithin($parent,basename($path));$stat=lstat($path);
         if(!$stat||!is_file($path)||$stat['size']<1||$stat['size']>UpdatePackagePolicy::MAX_ARCHIVE_BYTES)throw new OperationException('size_limit','The update archive exceeds its bounded file budget.');
         $stream=fopen($path,'rb');if(!$stream)throw new OperationException('not_found','The update archive cannot be read.');
@@ -188,7 +190,7 @@ final class UpdatePackageStore
                     $seen=0;
                     foreach($iterator as $file){
                         if(++$seen>16000)throw new OperationException('size_limit','A retained update tree exceeds its cleanup scan budget.');
-                        $relative=substr($file->getPathname(),strlen($directory)+1);$path=SiteWorkspace::resolveWithin($directory,$relative);
+                        $relative=\VoxelSite\FilesystemPath::relative($file->getPathname(),$directory);$path=SiteWorkspace::resolveWithin($directory,$relative);
                         if($file->isLink())throw new OperationException('invalid_path','Update cleanup cannot follow a symlink.');
                         if($relative==='runtime'||str_starts_with($relative,'runtime/')){if($file->isFile())$runtimeBytes+=$file->getSize();continue;}
                         if($result['removed_files']>=100||microtime(true)-$start>4){$remaining=true;break;}

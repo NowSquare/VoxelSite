@@ -58,7 +58,7 @@ public static function createSnapshot(
     $workspace = new SiteWorkspace($db);
     $lock = SiteMutationLock::acquire($workspace->mutationLockPath(), $db);
     $workspace->assertReady();
-    if (realpath($previewDir) !== $workspace->draftRoot() || realpath($assetsDir) !== $workspace->draftAssetsRoot()) {
+    if (FilesystemPath::realpath($previewDir) !== $workspace->draftRoot() || FilesystemPath::realpath($assetsDir) !== $workspace->draftAssetsRoot()) {
         throw new \RuntimeException('Snapshot paths must be the canonical private draft.');
     }
 
@@ -142,7 +142,8 @@ public static function createSnapshot(
 public static function addDirectoryToZip(\ZipArchive $zip, string $dir, string $zipPrefix): int
 {
     $count = 0;
-    $realDir = realpath($dir) ?: $dir;
+    $realDir = FilesystemPath::realpath($dir);
+    if ($realDir === false) throw new \RuntimeException('Snapshot source directory is unavailable.');
     $iterator = new \RecursiveIteratorIterator(
         new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
         \RecursiveIteratorIterator::LEAVES_ONLY
@@ -151,13 +152,9 @@ public static function addDirectoryToZip(\ZipArchive $zip, string $dir, string $
     foreach ($iterator as $file) {
         if ($file->isLink()) continue;
         if ($file->isFile()) {
-            $realPath = $file->getRealPath();
-            $relativePath = $zipPrefix . '/' . ltrim(
-                str_replace($realDir, '', $realPath),
-                DIRECTORY_SEPARATOR
-            );
-            // Normalize path separators for ZIP
-            $relativePath = str_replace('\\', '/', $relativePath);
+            $realPath = FilesystemPath::realpath($file->getPathname());
+            if ($realPath === false) throw new \RuntimeException('Snapshot source file is unavailable.');
+            $relativePath = $zipPrefix . '/' . FilesystemPath::relative($realPath, $realDir);
             if (!$zip->addFile($realPath, $relativePath)) throw new \RuntimeException('Could not capture snapshot file: ' . $relativePath);
             $count++;
         }
@@ -174,7 +171,7 @@ public static function restoreSnapshot(string $zipPath, string $previewDir, stri
     $workspace = new SiteWorkspace(Database::getInstance());
     $lock = SiteMutationLock::acquire($workspace->mutationLockPath(), Database::getInstance());
     $workspace->assertReady();
-    if (realpath($previewDir) !== $workspace->draftRoot() || realpath($assetsDir) !== $workspace->draftAssetsRoot()) {
+    if (FilesystemPath::realpath($previewDir) !== $workspace->draftRoot() || FilesystemPath::realpath($assetsDir) !== $workspace->draftAssetsRoot()) {
         return ['ok' => false, 'error' => 'Snapshot paths must be the canonical private draft.', 'has_mutated' => false];
     }
     $zip = new \ZipArchive();
@@ -222,8 +219,8 @@ public static function restoreSnapshot(string $zipPath, string $previewDir, stri
             $base = $match[1] === 'preview' ? $previewDir : $assetsDir;
             $target = scDraftSnapshotTarget($workspace, $name);
             if ($target === null) continue;
-            $realBase = realpath($base); $realTarget = realpath($target);
-            if ($realTarget !== false && $realBase !== false && !str_starts_with($realTarget . '/', rtrim($realBase, '/') . '/')) throw new \RuntimeException('Snapshot directory escapes website boundary: ' . $name);
+            $realBase = FilesystemPath::realpath($base); $realTarget = FilesystemPath::realpath($target);
+            if ($realTarget !== false && $realBase !== false && !FilesystemPath::contains($realTarget, $realBase)) throw new \RuntimeException('Snapshot directory escapes website boundary: ' . $name);
         }
         foreach ($manifest['files'] ?? [] as $name => $meta) {
             if (scDraftSnapshotTarget($workspace, $name) === null) continue;
@@ -288,15 +285,15 @@ public static function restoreSnapshot(string $zipPath, string $previewDir, stri
 public static function canWriteSnapshotEntry(string $baseDir, string $relativePath): bool
 {
     if (!self::isSafeSnapshotRelativePath($relativePath)) return false;
-    $realBase = realpath($baseDir);
+    $realBase = FilesystemPath::realpath($baseDir);
     if ($realBase === false) return false;
     try { $target = SiteWorkspace::resolveWithin($baseDir, $relativePath); } catch (\RuntimeException) { return false; }
     if (is_link($target) || is_dir($target) || (file_exists($target) && !is_writable($target))) return false;
     $parent = dirname($target);
     while (!file_exists($parent) && dirname($parent) !== $parent) $parent = dirname($parent);
-    $realParent = realpath($parent);
+    $realParent = FilesystemPath::realpath($parent);
     return $realParent !== false && is_dir($parent) && is_writable($parent)
-        && ($realParent === $realBase || str_starts_with($realParent . '/', rtrim($realBase, '/') . '/'));
+        && FilesystemPath::contains($realParent, $realBase);
 }
 
 /**

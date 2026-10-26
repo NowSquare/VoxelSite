@@ -131,7 +131,9 @@ async function request(method, endpoint, body = null, options = {}) {
 
     // Parse the response body first — we need the actual error message
     // from the server, not a generic fallback.
-    const json = await res.json();
+    // Hosts and proxies can return an empty or HTML error response. The
+    // request reached the server; a JSON parse failure is not a connection error.
+    const json = await res.json().catch(() => null);
 
     // Handle 401 — could be session expiry OR a login failure.
     // Parse the body first so we can return the server's actual message
@@ -152,7 +154,7 @@ async function request(method, endpoint, body = null, options = {}) {
       return { ok: false, error: { code: 'unauthorized', message: 'Session expired. Please sign in again.' } };
     }
 
-    if (!json.ok && json.error) {
+    if (json && !json.ok && json.error) {
       // Demo mode — show toast for blocked actions automatically.
       // Don't flash the error indicator — the toast is sufficient.
       if (json.error.code === 'demo_mode') {
@@ -169,6 +171,20 @@ async function request(method, endpoint, body = null, options = {}) {
         notifyRequestEnd(method, false, silent);
       }
       return { ok: false, error: json.error, ...(json.data?.operation ? { data: json.data } : {}) };
+    }
+
+    const responseFailed = res.ok === false || res.status >= 400;
+    if (responseFailed || !json || typeof json !== 'object' || Array.isArray(json) || json.ok === false) {
+      notifyRequestEnd(method, false, silent);
+      return {
+        ok: false,
+        error: {
+          code: responseFailed ? 'server_error' : 'invalid_response',
+          message: responseFailed
+            ? `The server could not complete the request (${res.status}). Try again.`
+            : 'The server returned an unexpected response. Refresh and try again.',
+        },
+      };
     }
 
     notifyRequestEnd(method, true, silent);

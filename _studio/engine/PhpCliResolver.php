@@ -9,6 +9,12 @@ namespace VoxelSite;
  */
 final class PhpCliResolver
 {
+    /** The current detached worker launcher uses POSIX shell process control. */
+    public static function supportsDetachedWorkers(): bool
+    {
+        return PHP_OS_FAMILY !== 'Windows';
+    }
+
     public static function resolve(): ?string
     {
         if (!function_exists('exec')) {

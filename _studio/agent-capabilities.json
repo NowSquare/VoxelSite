@@ -41,7 +41,7 @@
   "source_reviews": [
     {
       "path": "_studio/api/agent/v1/_schema-handler.php",
-      "sha256": "08215a14170908e390c48672e4a4ce66184ce2abadb39ea1dceddcb59b2883e2",
+      "sha256": "257900bdf5987ce8de16f0071d309cd0ba7a0187c4c5c0074066d7c7bb4a919b",
       "note": "D1 current-source branch audit: exact shared outcome mapping or explicit public/provider/owner-session boundary. See 2026-10-23-d1-parity-closure evidence; source review is not named-client qualification."
     },
     {
@@ -61,7 +61,7 @@
     },
     {
       "path": "_studio/api/agent/v1/prompt.php",
-      "sha256": "0e638e7364bf6325ce1978a48ac0e08b8e6170ade658f436f62610939b369ef1",
+      "sha256": "b6fc1b7add54cfd9605680847dd2a0324bd4107037658ae00d80a495955cb7ef",
       "note": "Reconciled current branch mapping against focused shared-service evidence; implemented rows still need qualification."
     },
     {
@@ -166,7 +166,7 @@
     },
     {
       "path": "_studio/api/endpoints/publish.php",
-      "sha256": "b1de2e9a053559dabc06a8d206efafd2f26b400236d52352dafe07bf29c9d2b3",
+      "sha256": "97e28e9a5e3db896e6036ae42b889055123f3ea04a2d5f5b6583cf0940ee0a71",
       "note": "Reconciled current branch mapping against focused shared-service evidence; implemented rows still need qualification."
     },
     {
@@ -221,7 +221,7 @@
     },
     {
       "path": "_studio/api/router.php",
-      "sha256": "3afa13e8330f6c1eaac0af508586973cdcf649d5958ca458cf6f1edbc534c040",
+      "sha256": "10a68d55a58a5122d0a079edb15f6ef57a8752afa7186934b88ffe3fa7df8293",
       "note": "D1 current-source branch audit: exact shared outcome mapping or explicit public/provider/owner-session boundary. See 2026-10-23-d1-parity-closure evidence; source review is not named-client qualification."
     },
     {

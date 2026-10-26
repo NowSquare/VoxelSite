@@ -12,9 +12,9 @@ final class UpdateService
         private UpdatePackageStore $packages,private AdminApprovalStore $approvals,private OperationStore $operations,
         ?string $projectRoot=null)
     {
-        $this->root=$projectRoot??$workspace->publishedRoot();if(realpath($this->root)!==$this->root||is_link($this->root))throw new \InvalidArgumentException('The update root must be canonical.');
+        $this->root=\VoxelSite\FilesystemPath::normalize($projectRoot??$workspace->publishedRoot());if(\VoxelSite\FilesystemPath::realpath($this->root)!==$this->root||is_link($this->root))throw new \InvalidArgumentException('The update root must be canonical.');
         $main=array_values(array_filter($db->query('PRAGMA database_list'),fn($row)=>$row['name']==='main'))[0]??null;
-        if(!$main||!is_file($main['file']))throw new \InvalidArgumentException('The update database must be a retained file.');$this->database=$main['file'];
+        if(!$main||!is_file($main['file']))throw new \InvalidArgumentException('The update database must be a retained file.');$this->database=\VoxelSite\FilesystemPath::normalize($main['file']);
     }
     public static function inputSchema(string $method):array
     {
@@ -206,7 +206,7 @@ final class UpdateService
             foreach($iterator as $file){
                 if($file->isLink())throw new OperationException('unsupported_package','Update execution dependencies cannot use symlinks.');
                 if($file->isDir())continue;
-                $path=substr($file->getPathname(),strlen($this->root)+1);
+                $path=\VoxelSite\FilesystemPath::relative($file->getPathname(),$this->root);
                 if(!isset($closure[$path])){
                     $bytes=BusinessContracts::read($this->root,$path,UpdatePackagePolicy::MAX_FILE_BYTES);
                     if($bytes===null)throw new OperationException('content_conflict','An update dependency changed during review.');

@@ -14,7 +14,8 @@ final class DesignManager
         $this->db = $db ?? Database::getInstance();
         $this->workspace = $workspace ?? new SiteWorkspace($this->db);
         $this->designsDir = $designsDir ?? dirname($this->workspace->draftRoot()) . '/data/designs';
-        if (!str_starts_with($this->designsDir, '/') || is_link($this->designsDir)) throw new \InvalidArgumentException('Trusted private design storage is required.');
+        $this->designsDir = FilesystemPath::normalize($this->designsDir);
+        if (!FilesystemPath::isAbsolute($this->designsDir) || is_link($this->designsDir)) throw new \InvalidArgumentException('Trusted private design storage is required.');
     }
     public function root(): string { return $this->designsDir; }
     public function directory(string $id): string

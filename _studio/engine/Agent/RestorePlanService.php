@@ -14,7 +14,8 @@ final class RestorePlanService
         private SnapshotService $snapshots, private ReleaseStore $releases, private OperationStore $operations,
         private string $root, private int $filesPerStep = 20, private ?\Closure $testHook = null)
     {
-        if (!str_starts_with($root, '/') || is_link($root) || $root !== $snapshots->restoreRoot() || $filesPerStep < 1 || $filesPerStep > 100) {
+        $this->root = \VoxelSite\FilesystemPath::normalize($root);
+        if (!\VoxelSite\FilesystemPath::isAbsolute($this->root) || is_link($this->root) || $this->root !== \VoxelSite\FilesystemPath::normalize($snapshots->restoreRoot()) || $filesPerStep < 1 || $filesPerStep > 100) {
             throw new \InvalidArgumentException('Trusted restoration storage and a bounded step budget are required.');
         }
         // Only the explicit legacy draft restore below may resolve an old

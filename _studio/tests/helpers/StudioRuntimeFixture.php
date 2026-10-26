@@ -19,9 +19,9 @@ final class StudioRuntimeFixture
 
     public static function copy(string $projectRoot, ?string $sourceRoot = null): void
     {
-        $target = realpath($projectRoot);
-        $temporary = realpath(sys_get_temp_dir());
-        $source = realpath($sourceRoot ?? dirname(__DIR__, 3));
+        $target = self::canonical($projectRoot);
+        $temporary = self::canonical(sys_get_temp_dir());
+        $source = self::canonical($sourceRoot ?? dirname(__DIR__, 3));
         if ($target === false || $temporary === false || $source === false
             || !str_starts_with($target, $temporary . '/')
             || $target === $source || str_starts_with($source, $target . '/')
@@ -37,6 +37,12 @@ final class StudioRuntimeFixture
                 && is_file($target . '/' . $path) && !is_link($target . '/' . $path)) continue;
             self::copyPath($source . '/' . $path, $target . '/' . $path);
         }
+    }
+
+    private static function canonical(string $path): string|false
+    {
+        $real = realpath($path);
+        return $real === false ? false : (DIRECTORY_SEPARATOR === '\\' ? str_replace('\\', '/', $real) : $real);
     }
 
     private static function copyPath(string $source, string $target): void

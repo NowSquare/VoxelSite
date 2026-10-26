@@ -193,7 +193,7 @@ final class PreviewRenderer
         }
 
         $files = [];
-        $basePath = rtrim(str_replace('//', '/', $previewDir), '/');
+        $basePath = FilesystemPath::normalize($previewDir);
 
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator(
@@ -210,11 +210,9 @@ final class PreviewRenderer
                     continue;
                 }
                 // Use pathname (logical) instead of realPath to handle symlinks
-                $filePath = str_replace('\\', '/', $file->getPathname());
-                $normBase = $basePath . '/';
-                if (str_starts_with($filePath, $normBase)) {
-                    $relativePath = substr($filePath, strlen($normBase));
-                    $files[] = $relativePath;
+                $filePath = FilesystemPath::normalize($file->getPathname());
+                if (FilesystemPath::contains($filePath, $basePath, false)) {
+                    $files[] = FilesystemPath::relative($filePath, $basePath);
                 }
             }
         }
@@ -282,10 +280,7 @@ final class PreviewRenderer
                     continue;
                 }
 
-                $relativePath = 'assets/' . $subdir . '/' . ltrim(
-                    str_replace('\\', '/', substr($file->getPathname(), strlen($dir))),
-                    '/'
-                );
+                $relativePath = 'assets/' . $subdir . '/' . FilesystemPath::relative($file->getPathname(), $dir);
 
                 $hash = @hash_file('sha256', $file->getPathname());
                 if ($hash !== false) {
@@ -687,9 +682,12 @@ final class PreviewRenderer
      */
     public static function createInstrumentedPreviewCopy(string $previewDir, string $requestedPath): ?string
     {
+        $previewDir = FilesystemPath::normalize($previewDir);
         $mainFile = \VoxelSite\SiteWorkspace::resolveWithin($previewDir, $requestedPath);
         if (!is_file($mainFile)) return null;
-        $tempDir = realpath(sys_get_temp_dir()) . '/vx-preview-' . bin2hex(random_bytes(12));
+        $temporaryRoot = FilesystemPath::realpath(sys_get_temp_dir());
+        if ($temporaryRoot === false) throw new \RuntimeException('Preview temporary directory is unavailable.');
+        $tempDir = $temporaryRoot . '/vx-preview-' . bin2hex(random_bytes(12));
         if (!mkdir($tempDir, 0700, true)) return null;
         try {
             $copy = function (string $relative = '') use (&$copy, $previewDir, $requestedPath, $tempDir): void {
@@ -705,7 +703,8 @@ final class PreviewRenderer
                     } elseif (is_file($source)) {
                         $content = file_get_contents($source);
                         if ($path === $requestedPath || (str_starts_with($path, '_partials/') && str_ends_with($path, '.php'))) {
-                            $content = self::instrumentPhpIncludes($content, dirname($path) === '.' ? '' : dirname($path) . '/');
+                            $parent = FilesystemPath::normalize(dirname($path));
+                            $content = self::instrumentPhpIncludes($content, $parent === '.' ? '' : $parent . '/');
                         }
                         if (file_put_contents($target, $content) !== strlen($content)) throw new \RuntimeException('Cannot copy preview source.');
                     }
@@ -817,7 +816,10 @@ final class PreviewRenderer
     public static function cleanupTempPreviewDir(?string $tempDir): void
     {
         if (!$tempDir) return;
-        $prefix = realpath(sys_get_temp_dir()) . '/vx-preview-';
+        $temporaryRoot = FilesystemPath::realpath(sys_get_temp_dir());
+        if ($temporaryRoot === false) return;
+        $tempDir = FilesystemPath::normalize($tempDir);
+        $prefix = $temporaryRoot . '/vx-preview-';
         if (!str_starts_with($tempDir, $prefix)) return;
         if (!is_dir($tempDir)) return;
 
@@ -830,15 +832,19 @@ final class PreviewRenderer
      */
     public static function recursiveDeleteDir(string $dir): void
     {
+        // Windows removes directory symlinks with rmdir; never scan their targets.
+        if (is_link($dir)) {
+            if (DIRECTORY_SEPARATOR === '\\' && is_dir($dir)) @rmdir($dir);
+            else @unlink($dir);
+            return;
+        }
         $entries = @scandir($dir);
         if (!$entries) return;
 
         foreach ($entries as $entry) {
             if ($entry === '.' || $entry === '..') continue;
             $path = $dir . '/' . $entry;
-            if (is_link($path)) {
-                @unlink($path);
-            } elseif (is_dir($path)) {
+            if (is_link($path) || is_dir($path)) {
                 self::recursiveDeleteDir($path);
             } else {
                 @unlink($path);

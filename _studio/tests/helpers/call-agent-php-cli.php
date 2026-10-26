@@ -16,6 +16,7 @@ namespace VoxelSite {
 namespace {
     $root = $argv[1] ?? '';
     $scenario = $argv[2] ?? '';
+    define('VoxelSite\PHP_OS_FAMILY', $scenario === 'windows' ? 'Windows' : PHP_OS_FAMILY);
     define('VoxelSite\PHP_SAPI', $scenario === 'cli-binary' ? 'cli' : 'apache2handler');
     define('VoxelSite\PHP_BINARY', $root . '/web-binary');
     define('VoxelSite\PHP_BINDIR', $root . "/PHP installation's bin");

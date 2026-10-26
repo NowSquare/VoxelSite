@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace VoxelSite;
 
+require_once __DIR__ . '/FilesystemPath.php';
+
 /**
  * PHP-based Tailwind CSS compiler for generated websites.
  *
@@ -107,7 +109,7 @@ CSS;
         $basePath = rtrim($this->themePath, '/') . '/';
         if (is_link(rtrim($basePath,'/'))) throw new \RuntimeException('Tailwind theme directories cannot be symlinks.');
         // Canonicalize the trusted root; children must remain ordinary files.
-        $resolvedBase = realpath($basePath);
+        $resolvedBase = FilesystemPath::realpath($basePath);
         if ($resolvedBase !== false) {
             $basePath = rtrim($resolvedBase, '/') . '/';
         }
@@ -160,7 +162,7 @@ CSS;
         if (is_link($scanDir) || is_link($outputPath)) throw new \RuntimeException('Tailwind scan and output paths cannot be symlinks.');
 
         // Resolve symlinks so Forge/Envoyer shared directories work
-        $resolvedScan = realpath($scanDir);
+        $resolvedScan = FilesystemPath::realpath($scanDir);
         if ($resolvedScan !== false) {
             $scanDir = $resolvedScan;
         }
@@ -171,7 +173,7 @@ CSS;
         // is to write to that specific location, not follow symlinks away.
         if (!$explicitOutput) {
             $outputDir = dirname($outputPath);
-            $resolvedOutputDir = realpath($outputDir);
+            $resolvedOutputDir = FilesystemPath::realpath($outputDir);
             if ($resolvedOutputDir !== false) {
                 $outputPath = $resolvedOutputDir . '/' . basename($outputPath);
             }
@@ -180,7 +182,7 @@ CSS;
         if (!is_dir($scanDir)) {
             Logger::warning('tailwind', 'Scan directory does not exist', [
                 'scanDir'  => $scanDir,
-                'realpath' => realpath($scanDir),
+                'realpath' => FilesystemPath::realpath($scanDir),
             ]);
             return ['ok' => false, 'class_count' => 0];
         }
@@ -194,7 +196,7 @@ CSS;
         foreach ($iterator as $file) {
             if ($file->isLink()) throw new \RuntimeException('Tailwind scans cannot follow symlink files or directories.');
             if ($file->isFile()) {
-                $fileList[] = str_replace($scanDir . '/', '', $file->getPathname()) . ' (' . $file->getSize() . 'b)';
+                $fileList[] = FilesystemPath::relative($file->getPathname(), $scanDir) . ' (' . $file->getSize() . 'b)';
             }
         }
 
@@ -202,7 +204,7 @@ CSS;
 
         Logger::debug('tailwind', 'Compile scan results', [
             'scanDir'     => $scanDir,
-            'realpath'    => realpath($scanDir),
+            'realpath'    => FilesystemPath::realpath($scanDir),
             'outputPath'  => $outputPath,
             'files_found' => $fileList,
             'file_count'  => count($fileList),

@@ -321,7 +321,7 @@ final class ChangeSetService
             foreach (new \DirectoryIterator($directory) as $entry) {
                 if ($entry->isDot()) continue;
                 if (++$entries > WorkspaceFiles::MAX_FILES*3) throw new OperationException('size_limit','Generated staging exceeds its directory budget.');
-                $relative=substr($entry->getPathname(),strlen($root)+1);
+                $relative=\VoxelSite\FilesystemPath::relative($entry->getPathname(),$root);
                 $path=SiteWorkspace::resolveWithin($root,$relative);
                 if (is_dir($path)) { $walk($path); continue; }
                 if ($relative === '.htaccess') continue;

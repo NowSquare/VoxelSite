@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use VoxelSite\Database;
 use VoxelSite\FileManager;
+use VoxelSite\FilesystemPath;
 use VoxelSite\SiteWorkspace;
 use VoxelSite\SiteMutationLock;
 
@@ -295,7 +296,8 @@ function scZipAddDir(\ZipArchive $zip, string $dir, string $prefix): int
 {
     SiteWorkspace::inventory($dir);
     $count = 0;
-    $realDir = realpath($dir) ?: $dir;
+    $realDir = FilesystemPath::realpath($dir);
+    if ($realDir === false) throw new \RuntimeException('Safety snapshot source directory is unavailable.');
     $it = new \RecursiveIteratorIterator(
         new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
         \RecursiveIteratorIterator::LEAVES_ONLY
@@ -303,9 +305,10 @@ function scZipAddDir(\ZipArchive $zip, string $dir, string $prefix): int
     foreach ($it as $file) {
         if ($file->isLink()) continue;
         if ($file->isFile()) {
-            $real = $file->getRealPath();
-            $rel  = $prefix . '/' . ltrim(str_replace($realDir, '', $real), DIRECTORY_SEPARATOR);
-            if (!$zip->addFile($real, str_replace('\\', '/', $rel))) {
+            $real = FilesystemPath::realpath($file->getPathname());
+            if ($real === false) throw new \RuntimeException('Safety snapshot source file is unavailable.');
+            $rel = $prefix . '/' . FilesystemPath::relative($real, $realDir);
+            if (!$zip->addFile($real, $rel)) {
                 throw new \RuntimeException('Could not capture safety snapshot file: ' . $rel);
             }
             $count++;

@@ -58,8 +58,9 @@ final class StudioAuthoringService
         $path=$input['path']??'assets/css/tailwind.css';
         if($action!=='compile') {
             SitePathPolicy::canonical($path,false);
-            if($path==='assets/css/tailwind.css'||SitePathPolicy::type($path)==='binary')throw new OperationException('permission_denied','Use compilation or Assets for this file.');
-            if($action==='delete'&&in_array($path,self::PROTECTED_FILES,true))throw new OperationException('permission_denied','This core file cannot be deleted.');
+            $policyPath=DIRECTORY_SEPARATOR==='\\'?strtolower($path):$path;
+            if($policyPath==='assets/css/tailwind.css'||SitePathPolicy::type($path)==='binary')throw new OperationException('permission_denied','Use compilation or Assets for this file.');
+            if($action==='delete'&&in_array($policyPath,self::PROTECTED_FILES,true))throw new OperationException('permission_denied','This core file cannot be deleted.');
             if(SitePathPolicy::type($path)==='forms')$this->policy->require($actor,['forms:read','forms:write']);
         }
         if(SitePathPolicy::type($path)==='seo') {

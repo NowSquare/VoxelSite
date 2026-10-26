@@ -19,6 +19,7 @@ declare(strict_types=1);
  */
 
 use VoxelSite\Database;
+use VoxelSite\FilesystemPath;
 use VoxelSite\Logger;
 use VoxelSite\Settings;
 
@@ -217,20 +218,20 @@ function createPrePublishSnapshot(
 function addDirToZip(\ZipArchive $zip, string $dir, string $prefix): int
 {
     $count = 0;
+    $realDir = FilesystemPath::realpath($dir);
+    if ($realDir === false) throw new \RuntimeException('Publish snapshot source directory is unavailable.');
     $iterator = new \RecursiveIteratorIterator(
         new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
         \RecursiveIteratorIterator::LEAVES_ONLY
     );
 
     foreach ($iterator as $file) {
+        if ($file->isLink()) continue;
         if ($file->isFile()) {
-            $realPath = $file->getRealPath();
-            $relativePath = $prefix . '/' . ltrim(
-                str_replace($dir, '', $realPath),
-                DIRECTORY_SEPARATOR
-            );
-            $relativePath = str_replace('\\', '/', $relativePath);
-            $zip->addFile($realPath, $relativePath);
+            $realPath = FilesystemPath::realpath($file->getPathname());
+            if ($realPath === false) throw new \RuntimeException('Publish snapshot source file is unavailable.');
+            $relativePath = $prefix . '/' . FilesystemPath::relative($realPath, $realDir);
+            if (!$zip->addFile($realPath, $relativePath)) throw new \RuntimeException('Could not capture publish snapshot file: ' . $relativePath);
             $count++;
         }
     }
@@ -307,10 +308,7 @@ function collectAssetHashes(string $assetsDir): array
                 continue;
             }
 
-            $relativePath = 'assets/' . $subdir . '/' . ltrim(
-                str_replace('\\', '/', substr($file->getPathname(), strlen($dir))),
-                '/'
-            );
+            $relativePath = 'assets/' . $subdir . '/' . FilesystemPath::relative($file->getPathname(), $dir);
 
             $hash = @hash_file('sha256', $file->getPathname());
             if ($hash !== false) {
@@ -387,7 +385,7 @@ function syncAssetDirectory(string $sourceDir, string $targetDir): array
                 continue;
             }
 
-            $relativePath = $subdir . '/' . $iterator->getSubPathname();
+            $relativePath = $subdir . '/' . FilesystemPath::normalize($iterator->getSubPathname());
 
             // Skip gitkeep and hidden files
             $basename = $file->getBasename();
@@ -473,28 +471,19 @@ function writeSnapshotFile(string $baseDir, string $relativePath, string $conten
         return false;
     }
 
-    $targetPath = rtrim($baseDir, '/') . '/' . $relativePath;
+    try { $targetPath = \VoxelSite\SiteWorkspace::resolveWithin($baseDir, $relativePath); }
+    catch (\RuntimeException) { return false; }
     $parentDir = dirname($targetPath);
 
     if (!is_dir($parentDir) && !mkdir($parentDir, 0755, true) && !is_dir($parentDir)) {
         return false;
     }
 
-    $realBase = realpath($baseDir) ?: $baseDir;
-    $realParent = realpath($parentDir) ?: $parentDir;
-
-    // Check containment via logical path first (handles symlinks),
-    // then via resolved path as fallback
-    $normParent = rtrim(str_replace('//', '/', $realParent), '/');
-    $normBase = rtrim(str_replace('//', '/', $realBase), '/');
-    if (!str_starts_with($normParent . '/', $normBase . '/') && $normParent !== $normBase) {
-        // Try with the unresolved paths
-        $logicalParent = rtrim(str_replace('//', '/', $parentDir), '/');
-        $logicalBase = rtrim(str_replace('//', '/', $baseDir), '/');
-        if (!str_starts_with($logicalParent . '/', $logicalBase . '/') && $logicalParent !== $logicalBase) {
-            return false;
-        }
-    }
+    $realBase = FilesystemPath::realpath($baseDir);
+    $realParent = FilesystemPath::realpath($parentDir);
+    if ($realBase === false || $realParent === false || !FilesystemPath::contains($realParent, $realBase)) return false;
+    try { \VoxelSite\SiteWorkspace::resolveWithin($baseDir, $relativePath); }
+    catch (\RuntimeException) { return false; }
 
     return file_put_contents($targetPath, $content) !== false;
 }

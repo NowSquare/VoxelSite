@@ -18,7 +18,7 @@ final class GitUpdater
 
     public function __construct(string $root, ?string $lockFile = null)
     {
-        $this->root = rtrim($root, '/');
+        $this->root = rtrim(FilesystemPath::normalize($root), '/');
         $this->lockFile = $lockFile ?? $this->root . '/.git-update.lock';
     }
 
@@ -47,7 +47,7 @@ final class GitUpdater
     /** Stage an exact fetched commit without resetting or cleaning the checkout. */
     public function stageCandidate(string $archivePath, ?array $retained = null, ?callable $retain = null, int $maxBytes = 134217728): array
     {
-        $parent=realpath(dirname($archivePath));
+        $parent=FilesystemPath::realpath(dirname($archivePath));
         if(!$parent||is_link(dirname($archivePath))||is_link($archivePath)||file_exists($archivePath))throw new \RuntimeException('Use a new private archive destination.');
         $this->deadline=microtime(true)+8;
         try {
@@ -257,7 +257,8 @@ final class GitUpdater
         if ($this->gitBin !== null) {
             return $this->gitBin;
         }
-        foreach (['/usr/bin/git', '/usr/local/bin/git', '/opt/homebrew/bin/git', '/bin/git'] as $candidate) {
+        $candidates = DIRECTORY_SEPARATOR === '\\' ? [] : ['/usr/bin/git', '/usr/local/bin/git', '/opt/homebrew/bin/git', '/bin/git'];
+        foreach ($candidates as $candidate) {
             if (is_executable($candidate)) {
                 return $this->gitBin = $candidate;
             }
@@ -355,10 +356,18 @@ final class GitUpdater
         if (!is_array($base)) {
             $base = [];
         }
-        if (empty($base['PATH'])) {
+        // Windows environment names are case-insensitive and commonly use Path.
+        // Adding a POSIX PATH can shadow the host's actual Git installation.
+        $pathKey = 'PATH';
+        if (DIRECTORY_SEPARATOR === '\\') {
+            foreach (array_keys($base) as $key) {
+                if (strcasecmp($key, 'PATH') === 0) { $pathKey = $key; break; }
+            }
+        }
+        if (empty($base[$pathKey]) && DIRECTORY_SEPARATOR !== '\\') {
             $base['PATH'] = '/usr/local/bin:/usr/bin:/bin';
         }
-        $home = $base['HOME'] ?? '';
+        $home = $base['HOME'] ?? (DIRECTORY_SEPARATOR === '\\' ? ($base['USERPROFILE'] ?? '') : '');
         if ($home === '' || !is_dir($home)) {
             $home = $this->root;
         }

@@ -24,7 +24,7 @@ function cliWrapper(string $path, string $root, string $label): void
     chmod($path, 0700);
 }
 
-foreach (['bindir', 'cli-binary', 'no-cli', 'non-cli', 'failed-probe', 'not-executable', 'exec-disabled'] as $scenario) {
+foreach (['bindir', 'cli-binary', 'no-cli', 'non-cli', 'failed-probe', 'not-executable', 'exec-disabled', 'windows'] as $scenario) {
     $root = sys_get_temp_dir() . '/agent-php-cli-' . bin2hex(random_bytes(8));
     mkdir($root, 0700);
     $root = realpath($root);
@@ -110,7 +110,7 @@ PHP);
             check($ack === ['job' => (string) $result['response']['data']['id'], 'key-id' => '41', 'root' => $root],
                 "{$scenario}: real detached CLI worker receives allocated job and key");
         } else {
-            $expectedCode = $scenario === 'exec-disabled' ? 'exec_unavailable' : 'php_cli_unavailable';
+            $expectedCode = match ($scenario) { 'exec-disabled' => 'exec_unavailable', 'windows' => 'worker_platform_unavailable', default => 'php_cli_unavailable' };
             check($result['status'] === 503 && ($result['response']['error']['code'] ?? '') === $expectedCode,
                 "{$scenario}: unavailable CLI returns a synchronous 503 {$expectedCode}");
             check($db->count('conversations') === 0 && $db->count('prompt_log') === 0,

@@ -13,7 +13,9 @@ final class Runtime
     private \PDO $pdo;
     public function __construct(private string $root,private string $storage,private string $database,private string $lockPath,private ?\Closure $checkpointHook=null)
     {
-        foreach([$root,$storage] as $directory)if(realpath($directory)!==$directory||is_link($directory))throw new Failure('invalid_path','Update roots must be canonical directories.');
+        $this->root=$root=self::nativePath($root);$this->storage=$storage=self::nativePath($storage);
+        $this->database=$database=self::nativePath($database);$this->lockPath=$lockPath=self::nativePath($lockPath);
+        foreach([$root,$storage] as $directory){self::assertAncestors($directory);if(($real=realpath($directory))===false||self::nativePath($real)!==$directory)throw new Failure('invalid_path','Update roots must be canonical directories.');}
         self::path(dirname($database),basename($database));self::path(dirname($lockPath),basename($lockPath));
         if(!is_file($database))throw new Failure('host_capability_unavailable','The retained update database is unavailable.');
         $this->pdo=new \PDO('sqlite:'.$database,null,null,[\PDO::ATTR_ERRMODE=>\PDO::ERRMODE_EXCEPTION,\PDO::ATTR_DEFAULT_FETCH_MODE=>\PDO::FETCH_ASSOC]);
@@ -198,7 +200,8 @@ final class Runtime
             $iterator=new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($directory,\FilesystemIterator::SKIP_DOTS),\RecursiveIteratorIterator::SELF_FIRST);
             $seen=0;foreach($iterator as $file){
                 if(++$seen>16000||$file->isLink())throw new Failure('recovery_required','The update dependency tree changed.');
-                if(!$file->isDir()&&!isset($closure[substr($file->getPathname(),strlen($this->root)+1)]))throw new Failure('recovery_required','An unreviewed executable dependency was preserved; schema activation is stopped.');
+                $pathname=self::nativePath($file->getPathname());$prefix=rtrim($this->root,'/').'/';
+                if(!str_starts_with($pathname,$prefix)||(!$file->isDir()&&!isset($closure[substr($pathname,strlen($prefix))])))throw new Failure('recovery_required','An unreviewed executable dependency was preserved; schema activation is stopped.');
                 if(microtime(true)-$start>5)throw new Failure('host_capability_unavailable','Dependency verification exceeded the host time budget.');
             }
         }
@@ -242,8 +245,33 @@ final class Runtime
     public static function canonical(mixed $value):string
     {$normalize=function($value)use(&$normalize){if(is_array($value)){if(!array_is_list($value))ksort($value,SORT_STRING);foreach($value as $k=>$v)$value[$k]=$normalize($v);}return $value;};return json_encode($normalize($value),JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);}
     public static function hash(?string $bytes):?string {return $bytes===null?null:hash('sha256',$bytes);}
+    private static function nativePath(string $path):string
+    {return DIRECTORY_SEPARATOR==='\\'?str_replace('\\','/',$path):$path;}
+    private static function assertAncestors(string $path):void
+    {
+        for($depth=0;$depth<256;$depth++){
+            clearstatcache(true,$path);
+            if(is_link($path))throw new Failure('invalid_path','System updates cannot follow symlinks.');
+            $parent=self::nativePath(dirname($path));
+            if($parent===$path||$path==='/'||$path==='.')return;
+            $path=$parent;
+        }
+        throw new Failure('invalid_path','System path depth exceeds its boundary.');
+    }
     public static function path(string $root,string $relative):string
-    {if(realpath($root)!==$root||is_link($root)||$relative===''||strlen($relative)>512||str_starts_with($relative,'/')||str_contains($relative,'\\'))throw new Failure('invalid_path','Invalid system path.');$current=$root;foreach(explode('/',$relative) as $part){if($part===''||$part==='.'||$part==='..'||str_contains($part,"\0"))throw new Failure('invalid_path','Invalid system path component.');$current.='/'.$part;if(is_link($current))throw new Failure('invalid_path','System updates cannot follow symlinks.');if(file_exists($current)&&realpath($current)!==$current)throw new Failure('invalid_path','System path resolution changed.');}return $current;}
+    {
+        $root=self::nativePath($root);self::assertAncestors($root);
+        if(($real=realpath($root))===false||self::nativePath($real)!==$root||$relative===''||strlen($relative)>512||str_starts_with($relative,'/')||str_contains($relative,'\\')||str_contains($relative,':'))throw new Failure('invalid_path','Invalid system path.');
+        $current=rtrim($root,'/');
+        foreach(explode('/',$relative) as $part){
+            if($part===''||$part==='.'||$part==='..'||preg_match('/[\x00-\x1f\x7f]/',$part)
+                ||(DIRECTORY_SEPARATOR==='\\'&&(preg_match('/[. ]$/D',$part)||preg_match('/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iD',$part))))throw new Failure('invalid_path','Invalid system path component.');
+            $current.='/'.$part;clearstatcache(true,$current);
+            if(is_link($current))throw new Failure('invalid_path','System updates cannot follow symlinks.');
+            if(file_exists($current)&&self::nativePath(realpath($current)?:'')!==$current)throw new Failure('invalid_path','System path resolution changed.');
+        }
+        return $current;
+    }
     public static function bytes(string $root,string $path):?string
     {$absolute=self::path($root,$path);clearstatcache(true,$absolute);if(!file_exists($absolute))return null;$s=lstat($absolute);if(!$s||!is_file($absolute)||$s['size']>self::MAX_FILE)throw new Failure('size_limit','A system file exceeds the retained update budget.');$bytes=file_get_contents($absolute,false,null,0,$s['size']+1);clearstatcache(true,$absolute);$after=lstat($absolute);if($bytes===false||strlen($bytes)!==$s['size']||!$after||$after['ino']!==$s['ino']||$after['size']!==$s['size']||$after['mtime']!==$s['mtime']||is_link($absolute))throw new Failure('content_conflict','System bytes changed while being read.');return $bytes;}
     public static function write(string $root,string $path,?string $bytes):void

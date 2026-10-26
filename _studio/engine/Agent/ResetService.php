@@ -290,7 +290,7 @@ final class ResetService
             foreach(new \DirectoryIterator($dir) as $entry){
                 if($entry->isDot())continue;
                 if(++$count>3500)throw new OperationException('size_limit','Incomplete reset staging exceeds its cleanup budget.');
-                $path=SiteWorkspace::resolveWithin($stage,substr($entry->getPathname(),strlen($stage)+1));
+                $path=SiteWorkspace::resolveWithin($stage,\VoxelSite\FilesystemPath::relative($entry->getPathname(),$stage));
                 if(is_dir($path)){$walk($path);if(!rmdir($path))throw new OperationException('host_capability_unavailable','Cannot clean reset staging.');}
                 elseif(!is_file($path)||!unlink($path))throw new OperationException('host_capability_unavailable','Cannot clean reset staging.');
             }

@@ -33,13 +33,15 @@ final class SiteWorkspace
             ?? ($explicitPublishedRoot ? $this->published . '/assets' : ($testAssets ?? $this->published . '/assets')));
         $this->migration = self::trustedRoot($stateRoot
             ?? (getenv('VS_TEST_WORKSPACE_STATE_DIR') ?: dirname($this->draft) . '/data/workspace-migration'));
-        if ($this->draft === $this->published || $this->draftAssetsRoot() === $this->publishedAssets) {
+        // Refuse aliases conservatively even on Windows volumes with case-sensitive directories.
+        $sameRoot = static fn(string $a, string $b): bool => DIRECTORY_SEPARATOR === '\\' ? strcasecmp($a, $b) === 0 : $a === $b;
+        if ($sameRoot($this->draft, $this->published) || $sameRoot($this->draftAssetsRoot(), $this->publishedAssets)) {
             throw new \RuntimeException('Draft and published workspace roots must be different.');
         }
     }
 
     public function draftRoot(): string { return $this->draft; }
-    public function draftAssetsRoot(): string { return rtrim($this->draft, '/' . DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'assets'; }
+    public function draftAssetsRoot(): string { return rtrim($this->draft, '/') . '/assets'; }
     public function publishedRoot(): string { return $this->published; }
     public function publishedAssetsRoot(): string { return $this->publishedAssets; }
     public function migrationRoot(): string { return $this->migration; }
@@ -85,6 +87,7 @@ final class SiteWorkspace
     public function isImmutable(string $relative): bool
     {
         $relative = self::normalizeRelative($relative);
+        if (DIRECTORY_SEPARATOR === '\\') $relative = strtolower($relative);
         return $relative === 'assets/library' || str_starts_with($relative, 'assets/library/')
             || $relative === 'assets/icons' || str_starts_with($relative, 'assets/icons/');
     }
@@ -114,7 +117,7 @@ final class SiteWorkspace
         if ($forWrite && $this->isImmutable($relative)) {
             throw new \RuntimeException('immutable_asset: Published library and icon files are read-only.');
         }
-        return str_starts_with($relative, 'assets/')
+        return str_starts_with(DIRECTORY_SEPARATOR === '\\' ? strtolower($relative) : $relative, 'assets/')
             ? self::resolveWithin($this->publishedAssets, substr($relative, 7))
             : self::resolveWithin($this->published, $relative);
     }
@@ -161,6 +164,7 @@ final class SiteWorkspace
 
     private function assertSitePath(string $relative): void
     {
+        if (DIRECTORY_SEPARATOR === '\\') $relative = strtolower($relative);
         foreach (explode('/', $relative) as $segment) {
             if (in_array($segment, ['.htaccess', '.user.ini', '.env', '.git'], true)) {
                 throw new \RuntimeException('Server access configuration is not a generated website file.');
@@ -198,7 +202,10 @@ final class SiteWorkspace
             throw new \RuntimeException('Invalid workspace-relative path.');
         }
         foreach (explode('/', $relative) as $part) {
-            if ($part === '' || $part === '.' || $part === '..') { throw new \RuntimeException('Invalid workspace-relative path.'); }
+            if ($part === '' || $part === '.' || $part === '..'
+                || (DIRECTORY_SEPARATOR === '\\' && (preg_match('/[<>"|?*]/', $part)
+                    || preg_match('/[. ]$/D', $part)
+                    || preg_match('/^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)/iu', $part)))) { throw new \RuntimeException('Invalid workspace-relative path.'); }
         }
         return $relative;
     }
@@ -207,12 +214,7 @@ final class SiteWorkspace
     public function assertRootIntegrity(): void
     {
         foreach ([$this->draft, $this->published, $this->publishedAssets, $this->migration] as $root) {
-            for ($path = $root; $path !== '/' && $path !== '.'; $path = $parent) {
-                clearstatcache(true, $path);
-                if (is_link($path)) throw new \RuntimeException('workspace_unsafe_path: A configured root or ancestor became a symlink.');
-                $parent = dirname($path);
-                if ($parent === $path) break; // Windows drive roots are their own parent.
-            }
+            FilesystemPath::assertNoSymlinkAncestors($root, 'workspace_unsafe_path: A configured root or ancestor became a symlink.');
         }
     }
 
@@ -258,29 +260,6 @@ final class SiteWorkspace
     /** Resolve only server-supplied ancestors; descendants stay no-follow. */
     private static function trustedRoot(string $path): string
     {
-        // Windows accepts both separators, but a drive-relative path (C:site)
-        // or a rooted path without a drive (\site) is not fully qualified.
-        if (DIRECTORY_SEPARATOR === '\\') $path = str_replace('\\', '/', $path);
-        $absolute = DIRECTORY_SEPARATOR === '\\'
-            ? preg_match('~\A(?:[A-Za-z]:/|//(?![?.](?:/|$))[^/]+/[^/]+(?:/|$))~', $path) === 1
-            : str_starts_with($path, '/');
-        if (!$absolute || preg_match('/[\x00-\x1f\x7f]/', $path)) {
-            throw new \RuntimeException('Workspace roots must be absolute server paths.');
-        }
-        // Keep volume roots absolute, including repeated trailing separators.
-        $path = rtrim($path, '/');
-        if ($path === '' || (DIRECTORY_SEPARATOR === '\\' && preg_match('~\A[A-Za-z]:\z~', $path))) $path .= '/';
-        if (is_link($path)) { throw new \RuntimeException('Workspace roots cannot be symlinks.'); }
-        $existing = $path; $suffix = [];
-        while (!file_exists($existing)) {
-            array_unshift($suffix, basename($existing));
-            $parent = dirname($existing);
-            if ($parent === $existing) { throw new \RuntimeException('Workspace root has no existing parent.'); }
-            $existing = $parent;
-        }
-        $real = realpath($existing);
-        if ($real === false || !is_dir($real)) { throw new \RuntimeException('Workspace root is unavailable.'); }
-        return $suffix === [] ? $real
-            : rtrim($real, '/' . DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . implode(DIRECTORY_SEPARATOR, $suffix);
+        return FilesystemPath::trustedRoot($path);
     }
 }

@@ -11,7 +11,8 @@ final class MaintenanceService
     public function __construct(private Database $db,private ActorPolicy $policy,private SiteWorkspace $workspace,
         private string $root,private int $entryBudget=200,private float $seconds=0.05)
     {
-        if (!str_starts_with($root,'/') || $entryBudget<1 || $entryBudget>1000 || $seconds<=0 || $seconds>0.25) {
+        $this->root = \VoxelSite\FilesystemPath::normalize($root);
+        if (!\VoxelSite\FilesystemPath::isAbsolute($this->root) || $entryBudget<1 || $entryBudget>1000 || $seconds<=0 || $seconds>0.25) {
             throw new \InvalidArgumentException('Invalid trusted maintenance configuration.');
         }
     }
@@ -25,8 +26,9 @@ final class MaintenanceService
             // finishes. Cleanup does not contend with that worker's lock.
             if ($this->workspace->status()['reservation_operation_id']!==null) return $result;
             if ((int)$this->db->scalar('SELECT last_run FROM agent_maintenance_state WHERE id=1')>time()-30) return $result;
-            for ($parent=$this->root;$parent!=='/';$parent=dirname($parent)) {
+            for ($parent=$this->root;;$parent=dirname($parent)) {
                 if (is_link($parent)) return $result;
+                if (dirname($parent)===$parent) break;
             }
             if (!is_dir($this->root) && !mkdir($this->root,0700,true)) return $result;
             $maintenance=$this->lock(SiteWorkspace::resolveWithin($this->root,'maintenance.lock'));

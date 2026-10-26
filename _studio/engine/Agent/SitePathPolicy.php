@@ -17,6 +17,12 @@ final class SitePathPolicy
         foreach (explode('/', $relative) as $segment) {
             if (strlen($segment) > 80 || str_ends_with($segment, '.') || str_contains($segment, '..')) self::invalid();
         }
+        // These paths carry additional contracts keyed by their exact spelling.
+        // Windows aliases must not create a second identity for the same file.
+        if (DIRECTORY_SEPARATOR === '\\' && $relative !== strtolower($relative)
+            && in_array(strtolower($relative), ['assets/css/tailwind.css', 'assets/data/memory.json', 'assets/data/design-intelligence.json'], true)) {
+            self::invalid();
+        }
         $kind = self::type($relative);
         if ($kind === null || ($write && in_array($kind, ['immutable', 'derived', 'seo'], true))) self::invalid();
         return $relative;
@@ -26,7 +32,7 @@ final class SitePathPolicy
     {
         $lower = strtolower($relative);
         if (in_array($lower, self::RESERVED, true)) return null;
-        if ($relative === 'assets/css/tailwind.css') return 'derived';
+        if ((DIRECTORY_SEPARATOR === '\\' ? $lower : $relative) === 'assets/css/tailwind.css') return 'derived';
         if (preg_match('~^assets/(library|icons)/[A-Za-z0-9_./-]+\.(?:avif|webp|jpe?g|png|gif|svg)$~D', $relative)) return 'immutable';
         if (preg_match('~^assets/(css|js|data|forms)/[A-Za-z0-9_./-]+\.(css|js|mjs|json)$~D', $relative, $m)) {
             $types = ['css' => ['css'], 'js' => ['js','mjs'], 'data' => ['json'], 'forms' => ['json']];
@@ -44,7 +50,7 @@ final class SitePathPolicy
     public static function assertContained(string $root, string $relative): string
     {
         self::canonical($relative);
-        $base = realpath($root);
+        $base = \VoxelSite\FilesystemPath::realpath($root);
         if ($base === false || !is_dir($base)) self::invalid();
         $path = $base;
         $parts = explode('/', $relative);
@@ -52,14 +58,15 @@ final class SitePathPolicy
             $path .= '/' . $part;
             clearstatcache(true, $path);
             if (is_link($path) || (file_exists($path) && $index < count($parts) - 1 && !is_dir($path))) self::invalid();
-            $real = realpath($path);
-            if ($real !== false && !str_starts_with($real, $base . '/')) self::invalid();
+            $real = \VoxelSite\FilesystemPath::realpath($path);
+            if ($real !== false && !\VoxelSite\FilesystemPath::contains($real, $base, false)) self::invalid();
         }
         return $path;
     }
 
     public static function isMergeOnly(string $path): bool
     {
+        if (DIRECTORY_SEPARATOR === '\\') $path = strtolower($path);
         return in_array($path, ['assets/data/memory.json','assets/data/design-intelligence.json'], true);
     }
 

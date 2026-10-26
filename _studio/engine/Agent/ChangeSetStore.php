@@ -14,7 +14,8 @@ final class ChangeSetStore
 
     public function __construct(private Database $db, private ActorPolicy $policy, private string $root)
     {
-        if (!str_starts_with($root, '/') || is_link($root)) throw new \InvalidArgumentException('A trusted private staging root is required.');
+        $this->root = \VoxelSite\FilesystemPath::normalize($root);
+        if (!\VoxelSite\FilesystemPath::isAbsolute($this->root) || is_link($this->root)) throw new \InvalidArgumentException('A trusted private staging root is required.');
     }
 
     public function reserve(OperationActor $actor, array $request): array
@@ -120,7 +121,7 @@ final class ChangeSetStore
                 foreach (new \DirectoryIterator($directory) as $entry) {
                     if ($entry->isDot()) continue;
                     if (++$entries > WorkspaceFiles::MAX_FILES * 12) throw new OperationException('recovery_required','Incomplete staging exceeds its cleanup budget. Its reservation remains retained.');
-                    $relative = substr($entry->getPathname(),strlen($target)+1);
+                    $relative = \VoxelSite\FilesystemPath::relative($entry->getPathname(), $target);
                     $path = SiteWorkspace::resolveWithin($target,$relative);
                     if (is_dir($path)) $remove($path);
                     elseif (!is_file($path) || !unlink($path)) throw new OperationException('recovery_required','Cannot remove incomplete staging. Its storage reservation remains retained.');

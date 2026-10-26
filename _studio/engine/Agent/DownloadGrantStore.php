@@ -15,7 +15,8 @@ final class DownloadGrantStore
 
     public function __construct(private Database $db,private ActorPolicy $policy,private SiteWorkspace $workspace,private string $root)
     {
-        if (!str_starts_with($root,'/') || is_link($root)) throw new \InvalidArgumentException('A trusted private export root is required.');
+        $this->root = \VoxelSite\FilesystemPath::normalize($root);
+        if (!\VoxelSite\FilesystemPath::isAbsolute($this->root) || is_link($this->root)) throw new \InvalidArgumentException('A trusted private export root is required.');
     }
 
     public function reserve(OperationActor $actor,array $request):array
@@ -169,7 +170,7 @@ final class DownloadGrantStore
         foreach(new \DirectoryIterator($path) as $entry) {
             if($entry->isDot())continue;
             if($remaining--<=0 || microtime(true)>$deadline)return false;
-            $safe=SiteWorkspace::resolveWithin($root,substr($entry->getPathname(),strlen($root)+1));
+            $safe=SiteWorkspace::resolveWithin($root,\VoxelSite\FilesystemPath::relative($entry->getPathname(),$root));
             if(is_dir($safe)) {
                 if(!$this->removeExpired($root,$safe,$remaining,$deadline))return false;
             }elseif(!unlink($safe))throw new OperationException('host_capability_unavailable','Cannot remove expired export bytes.');
@@ -184,7 +185,7 @@ final class DownloadGrantStore
             foreach(new \DirectoryIterator($path) as $entry) {
                 if($entry->isDot())continue;
                 if(++$entries>5000)throw new OperationException('size_limit','Export cleanup exceeds its bounded inventory.');
-                $safe=SiteWorkspace::resolveWithin($root,substr($entry->getPathname(),strlen($root)+1));
+                $safe=SiteWorkspace::resolveWithin($root,\VoxelSite\FilesystemPath::relative($entry->getPathname(),$root));
                 if(is_dir($safe))$remove($safe);elseif(!unlink($safe))throw new OperationException('host_capability_unavailable','Cannot remove expired export bytes.');
             }
             if(!rmdir($path))throw new OperationException('host_capability_unavailable','Cannot remove expired export folder.');

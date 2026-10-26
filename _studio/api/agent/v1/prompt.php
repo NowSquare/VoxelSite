@@ -95,6 +95,12 @@ if ($method === 'POST') {
         $conversationId = $prevPrompt['conversation_id'];
     }
 
+    // Reject unsupported process control before allocating a conversation or job.
+    if (!\VoxelSite\PhpCliResolver::supportsDetachedWorkers()) {
+        agentError(503, 'worker_platform_unavailable', 'Background API prompts are not available on Windows. Use Studio to generate or edit your website.');
+        return;
+    }
+
     // ── Check exec() availability ──
     if (!function_exists('exec')) {
         \VoxelSite\Logger::error('agent-api', 'exec() not available for prompt execution', [

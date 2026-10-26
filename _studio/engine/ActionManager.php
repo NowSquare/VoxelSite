@@ -1029,9 +1029,9 @@ class ActionManager
         }
 
         // Verify the resolved path is actually within our uploads directory
-        $realPath = realpath($absPath);
-        $realUploadsDir = realpath($this->uploadsDir);
-        if ($realPath === false || $realUploadsDir === false || !str_starts_with($realPath, $realUploadsDir . '/')) {
+        $realPath = FilesystemPath::realpath($absPath);
+        $realUploadsDir = FilesystemPath::realpath($this->uploadsDir);
+        if ($realPath === false || $realUploadsDir === false || !FilesystemPath::contains($realPath, $realUploadsDir, false)) {
             return null;
         }
 

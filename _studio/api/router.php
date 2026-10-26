@@ -18,6 +18,7 @@ declare(strict_types=1);
  * - Shared hosting buyers never interact with this file.
  */
 
+require_once __DIR__ . '/error-response.php';
 require_once dirname(__DIR__) . '/engine/bootstrap.php';
 
 use VoxelSite\Database;
